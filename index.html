@@ -20,9 +20,7 @@
         #flightButtons a {
             margin-right: 5px;
         }
-        .table-responsive {
-            margin-top: 20px;
-        }
+        
         #footer {
             margin-top: 40px;
             text-align: center;
@@ -103,7 +101,7 @@
         <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
 
         <!-- 結果輸出 -->
-        <div id="output" class="table-responsive">台北迴轉壽司🍣</div>
+        <div id="output">台北迴轉壽司🍣</div>
 
         <!-- 語言切換按鈕放到頁面底部 -->
         <div id="footer">
@@ -386,7 +384,7 @@
 
             // 直接在 thead 中添加相应的 class
             let tableContent = `
-            <table class="table table-striped table-borderless">
+            <table class="table table-sm table-striped table-borderless">
                 <thead class="${airlineClass}">
                     <tr>
                         <th>${translations[currentLanguage]["tableHeaders"]["FlightNumber"]}</th>
