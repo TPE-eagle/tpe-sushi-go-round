@@ -513,7 +513,7 @@
                 <tbody>`;
 
             flights.forEach(flight => {
-                const cityDisplay = currentLanguage === 'zh' ? flight.CityName : flight.CityEname;
+                const cityDisplay = isSmallScreen() ? flight.CityCode : (currentLanguage === 'zh' ? flight.CityName : flight.CityEname);
                 const terminalDisplay = flight.BNO ? `T${flight.BNO}` : '';
                 const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${flight.ACode}.gif`;
 
