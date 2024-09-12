@@ -379,7 +379,10 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    flightData = data.filter(flight => flight.ACode === 'BR' || flight.ACode === 'CI' || flight.ACode === 'JX');  // 預設顯示 BR, CI 和 JX 的航班
+                    flightData = data.filter(flight =>
+                        (flight.ACode === 'BR' || flight.ACode === 'CI' || flight.ACode === 'JX') &&
+                        flight.RTime !== null && flight.RTime !== undefined
+                    );
                     generateAirlineLinks(flightData); // 動態生成航空公司按鈕
                     displayFlights(flightData); // 預設顯示全部 BR, CI 和 JX 的航班
                 })
