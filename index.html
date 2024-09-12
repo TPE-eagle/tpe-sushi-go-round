@@ -209,6 +209,7 @@
                     "FlightNumber": "航班號",
                     "FlightNumberShort": "航班",
                     "Departure": "出發地",
+                    "DepartureShort": "出發地",
                     "Terminal": "航廈",
                     "TerminalShort": "航廈",
                     "Gate": "登機門",
@@ -227,6 +228,7 @@
                     "FlightNumber": "Flight Number",
                     "FlightNumberShort": "Flt. No",
                     "Departure": "Departure",
+                    "DepartureShort": "Dep.",
                     "Terminal": "Terminal",
                     "TerminalShort": "Term.",
                     "Gate": "Gate",
@@ -245,6 +247,7 @@
                     "FlightNumber": "フライト番号",
                     "FlightNumberShort": "番号",
                     "Departure": "出発地",
+                    "DepartureShort": "出発地",
                     "Terminal": "ターミナル",
                     "TerminalShort": "ターミナル",
                     "Gate": "ゲート",
@@ -503,6 +506,10 @@
                 ? translations[currentLanguage]["tableHeaders"]["FlightNumberShort"]
                 : translations[currentLanguage]["tableHeaders"]["FlightNumber"];
 
+            const departureHeader = isSmallScreen()
+                ? translations[currentLanguage]["tableHeaders"]["DepartureShort"]
+                : translations[currentLanguage]["tableHeaders"]["Departure"];
+
             const terminalHeader = isSmallScreen()
                 ? translations[currentLanguage]["tableHeaders"]["TerminalShort"]
                 : translations[currentLanguage]["tableHeaders"]["Terminal"];
@@ -524,11 +531,11 @@
             <table class="table table-sm table-striped table-borderless">
                 <thead class="${airlineClass}">
                     <tr>
-                        <th>${flightNumberHeader}</th>
-                        <th>${translations[currentLanguage]["tableHeaders"]["Departure"]}</th>
-                        <th>${terminalHeader}</th>
-                        <th>${translations[currentLanguage]["tableHeaders"]["Gate"]}</th>
-                        <th>${carouselHeader}</th>
+                        <th class="text-center">${flightNumberHeader}</th>
+                        <th class="text-center">${departureHeader}</th>
+                        <th class="text-center">${terminalHeader}</th>
+                        <th class="text-center">${translations[currentLanguage]["tableHeaders"]["Gate"]}</th>
+                        <th class="text-center">${carouselHeader}</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -545,9 +552,9 @@
                             ${flight.ACode}${flight.FlightNo}
                         </td>
                         <td>${cityDisplay}</td>
-                        <td>${terminalDisplay}</td>
-                        <td>${flight.Gate}</td>
-                        <td>${flight.StopCode}</td>
+                        <td class="text-center">${terminalDisplay}</td>
+                        <td class="text-center">${flight.Gate}</td>
+                        <td class="text-center">${flight.StopCode}</td>
                     </tr>`;
             });
 
