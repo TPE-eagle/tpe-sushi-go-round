@@ -76,14 +76,14 @@
 
         /* JX (Starlux Airlines) Outline Button 樣式 */
         .btn-outline-jx {
-            border-color: #F8C68A;
-            color: #F8C68A;
+            border-color: #4e463f;
+            color: #4e463f;
         }
 
         .btn-outline-jx:hover, .btn-outline-jx.active {
-            background-color: #F8C68A !important;
+            background-color: #4e463f !important;
             color: white !important;
-            border-color: #F8C68A;
+            border-color: #4e463f;
         }
 
         /* BR (EVA Airways) 表格標題樣式 */
@@ -100,7 +100,7 @@
 
         /* JX (Starlux Airlines) 表格標題樣式 */
         .table-jx {
-            --bs-table-bg: #F8C68A;  /* 定義背景色 */
+            --bs-table-bg: #4e463f;  /* 定義背景色 */
             --bs-table-color: white;  /* 定義文字顏色 */
         }
 
@@ -185,10 +185,13 @@
                 "error": "查詢失敗，請稍後再試。",
                 "tableHeaders": {
                     "FlightNumber": "航班號",
+                    "FlightNumberShort": "航班",
                     "Departure": "出發地",
                     "Terminal": "航廈",
+                    "TerminalShort": "航廈",
                     "Gate": "登機門",
-                    "Carousel": "行李轉盤"
+                    "Carousel": "行李轉盤",
+                    "CarouselShort": "轉盤"
                 }
             },
             "en": {
@@ -199,10 +202,13 @@
                 "error": "Query failed, please try again later.",
                 "tableHeaders": {
                     "FlightNumber": "Flight Number",
+                    "FlightNumberShort": "Flt. No",
                     "Departure": "Departure",
                     "Terminal": "Terminal",
+                    "TerminalShort": "Term.",
                     "Gate": "Gate",
-                    "Carousel": "Carousel"
+                    "Carousel": "Carousel",
+                    "CarouselShort": "Carousel"
                 }
             },
             "jp": {
@@ -213,10 +219,13 @@
                 "error": "クエリに失敗しました。後でもう一度やり直してください。",
                 "tableHeaders": {
                     "FlightNumber": "フライト番号",
+                    "FlightNumberShort": "番号",
                     "Departure": "出発地",
                     "Terminal": "ターミナル",
+                    "TerminalShort": "ターミナル",
                     "Gate": "ゲート",
-                    "Carousel": "荷物回転台"
+                    "Carousel": "荷物回転台",
+                    "CarouselShort": "回転台"
                 }
             }
         };
@@ -424,26 +433,49 @@
             displayFlights(filteredFlight, ACode);
         }
 
-        // 顯示航班資料到表格，並在航班號前加上 logo
+        // 声明全局变量，保存当前的 ACode 和当前语言
+        let currentACode = null;
+
+        // 判断是否为小屏幕
+        function isSmallScreen() {
+            return window.innerWidth <= 768;
+        }
+
+        // 根据屏幕大小更新表头并显示表格
         function displayFlights(flights, ACode) {
-            let airlineClass = 'table-dark';  // 預設為 table-dark
+            currentACode = ACode;  // 保存当前 ACode
+
+            // 判断当前屏幕大小以决定表头显示
+            const flightNumberHeader = isSmallScreen()
+                ? translations[currentLanguage]["tableHeaders"]["FlightNumberShort"]
+                : translations[currentLanguage]["tableHeaders"]["FlightNumber"];
+
+            const terminalHeader = isSmallScreen()
+                ? translations[currentLanguage]["tableHeaders"]["TerminalShort"]
+                : translations[currentLanguage]["tableHeaders"]["Terminal"];
+
+            const carouselHeader = isSmallScreen()
+                ? translations[currentLanguage]["tableHeaders"]["CarouselShort"]
+                : translations[currentLanguage]["tableHeaders"]["Carousel"];
+
+            let airlineClass = 'table-dark';  // 默认 table-dark
             if (ACode === 'BR') {
                 airlineClass = 'table-br';
             } else if (ACode === 'CI') {
                 airlineClass = 'table-ci';
             } else if (ACode === 'JX') {
-                airlineClass = 'table-jx';  // 为 JX 设置表格样式
+                airlineClass = 'table-jx';  // JX 表格样式
             }
 
             let tableContent = `
             <table class="table table-sm table-striped table-borderless">
                 <thead class="${airlineClass}">
                     <tr>
-                        <th>${translations[currentLanguage]["tableHeaders"]["FlightNumber"]}</th>
+                        <th>${flightNumberHeader}</th>
                         <th>${translations[currentLanguage]["tableHeaders"]["Departure"]}</th>
-                        <th>${translations[currentLanguage]["tableHeaders"]["Terminal"]}</th>
+                        <th>${terminalHeader}</th>
                         <th>${translations[currentLanguage]["tableHeaders"]["Gate"]}</th>
-                        <th>${translations[currentLanguage]["tableHeaders"]["Carousel"]}</th>
+                        <th>${carouselHeader}</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -471,9 +503,23 @@
             document.getElementById("output").innerHTML = tableContent;
         }
 
-        // 頁面加載時，檢測語言並載入資料
+        // 监听窗口大小变化并重新渲染表格
+        window.addEventListener('resize', function() {
+            if (currentFilteredFlights.length > 0 && currentACode) {
+                displayFlights(currentFilteredFlights, currentACode); // 使用保存的ACode重新渲染
+            }
+        });
+
+        // Safari 支持的 orientationchange 事件
+        window.addEventListener('orientationchange', function() {
+            if (currentFilteredFlights.length > 0 && currentACode) {
+                displayFlights(currentFilteredFlights, currentACode); // 使用保存的ACode重新渲染
+            }
+        });
+
+        // 页面加载时自动检测语言并加载航班数据
         window.onload = function() {
-            detectLanguage();  // 自動檢測語言並初始化
+            detectLanguage();  // 自动检测语言并初始化
         };
     </script>
 
