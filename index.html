@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
             margin: 20px;
@@ -161,7 +161,7 @@
                 <div class="no-color-link footer-text text-muted fs-6 fw-light">
                     Data source: <a href="https://www.taoyuan-airport.com/flight_arrival" class="text-muted fs-6 fw-light text-decoration-underline">Taoyuan International Airport</a>
                 </div>
-                <!-- 顯示 API query parameter 的日期和時間範圍 -->
+                <!-- 顯示 API 查詢參數的日期和時間範圍 -->
                 <div id="apiParams" class="footer-text text-muted fs-6 fw-light"></div>
                 <div class="footer-text">
                     Made by EVA Pilot with <span style="color: red;">❤️</span>
@@ -171,8 +171,8 @@
     </div>
 
     <script>
-        let flightData = [];  // 存儲所有撈取的航班資料
-        let currentFilteredFlights = [];  // 存儲當前過濾的航空公司航班
+        let flightData = [];  // 儲存所有撈取的航班資料
+        let currentFilteredFlights = [];  // 儲存當前過濾的航空公司航班
         let currentLanguage = 'zh';  // 預設語言為繁體中文
 
         // 定義翻譯字典
@@ -235,7 +235,7 @@
             document.getElementById("title").innerText = translations[currentLanguage]["title"];
         }
 
-        // 自動檢測使用者瀏覽器語言
+        // 自動偵測使用者瀏覽器語言
         function detectLanguage() {
             const browserLang = navigator.language || navigator.userLanguage;
             if (browserLang.startsWith("zh")) {
@@ -246,8 +246,8 @@
                 currentLanguage = 'en';  // 設置為英文
             }
             updateLanguageText();  // 更新頁面文字
-            fetchData(); // 根據檢測到的語言重新載入資料
-            updateApiParams(); // 更新 API query parameters 顯示
+            fetchData(); // 根據偵測到的語言重新載入資料
+            updateApiParams(); // 更新 API 查詢參數顯示
         }
 
         // 切換語言
@@ -255,7 +255,7 @@
             currentLanguage = lang;
             updateLanguageText();  // 更新頁面文字
             fetchData();  // 重新發送請求
-            updateApiParams();  // 更新 API query parameters 顯示
+            updateApiParams();  // 更新 API 查詢參數顯示
             // 清空 flightButtons 區域
             document.getElementById("flightButtons").innerHTML = ""; 
         }
@@ -298,7 +298,7 @@
             return null;
         }
 
-        // 更新 API query parameters 顯示
+        // 更新 API 查詢參數顯示
         function updateApiParams() {
             const date = getUTC8Date();
             const timeRange = getCurrentTimeRangeInUTC8();
@@ -333,7 +333,6 @@
                         "Accept": "application/json, text/plain, */*",
                         "Accept-Language": "en-US,en;q=0.9",
                         "Content-Type": "application/json",
-                        // "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
                     },
                     method: "POST",
                     mode: "cors",
@@ -358,7 +357,7 @@
         function generateAirlineLinks(flights) {
             let airlines = {};
 
-            // 遍历航班数据，收集航空公司信息
+            // 遍歷航班數據，收集航空公司信息
             flights.forEach(flight => {
                 if (!airlines[flight.ACode]) {
                     airlines[flight.ACode] = flight.AName + ` (${flight.ACode})`;
@@ -367,10 +366,10 @@
 
             let linksHTML = '';
 
-            // 只处理 BR, CI, JX
+            // 只處理 BR, CI, JX
             const airlineCodes = ['BR', 'CI', 'JX'];
 
-            // 按顺序生成航空公司按钮，只显示 BR, CI, JX
+            // 按順序生成航空公司按鈕，只顯示 BR, CI, JX
             airlineCodes.forEach(code => {
                 if (airlines[code]) {
                     const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${code}.gif`;
@@ -406,14 +405,12 @@
             flights.forEach(flight => {
                 let btnClass = flight.ACode === 'BR' ? 'btn-outline-br' :
                             flight.ACode === 'CI' ? 'btn-outline-ci' :
-                            'btn-outline-jx';  // 为 JX 设置按钮样式
+                            'btn-outline-jx';  // 為 JX 設置按鈕樣式
                 flightButtonContent += `<a href="javascript:void(0);" class="btn ${btnClass} btn-no-hover m-1" onclick="filterFlightByNumber('${flight.FlightNo}', '${flight.ACode}')">${flight.FlightNo}</a>`;
             });
 
             document.getElementById("flightButtons").innerHTML = flightButtonContent;
         }
-
-
 
         // 根據具體的 FlightNo 過濾航班
         function filterFlightByNumber(flightNumber, ACode) {
@@ -433,19 +430,19 @@
             displayFlights(filteredFlight, ACode);
         }
 
-        // 声明全局变量，保存当前的 ACode 和当前语言
+        // 聲明全局變量，保存當前的 ACode 和當前語言
         let currentACode = null;
 
-        // 判断是否为小屏幕
+        // 判斷是否為小屏幕
         function isSmallScreen() {
             return window.innerWidth <= 768;
         }
 
-        // 根据屏幕大小更新表头并显示表格
+        // 根據屏幕大小更新表頭並顯示表格
         function displayFlights(flights, ACode) {
-            currentACode = ACode;  // 保存当前 ACode
+            currentACode = ACode;  // 保存當前 ACode
 
-            // 判断当前屏幕大小以决定表头显示
+            // 判斷當前屏幕大小以決定表頭顯示
             const flightNumberHeader = isSmallScreen()
                 ? translations[currentLanguage]["tableHeaders"]["FlightNumberShort"]
                 : translations[currentLanguage]["tableHeaders"]["FlightNumber"];
@@ -458,13 +455,13 @@
                 ? translations[currentLanguage]["tableHeaders"]["CarouselShort"]
                 : translations[currentLanguage]["tableHeaders"]["Carousel"];
 
-            let airlineClass = 'table-dark';  // 默认 table-dark
+            let airlineClass = 'table-dark';  // 預設為 table-dark
             if (ACode === 'BR') {
                 airlineClass = 'table-br';
             } else if (ACode === 'CI') {
                 airlineClass = 'table-ci';
             } else if (ACode === 'JX') {
-                airlineClass = 'table-jx';  // JX 表格样式
+                airlineClass = 'table-jx';  // 為 JX 設置表格樣式
             }
 
             let tableContent = `
@@ -503,27 +500,27 @@
             document.getElementById("output").innerHTML = tableContent;
         }
 
-        // 监听窗口大小变化并重新渲染表格
+        // 監聽窗口大小變化並重新渲染表格
         window.addEventListener('resize', function() {
             if (currentFilteredFlights.length > 0 && currentACode) {
                 displayFlights(currentFilteredFlights, currentACode); // 使用保存的ACode重新渲染
             }
         });
 
-        // Safari 支持的 orientationchange 事件
+        // Safari 支援的 orientationchange 事件
         window.addEventListener('orientationchange', function() {
             if (currentFilteredFlights.length > 0 && currentACode) {
                 displayFlights(currentFilteredFlights, currentACode); // 使用保存的ACode重新渲染
             }
         });
 
-        // 页面加载时自动检测语言并加载航班数据
+        // 頁面加載時自動偵測語言並加載航班資料
         window.onload = function() {
-            detectLanguage();  // 自动检测语言并初始化
+            detectLanguage();  // 自動偵測語言並初始化
         };
     </script>
 
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
