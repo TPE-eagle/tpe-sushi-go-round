@@ -379,9 +379,21 @@
                 })
                 .then(response => response.json())
                 .then(data => {
+                    // 先透過航空公司 (ACode) 進行排序，再透過航班號碼 (FlightNo) 進行排序
+                    data.sort((a, b) => {
+                        // 先比較 ACode
+                        if (a.ACode < b.ACode) return -1;
+                        if (a.ACode > b.ACode) return 1;
+                        // 如果 ACode 相同，則比較 FlightNo
+                        const flightNumberA = parseInt(a.FlightNo.match(/\d+/), 10); // 提取航班號中的數字
+                        const flightNumberB = parseInt(b.FlightNo.match(/\d+/), 10); // 提取航班號中的數字
+                        return flightNumberA - flightNumberB; // 按數字順序排序
+                    });
+
+
                     flightData = data.filter(flight =>
                         (flight.ACode === 'BR' || flight.ACode === 'CI' || flight.ACode === 'JX') &&
-                        flight.RTime !== null && flight.RTime !== undefined
+                        (flight.Memo && !flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
                     );
                     generateAirlineLinks(flightData); // 動態生成航空公司按鈕
                     displayFlights(flightData); // 預設顯示全部 BR, CI 和 JX 的航班
