@@ -438,6 +438,9 @@
 
         // 根據具體的 FlightNo 生成航班號按鈕
         function generateFlightNumberButtons(flights) {
+            // 將航班按數字順序排序
+            flights.sort((a, b) => parseInt(a.FlightNo) - parseInt(b.FlightNo));
+
             let flightButtonContent = "";
 
             flights.forEach(flight => {
