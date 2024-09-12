@@ -50,25 +50,30 @@
             line-height: 1.2; /* 減少行距 */
         }
 
-        /* BR (EVA Airways) 按鈕樣式 */
-        .btn-br {
+        /* BR (EVA Airways) Outline Button 樣式 */
+        .btn-outline-br {
+            border-color: #4b7d6b;
+            color: #4b7d6b;
+        }
+
+        .btn-outline-br:hover, .btn-outline-br.active {
             background-color: #4b7d6b !important;
             color: white !important;
-            border: none;
+            border-color: #4b7d6b;
         }
 
-        /* CI (China Airlines) 按鈕樣式 */
-        .btn-ci {
+        /* CI (China Airlines) Outline Button 樣式 */
+        .btn-outline-ci {
+            border-color: #3e62ad;
+            color: #3e62ad;
+        }
+
+        .btn-outline-ci:hover, .btn-outline-ci.active {
             background-color: #3e62ad !important;
             color: white !important;
-            border: none;
+            border-color: #3e62ad;
         }
 
-        /* 停止 hover 變色 */
-        .btn-no-hover:hover {
-            background-color: inherit;
-            color: inherit;
-        }
 
         /* BR (EVA Airways) 表格標題樣式 */
         .table-br {
@@ -351,13 +356,12 @@
             }
         }
 
-
         // 根據具體的 FlightNo 生成航班號按鈕
         function generateFlightNumberButtons(flights) {
             let flightButtonContent = "";
 
             flights.forEach(flight => {
-                let btnClass = flight.ACode === 'BR' ? 'btn-br' : 'btn-ci';
+                let btnClass = flight.ACode === 'BR' ? 'btn-outline-br' : 'btn-outline-ci';
                 flightButtonContent += `<a href="javascript:void(0);" class="btn ${btnClass} btn-no-hover m-1" onclick="filterFlightByNumber('${flight.FlightNo}', '${flight.ACode}')">${flight.FlightNo}</a>`;
             });
 
@@ -365,11 +369,22 @@
         }
 
 
-
         // 根據具體的 FlightNo 過濾航班
         function filterFlightByNumber(flightNumber, ACode) {
+            // 清除所有航班按鈕的 active 狀態
+            document.querySelectorAll("#flightButtons a").forEach(button => {
+                button.classList.remove('active');
+            });
+
+            // 將當前點擊的按鈕設置為 active
+            const activeButton = document.querySelector(`a[onclick="filterFlightByNumber('${flightNumber}', '${ACode}')"]`);
+            if (activeButton) {
+                activeButton.classList.add('active');
+            }
+
+            // 根據選擇的航班號顯示過濾後的表格
             const filteredFlight = currentFilteredFlights.filter(flight => flight.FlightNo === flightNumber);
-            displayFlights(filteredFlight, ACode); // 傳遞 ACode 參數以確保背景顏色正確應用
+            displayFlights(filteredFlight, ACode);
         }
 
         // 顯示航班資料到表格，並在航班號前加上 logo
