@@ -74,6 +74,17 @@
             border-color: #3e62ad;
         }
 
+        /* JX (Starlux Airlines) Outline Button 樣式 */
+        .btn-outline-jx {
+            border-color: #F8C68A;
+            color: #F8C68A;
+        }
+
+        .btn-outline-jx:hover, .btn-outline-jx.active {
+            background-color: #F8C68A !important;
+            color: white !important;
+            border-color: #F8C68A;
+        }
 
         /* BR (EVA Airways) 表格標題樣式 */
         .table-br {
@@ -87,11 +98,40 @@
             --bs-table-color: white;  /* 定義文字顏色 */
         }
 
-        /* 保持 Bootstrap 5 table-light 樣式 */
-        .table-light {
-            --bs-table-bg: #f8f9fa; /* 默認背景色 */
-            --bs-table-color: #000;  /* 默認文字顏色 */
+        /* JX (Starlux Airlines) 表格標題樣式 */
+        .table-jx {
+            --bs-table-bg: #F8C68A;  /* 定義背景色 */
+            --bs-table-color: white;  /* 定義文字顏色 */
         }
+
+        /* 寬螢幕顯示 */
+        .airline-full {
+            display: inline; /* 顯示完整名稱 */
+        }
+
+        .airline-short {
+            display: none; /* 隱藏縮寫 */
+        }
+
+        /* 小螢幕顯示 */
+        @media (max-width: 768px) {
+            .airline-full {
+                display: none; /* 隱藏完整名稱 */
+            }
+            .airline-short {
+                display: inline; /* 顯示縮寫 */
+            }
+        }
+
+        /* 美化航空公司按鈕 */
+        .airline-link {
+            display: inline-flex;
+            align-items: center;
+            margin-right: 10px;
+            font-size: 14px;
+            color: inherit;
+        }
+
     </style>
 </head>
 <body>
@@ -293,9 +333,9 @@
                 })
                 .then(response => response.json())
                 .then(data => {
-                    flightData = data.filter(flight => flight.ACode === 'CI' || flight.ACode === 'BR');  // 預設顯示 CI 和 BR 的航班
+                    flightData = data.filter(flight => flight.ACode === 'BR' || flight.ACode === 'CI' || flight.ACode === 'JX');  // 預設顯示 BR, CI 和 JX 的航班
                     generateAirlineLinks(flightData); // 動態生成航空公司按鈕
-                    displayFlights(flightData); // 預設顯示全部 CI 和 BR 的航班
+                    displayFlights(flightData); // 預設顯示全部 BR, CI 和 JX 的航班
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -306,10 +346,10 @@
             }
         }
 
-        // 根據 API 資料動態生成航空公司按鈕 (改為 <a>，並加上 logo)
         function generateAirlineLinks(flights) {
             let airlines = {};
 
+            // 遍历航班数据，收集航空公司信息
             flights.forEach(flight => {
                 if (!airlines[flight.ACode]) {
                     airlines[flight.ACode] = flight.AName + ` (${flight.ACode})`;
@@ -318,30 +358,24 @@
 
             let linksHTML = '';
 
-            // 確保 BR (長榮航空) 顯示在最前面
-            if (airlines['BR']) {
-                const logoUrlBR = `https://www.taoyuan-airport.com/uploads/airlogo/BR.gif`;
-                linksHTML += `
-                    <a href="javascript:void(0);" onclick="filterFlights('BR')">
-                        <img alt="" width="28" height="20" src="${logoUrlBR}">
-                        ${airlines['BR']}
-                    </a>`;
-                delete airlines['BR'];  // 顯示後將其從 airlines 中移除，以避免重複
-            }
+            // 只处理 BR, CI, JX
+            const airlineCodes = ['BR', 'CI', 'JX'];
 
-            // 生成其餘航空公司按鈕
-            for (let code in airlines) {
-                const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${code}.gif`;
-                linksHTML += `
-                    <a href="javascript:void(0);" onclick="filterFlights('${code}')">
-                        <img alt="" width="28" height="20" src="${logoUrl}">
-                        ${airlines[code]}
-                    </a>`;
-            }
+            // 按顺序生成航空公司按钮，只显示 BR, CI, JX
+            airlineCodes.forEach(code => {
+                if (airlines[code]) {
+                    const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${code}.gif`;
+                    linksHTML += `
+                        <a href="javascript:void(0);" onclick="filterFlights('${code}')" class="airline-link">
+                            <img alt="${code} Logo" width="28" height="20" src="${logoUrl}">
+                            <span class="airline-full">${airlines[code]}</span>
+                            <span class="airline-short">${code}</span>
+                        </a>`;
+                }
+            });
 
             document.getElementById('airlineButtons').innerHTML = linksHTML;
         }
-
 
         // 根據 ACode 過濾航班資料並顯示結果到表格，並生成航班號按鈕
         function filterFlights(airlineCode) {
@@ -361,12 +395,15 @@
             let flightButtonContent = "";
 
             flights.forEach(flight => {
-                let btnClass = flight.ACode === 'BR' ? 'btn-outline-br' : 'btn-outline-ci';
+                let btnClass = flight.ACode === 'BR' ? 'btn-outline-br' :
+                            flight.ACode === 'CI' ? 'btn-outline-ci' :
+                            'btn-outline-jx';  // 为 JX 设置按钮样式
                 flightButtonContent += `<a href="javascript:void(0);" class="btn ${btnClass} btn-no-hover m-1" onclick="filterFlightByNumber('${flight.FlightNo}', '${flight.ACode}')">${flight.FlightNo}</a>`;
             });
 
             document.getElementById("flightButtons").innerHTML = flightButtonContent;
         }
+
 
 
         // 根據具體的 FlightNo 過濾航班
@@ -389,15 +426,15 @@
 
         // 顯示航班資料到表格，並在航班號前加上 logo
         function displayFlights(flights, ACode) {
-            // 確定表格頭部的樣式類根據傳遞進來的 ACode
-            let airlineClass = 'table-light';  // 預設為 table-light
+            let airlineClass = 'table-dark';  // 預設為 table-dark
             if (ACode === 'BR') {
                 airlineClass = 'table-br';
             } else if (ACode === 'CI') {
                 airlineClass = 'table-ci';
+            } else if (ACode === 'JX') {
+                airlineClass = 'table-jx';  // 为 JX 设置表格样式
             }
 
-            // 直接在 thead 中添加相应的 class
             let tableContent = `
             <table class="table table-sm table-striped table-borderless">
                 <thead class="${airlineClass}">
@@ -412,10 +449,7 @@
                 <tbody>`;
 
             flights.forEach(flight => {
-                const cityDisplay = currentLanguage === 'zh' 
-                    ? `${flight.CityName}`
-                    : `${flight.CityEname}`;
-
+                const cityDisplay = currentLanguage === 'zh' ? flight.CityName : flight.CityEname;
                 const terminalDisplay = flight.BNO ? `T${flight.BNO}` : '';
                 const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${flight.ACode}.gif`;
 
@@ -434,7 +468,6 @@
 
             tableContent += `</tbody></table>`;
 
-            // 將表格內容插入到 output 區域
             document.getElementById("output").innerHTML = tableContent;
         }
 
