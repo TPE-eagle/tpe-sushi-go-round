@@ -342,63 +342,59 @@
             }
         }
 
-        // Fetch API 資料
         function fetchData() {
-            const currentRange = getCurrentTimeRangeInUTC8();
+            const postData = {
+                "ODate": getUTC8Date(), // 只需要當天的日期
+                "OTimeOpen": null,
+                "OTimeClose": null,
+                "BNO": null,
+                "AState": "A",
+                "language": currentLanguage === "zh" ? "ch" : currentLanguage,
+                "keyword": ""
+            };
 
-            if (currentRange) {
-                const postData = {
-                    "ODate": getUTC8Date(), // 當前 UTC+8 日期，格式為 "YYYY/MM/DD"
-                    "OTimeOpen": currentRange.start,
-                    "OTimeClose": currentRange.end,
-                    "BNO": null,
-                    "AState": "A",
-                    "language": currentLanguage === "zh" ? "ch" : currentLanguage, // 根據語言切換 API 查詢語言
-                    "keyword": "" // 可選關鍵字，這裡已經去掉輸入框，所以保留空字串
-                };
-
-                // 使用 Fetch 發送請求
-                fetch("https://www.taoyuan-airport.com/api/api/flight/a_flight", {
-                    body: JSON.stringify(postData),
-                    cache: "default",
-                    headers: {
-                        "Accept": "application/json, text/plain, */*",
-                        "Accept-Language": "en-US,en;q=0.9",
-                        "Content-Type": "application/json",
-                    },
-                    method: "POST",
-                    mode: "cors",
-                    redirect: "follow",
-                    referrerPolicy: "strict-origin-when-cross-origin"
-                })
-                .then(response => response.json())
-                .then(data => {
-                    // 先透過航空公司 (ACode) 進行排序，再透過航班號碼 (FlightNo) 進行排序
-                    data.sort((a, b) => {
-                        // 先比較 ACode
-                        if (a.ACode < b.ACode) return -1;
-                        if (a.ACode > b.ACode) return 1;
-                        // 如果 ACode 相同，則比較 FlightNo
-                        const flightNumberA = parseInt(a.FlightNo.match(/\d+/), 10); // 提取航班號中的數字
-                        const flightNumberB = parseInt(b.FlightNo.match(/\d+/), 10); // 提取航班號中的數字
-                        return flightNumberA - flightNumberB; // 按數字順序排序
-                    });
-
-
-                    flightData = data.filter(flight =>
-                        (flight.ACode === 'BR' || flight.ACode === 'CI' || flight.ACode === 'JX') &&
-                        (flight.Memo && !flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
-                    );
-                    generateAirlineLinks(flightData); // 動態生成航空公司按鈕
-                    displayFlights(flightData); // 預設顯示全部 BR, CI 和 JX 的航班
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    document.getElementById("output").innerText = translations[currentLanguage]["error"];
+            fetch("https://www.taoyuan-airport.com/api/api/flight/a_flight", {
+                body: JSON.stringify(postData),
+                cache: "default",
+                headers: {
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Content-Type": "application/json",
+                },
+                method: "POST",
+                mode: "cors",
+                redirect: "follow",
+                referrerPolicy: "strict-origin-when-cross-origin"
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 先透過航空公司 (ACode) 進行排序，再透過航班號碼 (FlightNo) 進行排序
+                data.sort((a, b) => {
+                    // 先比較 ACode
+                    if (a.ACode < b.ACode) return -1;
+                    if (a.ACode > b.ACode) return 1;
+                    // 如果 ACode 相同，則比較 FlightNo
+                    const flightNumberA = parseInt(a.FlightNo.match(/\d+/), 10); // 提取航班號中的數字
+                    const flightNumberB = parseInt(b.FlightNo.match(/\d+/), 10); // 提取航班號中的數字
+                    return flightNumberA - flightNumberB; // 按數字順序排序
                 });
-            } else {
-                document.getElementById("output").innerText = translations[currentLanguage]["noTimeRange"];
-            }
+
+
+                flightData = data.filter(flight =>
+                    (flight.ACode === 'BR' || flight.ACode === 'CI' || flight.ACode === 'JX') &&
+                    (flight.Memo && !flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
+                );
+
+                // 先過濾取消航班，再過濾時間範圍內的航班
+                flightData = filterFlightsByTime(flightData);
+
+                generateAirlineLinks(flightData); // 動態生成航空公司按鈕
+                displayFlights(flightData); // 顯示航班
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById("output").innerText = translations[currentLanguage]["error"];
+            });
         }
 
         function generateAirlineLinks(flights) {
@@ -443,6 +439,21 @@
                 generateFlightNumberButtons(currentFilteredFlights);  // 生成航班號按鈕
                 displayFlights(currentFilteredFlights, airlineCode);  // 傳遞 airlineCode 作為 ACode 參數
             }
+        }
+
+        function filterFlightsByTime(flights) {
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);  // 過去1小時
+            const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000); // 未來1小時
+
+            return flights.filter(flight => {
+                const ODateTime = new Date(`${flight.ODate.replace(/\//g, '-')}T${flight.OTime}`);
+                const RDateTime = flight.RDate && flight.RTime ? new Date(`${flight.RDate.replace(/\//g, '-')}T${flight.RTime}`) : null;
+
+                // 判断 ODate+OTime 或 RDate+RTime 是否在過去一小時和未來一小時之間
+                return (ODateTime >= oneHourAgo && ODateTime <= oneHourLater) ||
+                    (RDateTime && RDateTime >= oneHourAgo && RDateTime <= oneHourLater);
+            });
         }
 
         // 根據具體的 FlightNo 生成航班號按鈕
