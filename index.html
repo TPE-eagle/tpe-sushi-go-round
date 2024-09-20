@@ -153,6 +153,21 @@
             color: inherit;
         }
 
+        @keyframes blink {
+            0% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0;
+            }
+            100% {
+                opacity: 1;
+            }
+        }
+
+        .blinking-text {
+            animation: blink 1s infinite;
+        }
     </style>
 </head>
 <body>
@@ -204,6 +219,7 @@
                 "noFlights": "沒有找到符合條件的航班。",
                 "noTimeRange": "無法匹配時間範圍",
                 "querySuccess": "請點擊上方按鈕以查看航班資料。",
+                "loading": "資料載入中...🧳",
                 "error": "查詢失敗，請稍後再試。",
                 "tableHeaders": {
                     "FlightNumber": "航班號",
@@ -223,6 +239,7 @@
                 "noFlights": "No matching flights found.",
                 "noTimeRange": "Cannot match the time range",
                 "querySuccess": "Please click the buttons above to view flight data.",
+                "loading": "Data loading...🧳",
                 "error": "Query failed, please try again later.",
                 "tableHeaders": {
                     "FlightNumber": "Flight Number",
@@ -242,6 +259,7 @@
                 "noFlights": "一致するフライトが見つかりません。",
                 "noTimeRange": "時間範囲が一致しません。",
                 "querySuccess": "上記のボタンをクリックしてフライトデータを表示してください。",
+                "loading": "データを読み込み中...🧳",
                 "error": "クエリに失敗しました。後でもう一度やり直してください。",
                 "tableHeaders": {
                     "FlightNumber": "フライト番号",
@@ -343,6 +361,11 @@
         }
 
         function fetchData() {
+            document.getElementById("output").innerHTML = `
+                <div class="blinking-text text-center">
+                    ${translations[currentLanguage]["loading"]}
+                </div>`;
+
             const postData = {
                 "ODate": getUTC8Date(), // 只需要當天的日期
                 "OTimeOpen": null,
