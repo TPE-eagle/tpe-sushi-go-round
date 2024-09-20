@@ -361,6 +361,7 @@
         }
 
         function fetchData() {
+            document.getElementById('airlineButtons').innerHTML = '';
             document.getElementById("output").innerHTML = `
                 <div class="blinking-text text-center">
                     ${translations[currentLanguage]["loading"]}
