@@ -353,7 +353,7 @@
             const date = getUTC8Date();
             const timeRange = getCurrentTimeRangeInUTC8();
             if (timeRange) {
-                const apiParamsText = `Query date: ${date}, Time range: ${timeRange.start} - ${timeRange.end}`;
+                const apiParamsText = `Date: ${date}, Range: ${timeRange.start} - ${timeRange.end}`;
                 document.getElementById("apiParams").innerText = apiParamsText;
             } else {
                 document.getElementById("apiParams").innerText = "No time range available";
