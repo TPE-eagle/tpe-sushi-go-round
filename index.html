@@ -457,7 +457,10 @@
             currentFilteredFlights = flightData.filter(flight => flight.ACode === airlineCode);
 
             if (currentFilteredFlights.length === 0) {
-                document.getElementById("output").innerText = translations[currentLanguage]["noFlights"];
+                document.getElementById("output").innerHTML = `
+                    <div class="text-center">
+                        ${translations[currentLanguage]["noFlights"]}
+                    </div>`;
                 document.getElementById("flightButtons").innerHTML = ""; // 清空航班號按鈕
             } else {
                 generateFlightNumberButtons(currentFilteredFlights);  // 生成航班號按鈕
@@ -586,7 +589,14 @@
 
             tableContent += `</tbody></table>`;
 
-            document.getElementById("output").innerHTML = tableContent;
+            if(flights.length === 0){
+                document.getElementById("output").innerHTML = `
+                    <div class="text-center">
+                        ${translations[currentLanguage]["noFlights"]}
+                    </div>`;
+            }else{
+                document.getElementById("output").innerHTML = tableContent;
+            }
         }
 
         // 監聽窗口大小變化並重新渲染表格
