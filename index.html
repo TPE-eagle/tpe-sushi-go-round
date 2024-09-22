@@ -427,7 +427,11 @@
                 flightData = filterFlightsByTime(flightData);
 
                 generateAirlineLinks(flightData); // 動態生成航空公司按鈕
-                filterFlights()
+                let ACode = null;
+                if(checkCookie('ACode')) {
+                    ACode = getCookie('ACode')
+                }
+                filterFlights(ACode)
                 // displayFlights(flightData); // 顯示航班
             })
             .catch(error => {
@@ -475,8 +479,10 @@
         // 根據 ACode 過濾航班資料並顯示結果到表格，並生成航班號按鈕
         function filterFlights(airlineCode=null) {
             if(airlineCode!=null){
+                setCookie('ACode', airlineCode);
                 currentFilteredFlights = flightData.filter(flight => flight.ACode === airlineCode);
             }else{
+                deleteCookie('ACode')
                 currentFilteredFlights = flightData;
             }
 
@@ -626,6 +632,28 @@
             }else{
                 document.getElementById("output").innerHTML = tableContent;
             }
+        }
+
+        function setCookie(name, value, days) {
+            const d = new Date();
+            d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = "expires=" + d.toUTCString();
+            document.cookie = name + "=" + value + ";" + expires + ";path=/";
+        }
+
+        function getCookie(name) {
+            const value = "; " + document.cookie;
+            const parts = value.split("; " + name + "=");
+            if (parts.length === 2) return parts.pop().split(";").shift();
+        }
+
+        function deleteCookie(name) {
+            document.cookie = name + "=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        }
+
+        function checkCookie(name) {
+            const cookie = getCookie(name);
+            return cookie ? true : false;
         }
 
         // 監聽窗口大小變化並重新渲染表格
