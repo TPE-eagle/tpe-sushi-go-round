@@ -30,6 +30,12 @@
     <meta name="twitter:description" content="Airport screens too small? Don’t sweat it – just use your phone to find your bags like a boss. 😎">
     <meta name="twitter:image" content="https://tpe-eagle.github.io/tpe-sushi-go-round/android-chrome-512x512.png">
 
+    <!-- Preconnect for Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Default styles here -->
+    <style id="dynamic-font"></style>
+
     <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -175,6 +181,24 @@
 
         .blinking-text {
             animation: blink 1s infinite;
+        }
+
+        .noto-sans-tc {
+            font-family: "Noto Sans TC", sans-serif;
+            font-weight: 400;
+            font-style: normal;
+        }
+
+        .noto-sans-jp {
+            font-family: "Noto Sans JP", sans-serif;
+            font-weight: 400;
+            font-style: normal;
+        }
+
+        .noto-sans {
+            font-family: "Noto Sans", sans-serif;
+            font-weight: 400;
+            font-style: normal;
         }
 
         #refresh-icon {
@@ -330,14 +354,33 @@
             } else {
                 currentLanguage = 'en';  // 設置為英文
             }
+            changeLanguageFont();
             updateLanguageText();  // 更新頁面文字和 meta 標籤
             fetchData(); // 根據偵測到的語言重新載入資料
             updateApiParams(); // 更新 API 查詢參數顯示
         }
 
+        function changeLanguageFont(){
+            const body = document.body;
+            // Remove all noto-sans classes
+            body.classList.remove('noto-sans', 'noto-sans-tc', 'noto-sans-jp');
+            if (currentLanguage == 'zh') {
+                fontLink = "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@100..900&display=swap";
+                body.classList.add('noto-sans-tc');
+            } else if (currentLanguage == 'jp') {
+                fontLink = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100..900&display=swap";
+                body.classList.add('noto-sans-jp');
+            }else{
+                fontLink = "https://fonts.googleapis.com/css2?family=Noto+Sans:wght@100..900&display=swap";
+                body.classList.add('noto-sans');
+            }
+            document.getElementById('dynamic-font').innerHTML = `@import url('${fontLink}');`; // 切換字形
+        }
+
         // 切換語言
         function changeLanguage(lang) {
             currentLanguage = lang;
+            changeLanguageFont();
             updateLanguageText();  // 更新頁面文字和 meta 標籤
             fetchData();  // 重新發送請求
             updateApiParams();  // 更新 API 查詢參數顯示
@@ -391,7 +434,8 @@
             document.getElementById("output").innerHTML = `
                 <div class="blinking-text text-center">
                     ${translations[currentLanguage]["loading"]}
-                </div>`;
+                </div>
+                `;
 
             const postData = {
                 "ODate": getUTC8Date(), // 只需要當天的日期
@@ -607,8 +651,8 @@
             <table class="table table-sm table-striped table-borderless">
                 <thead class="${airlineClass}">
                     <tr>
-                        <th class="text-center">${flightNumberHeader}</th>
-                        <th class="text-center">${departureHeader}</th>
+                        <th>${flightNumberHeader}</th>
+                        <th>${departureHeader}</th>
                         <th class="text-center">${terminalHeader}</th>
                         <th class="text-center">${translations[currentLanguage]["tableHeaders"]["Gate"]}</th>
                         <th class="text-center">${carouselHeader}</th>
