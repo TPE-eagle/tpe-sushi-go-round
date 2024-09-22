@@ -52,6 +52,58 @@
             margin-right: 10px;
             font-size: 14px;
         }
+
+        #title {
+            animation: dropShadowAnimation 2s ease-out forwards;
+        }
+
+        /* 定義動畫 */
+        @media (max-width: 768px) {
+            @keyframes dropShadowAnimation {
+                0% {
+                    filter: drop-shadow(0 0 0 transparent);
+                    transform: rotateX(0deg) rotateY(0deg);
+                    transform-style: preserve-3d;
+                    letter-spacing: 20px;
+                }
+                20% {
+                    filter: drop-shadow(2px 2px 4px #AAAAAA);
+                    transform: rotateX(0deg) rotateY(0deg);
+                    transform-style: preserve-3d;
+                    letter-spacing: 5px;
+                }
+                100% {
+                    filter: drop-shadow(5px 5px 10px #333333);
+                    transform: rotateX(-20deg) rotateY(10deg);
+                    transform-style: preserve-3d;
+                    letter-spacing: 0px;
+                }
+            }
+        }
+
+        @media (min-width: 768px) {
+            @keyframes dropShadowAnimation {
+                0% {
+                    filter: drop-shadow(0 0 0 transparent);
+                    transform: rotateX(0deg) rotateY(0deg);
+                    transform-style: preserve-3d;
+                    letter-spacing: 80px;
+                }
+                20% {
+                    filter: drop-shadow(2px 2px 4px #AAAAAA);
+                    transform: rotateX(0deg) rotateY(0deg);
+                    transform-style: preserve-3d;
+                    letter-spacing: 20px;
+                }
+                100% {
+                    filter: drop-shadow(5px 5px 10px #333333);
+                    transform: rotateX(-20deg) rotateY(10deg);
+                    transform-style: preserve-3d;
+                    letter-spacing: 0px;
+                }
+            }
+        }
+
         #flightButtons a {
             margin-right: 5px;
         }
