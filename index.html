@@ -630,12 +630,11 @@
             flights.sort((a, b) => parseInt(a.FlightNo) - parseInt(b.FlightNo));
 
             let flightButtonContent = "";
-
             flights.forEach(flight => {
                 let btnClass = flight.ACode === 'BR' ? 'btn-outline-br' :
                             flight.ACode === 'CI' ? 'btn-outline-ci' :
                             'btn-outline-jx';  // 為 JX 設置按鈕樣式
-                flightButtonContent += `<a href="javascript:void(0);" class="btn ${btnClass} btn-no-hover m-1" onclick="filterFlightByNumber('${flight.FlightNo}', '${flight.ACode}')">${flight.FlightNo}</a>`;
+                flightButtonContent += `<a href="javascript:void(0);" class="btn ${btnClass} ${isSmallScreen()?'btn-sm':''} btn-no-hover m-1" onclick="filterFlightByNumber('${flight.FlightNo}', '${flight.ACode}')">${flight.FlightNo}</a>`;
             });
 
             document.getElementById("flightButtons").innerHTML = flightButtonContent;
