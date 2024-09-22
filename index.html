@@ -168,10 +168,19 @@
         .blinking-text {
             animation: blink 1s infinite;
         }
+
+        #refresh-icon {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            /* font-size: 24px; */
+        }
     </style>
 </head>
 <body>
-
+    <div id="refresh-icon"></div>
     <div class="container">
         <h1 id="title" class="text-center my-4"></h1>
 
@@ -220,6 +229,7 @@
                 "allFlights": "全部航班",
                 "allFlightsShort": "ALL",
                 "loading": "資料載入中...🧳",
+                "refreshing": "🔄 正在重新整理...",
                 "error": "查詢失敗，請稍後再試。",
                 "tableHeaders": {
                     "FlightNumber": "航班號",
@@ -240,6 +250,7 @@
                 "allFlights": "All Flights",
                 "allFlightsShort": "ALL",
                 "loading": "Data loading...🧳",
+                "refreshing": "🔄 Refreshing...",
                 "error": "Query failed, please try again later.",
                 "tableHeaders": {
                     "FlightNumber": "Flight Number",
@@ -260,6 +271,7 @@
                 "allFlights": "全フライト",
                 "allFlightsShort": "ALL",
                 "loading": "データを読み込み中...🧳",
+                "refreshing": "🔄 再読み込み中...",
                 "error": "クエリに失敗しました。後でもう一度やり直してください。",
                 "tableHeaders": {
                     "FlightNumber": "フライト番号",
@@ -277,6 +289,7 @@
 
         // 更新頁面上的文字
         function updateLanguageText() {
+            document.getElementById("refresh-icon").innerText = translations[currentLanguage]["refreshing"];
             document.getElementById("title").innerText = translations[currentLanguage]["title"];
 
             // 動態更新 Open Graph 和 Twitter Meta 標籤
@@ -542,6 +555,7 @@
 
         // 根據屏幕大小更新表頭並顯示表格
         function displayFlights(flights, ACode=null) {
+            document.getElementById('refresh-icon').style.display = 'none';
             if (ACode !== null) {
                 currentACode = ACode;  // 保存當前 ACode
             }
@@ -639,6 +653,56 @@
                 window.location.reload();
             }
         });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            let startY = 0; // 開始滑動的 Y 座標
+            let isPulling = false; // 判斷是否在下拉
+            const refreshThreshold = 200; // 下拉多少距離觸發刷新
+            const refreshIcon = document.getElementById('refresh-icon');
+
+            // 偵測手指觸碰開始
+            document.addEventListener('touchstart', (event) => {
+                if (window.scrollY === 0) {
+                    startY = event.touches[0].clientY;
+                    isPulling = true;
+                }
+            });
+
+            // 偵測手指移動
+            document.addEventListener('touchmove', (event) => {
+                if (isPulling) {
+                    const currentY = event.touches[0].clientY;
+                    const distance = currentY - startY;
+
+                    if (distance > refreshThreshold) {
+                        refreshIcon.style.display = 'block'; // 顯示刷新圖示
+                    } else {
+                        refreshIcon.style.display = 'none'; // 隱藏圖示
+                    }
+                }
+            });
+
+            // 偵測手指離開螢幕
+            document.addEventListener('touchend', () => {
+                if (isPulling) {
+                    if (refreshIcon.style.display === 'block') {
+                        // 觸發刷新邏輯
+                        triggerRefresh();
+                    }
+                    isPulling = false;
+                }
+            });
+
+            function triggerRefresh() {
+                refreshIcon.style.display = 'block';
+                fetchData();
+                setTimeout(() => {
+                    // 模擬刷新完成後隱藏圖示
+                    refreshIcon.style.display = 'none';
+                }, 1500); // 模擬延遲 1.5 秒
+            }
+        });
+
     </script>
 
     <!-- Bootstrap JS -->
