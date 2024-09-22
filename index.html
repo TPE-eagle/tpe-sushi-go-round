@@ -217,6 +217,8 @@
                 "title": "台北迴轉壽司🍣",
                 "description": "用手機快速幫你查桃園機場行李轉盤，讓咱們空勤組員快速下班！",
                 "noFlights": "沒有找到符合條件的航班。",
+                "allFlights": "全部航班",
+                "allFlightsShort": "ALL",
                 "loading": "資料載入中...🧳",
                 "error": "查詢失敗，請稍後再試。",
                 "tableHeaders": {
@@ -235,6 +237,8 @@
                 "title": "Taipei sushi-go-round🍣",
                 "description": "Airport screens too small? Don’t sweat it – just use your phone to find your bags like a boss. 😎",
                 "noFlights": "No matching flights found.",
+                "allFlights": "All Flights",
+                "allFlightsShort": "ALL",
                 "loading": "Data loading...🧳",
                 "error": "Query failed, please try again later.",
                 "tableHeaders": {
@@ -253,6 +257,8 @@
                 "title": "台北回転寿司🍣",
                 "description": "携帯電話で桃園空港の荷物回転台をすばやく確認し、空勤組員を早く解放します！",
                 "noFlights": "一致するフライトが見つかりません。",
+                "allFlights": "全フライト",
+                "allFlightsShort": "ALL",
                 "loading": "データを読み込み中...🧳",
                 "error": "クエリに失敗しました。後でもう一度やり直してください。",
                 "tableHeaders": {
@@ -356,6 +362,7 @@
 
         function fetchData() {
             document.getElementById('airlineButtons').innerHTML = '';
+            document.getElementById("flightButtons").innerHTML = '';
             document.getElementById("output").innerHTML = `
                 <div class="blinking-text text-center">
                     ${translations[currentLanguage]["loading"]}
@@ -425,7 +432,12 @@
                 }
             });
 
-            let linksHTML = '';
+            let linksHTML = `
+                        <a href="javascript:void(0);" onclick="fetchData()" class="airline-link">
+                            <span style="font-size:20px; width:28px;">🛬</span>
+                            <span class="airline-full">${translations[currentLanguage]["allFlights"]}</span>
+                            <span class="airline-short">${translations[currentLanguage]["allFlightsShort"]}</span>
+                        </a>`;
 
             // 只處理 BR, CI, JX
             const airlineCodes = ['BR', 'CI', 'JX'];
