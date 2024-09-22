@@ -433,7 +433,7 @@
             });
 
             let linksHTML = `
-                        <a href="javascript:void(0);" onclick="fetchData()" class="airline-link">
+                        <a href="javascript:void(0);" onclick="filterFlights()" class="airline-link">
                             <span style="font-size:20px; width:28px;">🛬</span>
                             <span class="airline-full">${translations[currentLanguage]["allFlights"]}</span>
                             <span class="airline-short">${translations[currentLanguage]["allFlightsShort"]}</span>
@@ -459,8 +459,12 @@
         }
 
         // 根據 ACode 過濾航班資料並顯示結果到表格，並生成航班號按鈕
-        function filterFlights(airlineCode) {
-            currentFilteredFlights = flightData.filter(flight => flight.ACode === airlineCode);
+        function filterFlights(airlineCode=null) {
+            if(airlineCode!=null){
+                currentFilteredFlights = flightData.filter(flight => flight.ACode === airlineCode);
+            }else{
+                currentFilteredFlights = flightData;
+            }
 
             if (currentFilteredFlights.length === 0) {
                 document.getElementById("output").innerHTML = `
@@ -469,7 +473,11 @@
                     </div>`;
                 document.getElementById("flightButtons").innerHTML = ""; // 清空航班號按鈕
             } else {
-                generateFlightNumberButtons(currentFilteredFlights);  // 生成航班號按鈕
+                if(airlineCode!=null){
+                    generateFlightNumberButtons(currentFilteredFlights);  // 生成航班號按鈕
+                }else{
+                    document.getElementById("flightButtons").innerHTML = "";  // 清空 flightButtons 區域
+                }
                 displayFlights(currentFilteredFlights, airlineCode);  // 傳遞 airlineCode 作為 ACode 參數
             }
         }
@@ -533,8 +541,10 @@
         }
 
         // 根據屏幕大小更新表頭並顯示表格
-        function displayFlights(flights, ACode) {
-            currentACode = ACode;  // 保存當前 ACode
+        function displayFlights(flights, ACode=null) {
+            if (ACode !== null) {
+                currentACode = ACode;  // 保存當前 ACode
+            }
 
             // 判斷當前屏幕大小以決定表頭顯示
             const flightNumberHeader = isSmallScreen()
