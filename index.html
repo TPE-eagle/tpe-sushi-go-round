@@ -427,7 +427,8 @@
                 flightData = filterFlightsByTime(flightData);
 
                 generateAirlineLinks(flightData); // 動態生成航空公司按鈕
-                displayFlights(flightData); // 顯示航班
+                filterFlights()
+                // displayFlights(flightData); // 顯示航班
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -554,11 +555,9 @@
         }
 
         // 根據屏幕大小更新表頭並顯示表格
-        function displayFlights(flights, ACode=null) {
+        function displayFlights(flights, ACode) {
             document.getElementById('refresh-icon').style.display = 'none';
-            if (ACode !== null) {
-                currentACode = ACode;  // 保存當前 ACode
-            }
+            currentACode = ACode;
 
             // 判斷當前屏幕大小以決定表頭顯示
             const flightNumberHeader = isSmallScreen()
