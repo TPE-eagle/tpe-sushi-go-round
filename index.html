@@ -267,7 +267,7 @@
                 "refreshing": "🔄 正在重新整理...",
                 "error": "查詢失敗，請稍後再試。",
                 "tableHeaders": {
-                    "FlightNumber": "航班號",
+                    "FlightNumber": "航班編號",
                     "FlightNumberShort": "航班",
                     "Departure": "出發地",
                     "DepartureShort": "出發地",
@@ -651,7 +651,7 @@
                 <thead class="${airlineClass}">
                     <tr>
                         <th>${flightNumberHeader}</th>
-                        <th>${departureHeader}</th>
+                        <th ${isSmallScreen() ? 'class="text-center"' : ''}>${departureHeader}</th>
                         <th class="text-center">${terminalHeader}</th>
                         <th class="text-center">${translations[currentLanguage]["tableHeaders"]["Gate"]}</th>
                         <th class="text-center">${carouselHeader}</th>
@@ -670,7 +670,7 @@
                             <img alt="" width="28" height="20" src="${logoUrl}">
                             ${flight.ACode}${flight.FlightNo}
                         </td>
-                        <td>${cityDisplay}</td>
+                        <td ${isSmallScreen() ? 'class="text-center"' : ''}>${cityDisplay}</td>
                         <td class="text-center">${terminalDisplay}</td>
                         <td class="text-center">${flight.Gate}</td>
                         <td class="text-center">${flight.StopCode}</td>
