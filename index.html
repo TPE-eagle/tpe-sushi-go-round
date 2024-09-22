@@ -715,13 +715,11 @@
                 const cityDisplay = isSmallScreen() ? flight.CityCode : (currentLanguage === 'zh' ? flight.CityName : flight.CityEname);
                 const terminalDisplay = flight.BNO ? `T${flight.BNO}` : '';
                 const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${flight.ACode}.gif`;
+                const displayFlightNo = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
 
                 tableContent += `
                     <tr>
-                        <td>
-                            <img alt="" width="28" height="20" src="${logoUrl}">
-                            ${flight.ACode}${flight.FlightNo}
-                        </td>
+                        <td><img alt="" width="28" height="20" src="${logoUrl}">${displayFlightNo}</td>
                         <td ${isSmallScreen() ? 'class="text-center"' : ''}>${cityDisplay}</td>
                         <td class="text-center">${terminalDisplay}</td>
                         <td class="text-center">${flight.Gate}</td>
