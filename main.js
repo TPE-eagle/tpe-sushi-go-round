@@ -258,7 +258,7 @@ function generateAirlineLinks(flights) {
     });
 
     let linksHTML = `
-                <a href="javascript:void(0);" onclick="filterFlights()" class="airline-link">
+                <a href="#" data-airline="" class="airline-link">
                     <span style="font-size:20px; width:28px;">🛬</span>
                     <span class="airline-full">${translations[currentLanguage]["allFlights"]}</span>
                     <span class="airline-short">${translations[currentLanguage]["allFlightsShort"]}</span>
@@ -272,7 +272,7 @@ function generateAirlineLinks(flights) {
         if (airlines[code]) {
             const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${code}.gif`;
             linksHTML += `
-                <a href="javascript:void(0);" onclick="filterFlights('${code}')" class="airline-link">
+                <a href="#" data-airline="${code}" class="airline-link">
                     <img alt="${code} Logo" width="28" height="20" src="${logoUrl}">
                     <span class="airline-full">${airlines[code]}</span>
                     <span class="airline-short">${code}</span>
@@ -334,7 +334,7 @@ function generateFlightNumberButtons(flights) {
         let btnClass = flight.ACode === 'BR' ? 'btn-outline-br' :
                     flight.ACode === 'CI' ? 'btn-outline-ci' :
                     'btn-outline-jx';  // 為 JX 設置按鈕樣式
-        flightButtonContent += `<a href="javascript:void(0);" class="btn ${btnClass} ${isSmallScreen()?'btn-sm':''} btn-no-hover m-1" onclick="filterFlightByNumber('${flight.FlightNo}', '${flight.ACode}')">${flight.FlightNo}</a>`;
+        flightButtonContent += `<a href="#" class="btn ${btnClass} ${isSmallScreen()?'btn-sm':''} btn-no-hover m-1" data-flight="${flight.FlightNo}" data-acode="${flight.ACode}">${flight.FlightNo}</a>`;
     });
 
     document.getElementById("flightButtons").innerHTML = flightButtonContent;
@@ -484,6 +484,37 @@ document.addEventListener('visibilitychange', function() {
         window.location.reload();
     }
 });
+
+const elementsWithLang = document.querySelectorAll('[data-lang]');
+
+elementsWithLang.forEach(element => {
+  element.addEventListener('click', function(event) {
+    event.preventDefault();
+    const lang = element.getAttribute('data-lang');
+    changeLanguage(lang);
+  });
+});
+
+document.getElementById('airlineButtons').addEventListener('click', function(event) {
+  const link = event.target.closest('a[data-airline]');
+  if (link) {
+    event.preventDefault();
+    const airline = link.getAttribute('data-airline') || null;
+    filterFlights(airline);
+  }
+});
+
+document.getElementById('flightButtons').addEventListener('click', function(event) {
+  const link = event.target.closest('a[data-flight]');
+  if (link) {
+    event.preventDefault();
+    const flightNumber = link.getAttribute('data-flight');
+    const ACode = link.getAttribute('data-acode');
+    filterFlightByNumber(flightNumber, ACode);
+  }
+});
+
+
 
 document.addEventListener('DOMContentLoaded', () => {
     let startY = 0; // 開始滑動的 Y 座標
