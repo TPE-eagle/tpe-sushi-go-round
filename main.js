@@ -1,5 +1,4 @@
-import './style.css'
-import * as bootstrap from 'bootstrap'
+import './style.scss'
 
 // Constants
 const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';

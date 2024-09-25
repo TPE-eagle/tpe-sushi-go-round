@@ -1,4 +1,23 @@
-@import 'node_modules/bootstrap/scss/bootstrap.scss';
+// Import Bootstrap functions and variables
+@import "bootstrap/scss/functions";
+@import "bootstrap/scss/variables";
+@import "bootstrap/scss/variables-dark";
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/mixins";
+@import "bootstrap/scss/utilities";
+
+// Import only the necessary Bootstrap components
+@import "bootstrap/scss/root";
+@import "bootstrap/scss/reboot";
+@import "bootstrap/scss/type";
+@import "bootstrap/scss/images";
+@import "bootstrap/scss/containers";
+@import "bootstrap/scss/grid";
+@import "bootstrap/scss/tables";
+@import "bootstrap/scss/buttons";
+
+// Utilities API
+@import "bootstrap/scss/utilities/api";
 
 :root {
   --color-br: #4b7d6b;
@@ -11,7 +30,7 @@
 
 /* Global Styles */
 body {
-  overflow-x: hidden; /* Prevent horizontal scrollbar */
+  overflow-x: hidden;
 }
 
 /* Title Animation */
@@ -30,12 +49,12 @@ body {
     letter-spacing: 80px;
   }
   20% {
-    filter: drop-shadow(2px 2px 4px #AAAAAA);
+    filter: drop-shadow(2px 2px 4px var(--shadow-light));
     transform: rotateX(0deg) rotateY(0deg) translateZ(0);
     letter-spacing: 20px;
   }
   100% {
-    filter: drop-shadow(5px 5px 10px #333333);
+    filter: drop-shadow(5px 5px 10px var(--shadow-dark));
     transform: rotateX(-20deg) rotateY(10deg) translateZ(20px);
     letter-spacing: 0px;
   }
@@ -44,10 +63,6 @@ body {
 /* Footer Styles */
 #footer {
   text-align: center;
-}
-
-#footer img {
-  vertical-align: middle;
 }
 
 .lang-switch a {
@@ -87,19 +102,19 @@ body {
 .btn-outline-br:hover, .btn-outline-br.active,
 .btn-outline-ci:hover, .btn-outline-ci.active,
 .btn-outline-jx:hover, .btn-outline-jx.active {
-  color: var(--color-white) !important;
+  color: var(--color-white);
 }
 
 .btn-outline-br:hover, .btn-outline-br.active {
-  background-color: var(--color-br) !important;
+  background-color: var(--color-br);
 }
 
 .btn-outline-ci:hover, .btn-outline-ci.active {
-  background-color: var(--color-ci) !important;
+  background-color: var(--color-ci);
 }
 
 .btn-outline-jx:hover, .btn-outline-jx.active {
-  background-color: var(--color-jx) !important;
+  background-color: var(--color-jx);
 }
 
 /* Table Styles */
@@ -202,12 +217,12 @@ body {
       letter-spacing: 20px;
     }
     20% {
-      filter: drop-shadow(2px 2px 4px #AAAAAA);
+      filter: drop-shadow(2px 2px 4px var(--shadow-light));
       transform: rotateX(0deg) rotateY(0deg) translateZ(0);
       letter-spacing: 5px;
     }
     100% {
-      filter: drop-shadow(5px 5px 10px #333333);
+      filter: drop-shadow(5px 5px 10px var(--shadow-dark));
       transform: rotateX(-20deg) rotateY(10deg) translateZ(10px);
       letter-spacing: 0px;
     }
