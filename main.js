@@ -165,7 +165,18 @@ function changeLanguageFont() {
     body.classList.remove('noto-sans', 'noto-sans-tc', 'noto-sans-jp');
     body.classList.add(`noto-sans${fontFamily.toLowerCase()}`);
     
-    document.getElementById('dynamic-font').innerHTML = `@import url('${fontLink}');`;
+    // Remove existing font link if it exists
+    const existingLink = document.getElementById('dynamic-font');
+    if (existingLink) {
+        existingLink.remove();
+    }
+
+    // Create and append new link element
+    const linkElement = document.createElement('link');
+    linkElement.id = 'dynamic-font';
+    linkElement.rel = 'stylesheet';
+    linkElement.href = fontLink;
+    document.head.appendChild(linkElement);
 }
 
 function changeLanguage(lang) {
