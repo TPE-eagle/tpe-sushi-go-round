@@ -106,11 +106,11 @@ function renderApp() {
                     <a href="#" data-lang="jp">🇯🇵 日本語</a>
                 </div>
                 <div class="footer-container">
-                    <div class="no-color-link footer-text text-muted fs-6 fw-light">
-                        Data source: <a href="https://www.taoyuan-airport.com/flight_arrival" class="text-muted fs-6 fw-light text-decoration-underline">Taoyuan International Airport</a>
+                    <div class="no-color-link footer-text text-muted fs-6 fs-sm-7 fw-light">
+                        Data source: <a href="https://www.taoyuan-airport.com/flight_arrival" class="text-muted fs-6 fs-sm-7 fw-light text-decoration-underline">Taoyuan International Airport</a>
                     </div>
-                    <div id="apiParams" class="footer-text text-muted fs-6 fw-light"></div>
-                    <div class="footer-text">
+                    <div id="apiParams" class="footer-text text-muted fs-6 fs-sm-7 fw-light"></div>
+                    <div class="footer-text fs-6 fs-sm-7">
                         Made by EVA Pilot with <span style="color: red;">❤️</span>
                     </div>
                 </div>

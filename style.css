@@ -172,6 +172,11 @@ body {
   transform: translateX(-50%);
 }
 
+/* Custom fs-7 class for smaller font size */
+.fs-7 {
+  font-size: 0.875rem !important;
+}
+
 /* Media Queries */
 @media (max-width: 768px) {
   @keyframes dropShadowAnimation {
@@ -202,5 +207,10 @@ body {
   }
   .airline-short {
     display: inline;
+  }
+
+  /* Apply smaller font size to footer text on small screens */
+  .fs-sm-7 {
+    font-size: 0.875rem !important;
   }
 }
