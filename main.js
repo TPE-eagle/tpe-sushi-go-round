@@ -267,6 +267,16 @@ function fetchData() {
         
         const ACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
         filterFlights(ACode);
+
+        // Add the table-pop-up class after data is loaded
+        const outputTable = document.querySelector('#output table');
+        if (outputTable) {
+            outputTable.classList.add('table-pop-up');
+            // Remove the class after animation completes
+            setTimeout(() => {
+                outputTable.classList.remove('table-pop-up');
+            }, 500); // 500ms matches the animation duration in CSS
+        }
     })
     .catch(error => {
         console.error('Error:', error);
