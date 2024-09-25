@@ -10,59 +10,49 @@
 }
 
 /* Global Styles */
-/* body {
-  margin: 20px;
+body {
+  overflow-x: hidden; /* Prevent horizontal scrollbar */
 }
-
-a {
-  margin-right: 10px;
-  font-size: 14px;
-} */
 
 /* Title Animation */
 #title {
   animation: dropShadowAnimation 2s ease-out forwards;
+  padding: 20px;
+  margin: 20px 0;
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes dropShadowAnimation {
   0% {
     filter: drop-shadow(0 0 0 transparent);
-    transform: rotateX(0deg) rotateY(0deg);
-    transform-style: preserve-3d;
+    transform: rotateX(0deg) rotateY(0deg) translateZ(0);
     letter-spacing: 80px;
   }
   20% {
     filter: drop-shadow(2px 2px 4px #AAAAAA);
-    transform: rotateX(0deg) rotateY(0deg);
+    transform: rotateX(0deg) rotateY(0deg) translateZ(0);
     letter-spacing: 20px;
   }
   100% {
     filter: drop-shadow(5px 5px 10px #333333);
-    transform: rotateX(-20deg) rotateY(10deg);
+    transform: rotateX(-20deg) rotateY(10deg) translateZ(20px);
     letter-spacing: 0px;
   }
 }
 
-/* Flight Buttons */
-/* #flightButtons a {
-  margin-right: 5px;
-} */
-
 /* Footer Styles */
 #footer {
-  /* margin-top: 40px; */
   text-align: center;
 }
 
 #footer img {
-  /* margin-right: 10px; */
   vertical-align: middle;
 }
 
 .lang-switch a {
   text-decoration: none;
   margin: 0 10px;
-  /* font-size: 16px; */
   color: inherit;
 }
 
@@ -77,11 +67,6 @@ a {
   align-items: center;
   gap: 5px;
 }
-
-/* .footer-text {
-  margin: 0;
-  line-height: 1.2;
-} */
 
 /* Airline Button Styles */
 .btn-outline-br, .btn-outline-ci, .btn-outline-jx {
@@ -139,7 +124,6 @@ a {
   display: inline-flex;
   align-items: center;
   margin-right: 10px;
-  /* font-size: 14px; */
   color: inherit;
 }
 
@@ -193,16 +177,24 @@ a {
   @keyframes dropShadowAnimation {
     0% {
       filter: drop-shadow(0 0 0 transparent);
+      transform: rotateX(0deg) rotateY(0deg) translateZ(0);
       letter-spacing: 20px;
     }
     20% {
       filter: drop-shadow(2px 2px 4px #AAAAAA);
+      transform: rotateX(0deg) rotateY(0deg) translateZ(0);
       letter-spacing: 5px;
     }
     100% {
       filter: drop-shadow(5px 5px 10px #333333);
+      transform: rotateX(-20deg) rotateY(10deg) translateZ(10px);
       letter-spacing: 0px;
     }
+  }
+
+  #title {
+    padding: 10px;
+    margin: 10px 0;
   }
 
   .airline-full {
