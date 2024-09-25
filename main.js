@@ -278,7 +278,7 @@ function fetchData() {
         }
     })
     .catch(error => {
-        console.error('Error:', error);
+        // console.error('Error:', error);
         document.getElementById("output").innerText = translations[currentLanguage]["error"];
     });
 }
