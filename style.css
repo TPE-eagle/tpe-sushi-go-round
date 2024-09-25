@@ -1,171 +1,140 @@
 @import 'node_modules/bootstrap/scss/bootstrap.scss';
 
+:root {
+  --color-br: #4b7d6b;
+  --color-ci: #3e62ad;
+  --color-jx: #4e463f;
+  --color-white: #fff;
+  --shadow-light: rgba(170, 170, 170, 0.5);
+  --shadow-dark: rgba(51, 51, 51, 0.5);
+}
+
+/* Global Styles */
 body {
   margin: 20px;
 }
+
 a {
   margin-right: 10px;
   font-size: 14px;
 }
 
+/* Title Animation */
 #title {
   animation: dropShadowAnimation 2s ease-out forwards;
 }
 
-/* 定義動畫 */
-@media (max-width: 768px) {
-  @keyframes dropShadowAnimation {
-      0% {
-          filter: drop-shadow(0 0 0 transparent);
-          transform: rotateX(0deg) rotateY(0deg);
-          transform-style: preserve-3d;
-          letter-spacing: 20px;
-      }
-      20% {
-          filter: drop-shadow(2px 2px 4px #AAAAAA);
-          transform: rotateX(0deg) rotateY(0deg);
-          transform-style: preserve-3d;
-          letter-spacing: 5px;
-      }
-      100% {
-          filter: drop-shadow(5px 5px 10px #333333);
-          transform: rotateX(-20deg) rotateY(10deg);
-          transform-style: preserve-3d;
-          letter-spacing: 0px;
-      }
+@keyframes dropShadowAnimation {
+  0% {
+    filter: drop-shadow(0 0 0 transparent);
+    transform: rotateX(0deg) rotateY(0deg);
+    transform-style: preserve-3d;
+    letter-spacing: 80px;
+  }
+  20% {
+    filter: drop-shadow(2px 2px 4px #AAAAAA);
+    transform: rotateX(0deg) rotateY(0deg);
+    letter-spacing: 20px;
+  }
+  100% {
+    filter: drop-shadow(5px 5px 10px #333333);
+    transform: rotateX(-20deg) rotateY(10deg);
+    letter-spacing: 0px;
   }
 }
 
-@media (min-width: 768px) {
-  @keyframes dropShadowAnimation {
-      0% {
-          filter: drop-shadow(0 0 0 transparent);
-          transform: rotateX(0deg) rotateY(0deg);
-          transform-style: preserve-3d;
-          letter-spacing: 80px;
-      }
-      20% {
-          filter: drop-shadow(2px 2px 4px #AAAAAA);
-          transform: rotateX(0deg) rotateY(0deg);
-          transform-style: preserve-3d;
-          letter-spacing: 20px;
-      }
-      100% {
-          filter: drop-shadow(5px 5px 10px #333333);
-          transform: rotateX(-20deg) rotateY(10deg);
-          transform-style: preserve-3d;
-          letter-spacing: 0px;
-      }
-  }
-}
-
+/* Flight Buttons */
 #flightButtons a {
   margin-right: 5px;
 }
 
+/* Footer Styles */
 #footer {
   margin-top: 40px;
   text-align: center;
 }
+
 #footer img {
   margin-right: 10px;
   vertical-align: middle;
 }
+
 .lang-switch a {
   text-decoration: none;
   margin: 0 10px;
   font-size: 16px;
   color: inherit;
 }
+
 .no-color-link a {
   color: inherit;
   text-decoration: underline;
 }
+
 .footer-container {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px; /* 控制元素之間的間距 */
-}
-.footer-text {
-  margin: 0;
-  line-height: 1.2; /* 減少行距 */
+  gap: 5px;
 }
 
-/* BR (EVA Airways) Outline Button 樣式 */
-.btn-outline-br {
-  border-color: #4b7d6b;
-  color: #4b7d6b;
+.footer-text {
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Airline Button Styles */
+.btn-outline-br, .btn-outline-ci, .btn-outline-jx {
+  border-color: var(--color-br);
+  color: var(--color-br);
+}
+
+.btn-outline-ci {
+  border-color: var(--color-ci);
+  color: var(--color-ci);
+}
+
+.btn-outline-jx {
+  border-color: var(--color-jx);
+  color: var(--color-jx);
+}
+
+.btn-outline-br:hover, .btn-outline-br.active,
+.btn-outline-ci:hover, .btn-outline-ci.active,
+.btn-outline-jx:hover, .btn-outline-jx.active {
+  color: var(--color-white) !important;
 }
 
 .btn-outline-br:hover, .btn-outline-br.active {
-  background-color: #4b7d6b !important;
-  color: white !important;
-  border-color: #4b7d6b;
-}
-
-/* CI (China Airlines) Outline Button 樣式 */
-.btn-outline-ci {
-  border-color: #3e62ad;
-  color: #3e62ad;
+  background-color: var(--color-br) !important;
 }
 
 .btn-outline-ci:hover, .btn-outline-ci.active {
-  background-color: #3e62ad !important;
-  color: white !important;
-  border-color: #3e62ad;
-}
-
-/* JX (Starlux Airlines) Outline Button 樣式 */
-.btn-outline-jx {
-  border-color: #4e463f;
-  color: #4e463f;
+  background-color: var(--color-ci) !important;
 }
 
 .btn-outline-jx:hover, .btn-outline-jx.active {
-  background-color: #4e463f !important;
-  color: white !important;
-  border-color: #4e463f;
+  background-color: var(--color-jx) !important;
 }
 
-/* BR (EVA Airways) 表格標題樣式 */
+/* Table Styles */
+.table-br, .table-ci, .table-jx {
+  --bs-table-color: var(--color-white);
+}
+
 .table-br {
-  --bs-table-bg: #4b7d6b;  /* 定義背景色 */
-  --bs-table-color: white;  /* 定義文字顏色 */
+  --bs-table-bg: var(--color-br);
 }
 
-/* CI (China Airlines) 表格標題樣式 */
 .table-ci {
-  --bs-table-bg: #3e62ad;  /* 定義背景色 */
-  --bs-table-color: white;  /* 定義文字顏色 */
+  --bs-table-bg: var(--color-ci);
 }
 
-/* JX (Starlux Airlines) 表格標題樣式 */
 .table-jx {
-  --bs-table-bg: #4e463f;  /* 定義背景色 */
-  --bs-table-color: white;  /* 定義文字顏色 */
+  --bs-table-bg: var(--color-jx);
 }
 
-/* 寬螢幕顯示 */
-.airline-full {
-  display: inline; /* 顯示完整名稱 */
-}
-
-.airline-short {
-  display: none; /* 隱藏縮寫 */
-}
-
-/* 小螢幕顯示 */
-@media (max-width: 768px) {
-  .airline-full {
-      display: none; /* 隱藏完整名稱 */
-  }
-  .airline-short {
-      display: inline; /* 顯示縮寫 */
-  }
-}
-
-/* 美化航空公司按鈕 */
+/* Airline Link Styles */
 .airline-link {
   display: inline-flex;
   align-items: center;
@@ -174,45 +143,72 @@ a {
   color: inherit;
 }
 
+.airline-full {
+  display: inline;
+}
+
+.airline-short {
+  display: none;
+}
+
+/* Animations */
 @keyframes blink {
-  0% {
-      opacity: 1;
-  }
-  50% {
-      opacity: 0;
-  }
-  100% {
-      opacity: 1;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .blinking-text {
   animation: blink 1s infinite;
 }
 
-.noto-sans-tc {
-  font-family: "Noto Sans TC", sans-serif;
+/* Font Styles */
+.noto-sans-tc, .noto-sans-jp, .noto-sans {
   font-weight: 400;
   font-style: normal;
+}
+
+.noto-sans-tc {
+  font-family: "Noto Sans TC", sans-serif;
 }
 
 .noto-sans-jp {
   font-family: "Noto Sans JP", sans-serif;
-  font-weight: 400;
-  font-style: normal;
 }
 
 .noto-sans {
   font-family: "Noto Sans", sans-serif;
-  font-weight: 400;
-  font-style: normal;
 }
 
+/* Refresh Icon */
 #refresh-icon {
   display: none;
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  /* font-size: 24px; */
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+  @keyframes dropShadowAnimation {
+    0% {
+      filter: drop-shadow(0 0 0 transparent);
+      letter-spacing: 20px;
+    }
+    20% {
+      filter: drop-shadow(2px 2px 4px #AAAAAA);
+      letter-spacing: 5px;
+    }
+    100% {
+      filter: drop-shadow(5px 5px 10px #333333);
+      letter-spacing: 0px;
+    }
+  }
+
+  .airline-full {
+    display: none;
+  }
+  .airline-short {
+    display: inline;
+  }
 }
