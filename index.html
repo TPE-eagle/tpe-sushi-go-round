@@ -14,9 +14,9 @@
     <link rel="shortcut icon" type="image/x-icon" href="favicon.ico">
     <link rel="manifest" href="site.webmanifest">
 
-    <!-- Facebook Open Graph 基本標籤 -->
+    <!-- Facebook Open Graph tags -->
     <meta property="og:title" content="台北回転寿司🍣" />
-    <meta property="og:description" content="Airport screens too small? Don’t sweat it – just use your phone to find your bags like a boss. 😎" />
+    <meta property="og:description" content="Airport screens too small? Don't sweat it – just use your phone to find your bags like a boss. 😎" />
     <meta property="og:image" content="https://tpe-eagle.github.io/tpe-sushi-go-round/android-chrome-512x512.png" />
     <meta property="og:url" content="https://tpe-eagle.github.io/tpe-sushi-go-round/" />
     <meta property="og:type" content="website" />
@@ -26,7 +26,7 @@
     <!-- Twitter Tags -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="台北回転寿司🍣">
-    <meta name="twitter:description" content="Airport screens too small? Don’t sweat it – just use your phone to find your bags like a boss. 😎">
+    <meta name="twitter:description" content="Airport screens too small? Don't sweat it – just use your phone to find your bags like a boss. 😎">
     <meta name="twitter:image" content="https://tpe-eagle.github.io/tpe-sushi-go-round/android-chrome-512x512.png">
 
     <!-- Preconnect for Google Fonts -->
@@ -49,39 +49,7 @@
     <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TDLXX7HS"
     height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <!-- End Google Tag Manager (noscript) -->
-    <div id="refresh-icon"></div>
-    <div class="container">
-        <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
-        <!-- 動態生成的航空公司按鈕 -->
-        <div id="airlineButtons" class="d-flex justify-content-center flex-wrap mb-3"></div>
-
-        <!-- 動態生成的航班號按鈕區域 -->
-        <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
-
-        <!-- 結果輸出 -->
-        <div id="output" class="container"></div>
-
-        <!-- 語言切換按鈕放到頁面底部 -->
-        <div id="footer">
-            <div class="lang-switch no-color-link text-muted d-flex justify-content-center mb-2">
-                <a href="#" data-lang="zh">🇹🇼 繁體中文</a> |
-                <a href="#" data-lang="en">🇬🇧 English</a> |
-                <a href="#" data-lang="jp">🇯🇵 日本語</a>
-            </div>
-
-            <!-- 註解部分 -->
-            <div class="footer-container">
-                <div class="no-color-link footer-text text-muted fs-6 fw-light">
-                    Data source: <a href="https://www.taoyuan-airport.com/flight_arrival" class="text-muted fs-6 fw-light text-decoration-underline">Taoyuan International Airport</a>
-                </div>
-                <!-- 顯示 API 查詢參數的日期和時間範圍 -->
-                <div id="apiParams" class="footer-text text-muted fs-6 fw-light"></div>
-                <div class="footer-text">
-                    Made by EVA Pilot with <span style="color: red;">❤️</span>
-                </div>
-            </div>
-        </div>
-    </div>
+    <div id="app"></div>
     <script type="module" src="/main.js"></script>
 </body>
 </html>

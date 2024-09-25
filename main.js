@@ -90,7 +90,35 @@ const translations = {
     }
 };
 
-// Helper functions
+function renderApp() {
+    const appContainer = document.getElementById('app');
+    appContainer.innerHTML = `
+        <div id="refresh-icon"></div>
+        <div class="container">
+            <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
+            <div id="airlineButtons" class="d-flex justify-content-center flex-wrap mb-3"></div>
+            <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
+            <div id="output" class="container"></div>
+            <div id="footer">
+                <div class="lang-switch no-color-link text-muted d-flex justify-content-center mb-2">
+                    <a href="#" data-lang="zh">🇹🇼 繁體中文</a> |
+                    <a href="#" data-lang="en">🇬🇧 English</a> |
+                    <a href="#" data-lang="jp">🇯🇵 日本語</a>
+                </div>
+                <div class="footer-container">
+                    <div class="no-color-link footer-text text-muted fs-6 fw-light">
+                        Data source: <a href="https://www.taoyuan-airport.com/flight_arrival" class="text-muted fs-6 fw-light text-decoration-underline">Taoyuan International Airport</a>
+                    </div>
+                    <div id="apiParams" class="footer-text text-muted fs-6 fw-light"></div>
+                    <div class="footer-text">
+                        Made by EVA Pilot with <span style="color: red;">❤️</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function updateElement(id, content) {
     const element = document.getElementById(id);
     if (element) element.innerText = content;
@@ -416,37 +444,32 @@ function setupEventListeners() {
         }
     });
 
-    window.onload = detectLanguage;
-
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             window.location.reload();
         }
     });
 
-    document.querySelectorAll('[data-lang]').forEach(element => {
-        element.addEventListener('click', (event) => {
+    document.addEventListener('click', (event) => {
+        const langLink = event.target.closest('[data-lang]');
+        if (langLink) {
             event.preventDefault();
-            const lang = element.getAttribute('data-lang');
+            const lang = langLink.getAttribute('data-lang');
             changeLanguage(lang);
-        });
-    });
+        }
 
-    document.getElementById('airlineButtons').addEventListener('click', (event) => {
-        const link = event.target.closest('a[data-airline]');
-        if (link) {
+        const airlineLink = event.target.closest('a[data-airline]');
+        if (airlineLink) {
             event.preventDefault();
-            const airline = link.getAttribute('data-airline') || null;
+            const airline = airlineLink.getAttribute('data-airline') || null;
             filterFlights(airline);
         }
-    });
 
-    document.getElementById('flightButtons').addEventListener('click', (event) => {
-        const link = event.target.closest('a[data-flight]');
-        if (link) {
+        const flightLink = event.target.closest('a[data-flight]');
+        if (flightLink) {
             event.preventDefault();
-            const flightNumber = link.getAttribute('data-flight');
-            const ACode = link.getAttribute('data-acode');
+            const flightNumber = flightLink.getAttribute('data-flight');
+            const ACode = flightLink.getAttribute('data-acode');
             filterFlightByNumber(flightNumber, ACode);
         }
     });
@@ -490,4 +513,11 @@ function triggerRefresh() {
 }
 
 // Initialize the application
-setupEventListeners();
+function initApp() {
+    renderApp();
+    setupEventListeners();
+    detectLanguage();
+}
+
+// Run the app
+initApp();
