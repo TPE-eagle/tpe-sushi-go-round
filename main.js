@@ -7,6 +7,8 @@ const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const REFRESH_DELAY = 1500;
 const THEME_COOKIE_NAME = 'theme';
+const LIGHT_THEME_COLOR = '#ffffff';
+const DARK_THEME_COLOR = '#212529';
 
 // Font URL
 const FONT_BASE_URL = "https://fonts.googleapis.com/css2?family=Noto+Sans";
@@ -336,7 +338,9 @@ function updateAirlineLinks() {
     // Add 'active' class to current airline link
     document.querySelectorAll('.airline-link').forEach(link => {
         const airlineCode = link.getAttribute('data-airline') || '';
-        if (airlineCode === currentACode) {
+        // Make sure the empty string (ALL) matches with null (no selection)
+        const codeMatches = (airlineCode === '' && currentACode === null) || (airlineCode === currentACode);
+        if (codeMatches) {
             link.classList.add('active');
         } else {
             link.classList.remove('active');
@@ -601,6 +605,8 @@ function initTheme() {
         currentTheme = savedTheme;
     }
     applyTheme(currentTheme);
+    
+    // Listen for system theme changes
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
         if (!checkCookie(THEME_COOKIE_NAME)) {
             applyTheme(e.matches ? 'dark' : 'light');
@@ -613,6 +619,21 @@ function applyTheme(theme) {
     document.documentElement.setAttribute('data-bs-theme', theme);
     currentTheme = theme;
     updateThemeToggleButton();
+    updateStatusBarTheme();
+}
+
+// Update status bar theme
+function updateStatusBarTheme() {
+    const themeColorMeta = document.getElementById('theme-color-meta');
+    const statusBarMeta = document.getElementById('apple-status-bar-style');
+    
+    if (themeColorMeta) {
+        themeColorMeta.setAttribute('content', currentTheme === 'light' ? LIGHT_THEME_COLOR : DARK_THEME_COLOR);
+    }
+    
+    if (statusBarMeta) {
+        statusBarMeta.setAttribute('content', currentTheme === 'light' ? 'default' : 'black-translucent');
+    }
 }
 
 // Toggle theme

@@ -395,16 +395,19 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
 }
+
 .theme-toggle-btn:hover, .theme-toggle-btn:focus, .theme-toggle-btn:active {
   transform: scale(1.05);
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
   outline: none;
   border-color: var(--border-color);
 }
+
 [data-bs-theme="dark"] .theme-toggle-btn {
   border-color: rgba(255, 255, 255, 0.2);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
+
 [data-bs-theme="dark"] .theme-toggle-btn:hover,
 [data-bs-theme="dark"] .theme-toggle-btn:focus,
 [data-bs-theme="dark"] .theme-toggle-btn:active {
