@@ -395,7 +395,14 @@ function displayFlights(flights, ACode) {
     const terminalHeader = isSmall ? headers["TerminalShort"] : headers["Terminal"];
     const carouselHeader = isSmall ? headers["CarouselShort"] : headers["Carousel"];
 
-    const airlineClass = ACode ? `table-${ACode.toLowerCase()}` : 'table-dark';
+    // Use appropriate class for table header based on airline code and theme
+    let airlineClass;
+    if (ACode) {
+        airlineClass = `table-${ACode.toLowerCase()}`;
+    } else {
+        // For dark mode and no airline selected, use a better visible header
+        airlineClass = currentTheme === 'dark' ? 'table-secondary' : 'table-dark';
+    }
 
     let tableContent = `
     <table class="table table-sm table-striped table-borderless">

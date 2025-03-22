@@ -20,7 +20,7 @@
 @import "bootstrap/scss/utilities/api";
 
 :root {
-  --color-br: #009A42; /* EVA Air green */
+  --color-br: #4B7D6B; /* EVA Air green */
   --color-ci: #0F4C96; /* China Airlines blue */
   --color-jx: #4E463F; /* STARLUX Airlines dark gray */
   --color-white: #fff;
@@ -33,7 +33,7 @@
 }
 
 [data-bs-theme="dark"] {
-  --color-br: #00B850;
+  --color-br: #4B7D6B;
   --color-ci: #2566B8;
   --color-jx: #6E665F;
   --text-color: #f8f9fa;
@@ -204,6 +204,18 @@ body {
   --bs-table-active-color: var(--text-color);
   --bs-table-hover-bg: rgba(255, 255, 255, 0.075);
   --bs-table-hover-color: var(--text-color);
+}
+
+/* Fix dark mode table header text color */
+[data-bs-theme="dark"] .table-dark {
+  --bs-table-color: var(--color-white);
+  --bs-table-bg: #343a40;
+}
+
+/* Ensure text visibility in secondary table header (used for ALL flights in dark mode) */
+[data-bs-theme="dark"] .table-secondary {
+  --bs-table-color: #212529;
+  --bs-table-bg: #e2e3e5;
 }
 
 /* Table Pop-up Animation */
