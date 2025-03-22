@@ -6,7 +6,7 @@ const AIRLINE_CODES = ['BR', 'CI', 'JX'];
 const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const REFRESH_DELAY = 1500;
-const THEME_STORAGE_KEY = 'tpe-sushi-theme';
+const THEME_COOKIE_NAME = 'theme';
 
 // Font URL
 const FONT_BASE_URL = "https://fonts.googleapis.com/css2?family=Noto+Sans";
@@ -593,7 +593,7 @@ function triggerRefresh() {
 // Theme management functions
 // Initialize theme
 function initTheme() {
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    const savedTheme = checkCookie(THEME_COOKIE_NAME) ? getCookie(THEME_COOKIE_NAME) : null;
     if (!savedTheme) {
         const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
         currentTheme = prefersDarkScheme.matches ? 'dark' : 'light';
@@ -602,7 +602,7 @@ function initTheme() {
     }
     applyTheme(currentTheme);
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (!localStorage.getItem(THEME_STORAGE_KEY)) {
+        if (!checkCookie(THEME_COOKIE_NAME)) {
             applyTheme(e.matches ? 'dark' : 'light');
         }
     });
@@ -619,7 +619,7 @@ function applyTheme(theme) {
 function toggleTheme() {
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
     applyTheme(newTheme);
-    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+    setCookie(THEME_COOKIE_NAME, newTheme);
     // Update airline and language links when theme changes
     updateAirlineLinks();
     updateLanguageLinks();
