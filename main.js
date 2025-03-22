@@ -100,11 +100,11 @@ function renderApp() {
         <div class="container position-relative">
             <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
-            <div id="airlineButtons" class="d-flex justify-content-center mb-3"></div>
+            <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
             <div id="output" class="container"></div>
             <div id="footer">
-                <div class="lang-links d-flex justify-content-center mb-2">
+                <div class="lang-links d-flex justify-content-center mb-1">
                     <a href="#" data-lang="zh">🇹🇼 繁體中文</a> 
                     <span class="divider">|</span>
                     <a href="#" data-lang="en">🇬🇧 English</a> 
@@ -312,9 +312,12 @@ function generateAirlineLinks(flights) {
         }
     });
 
+    const isMobile = isSmallScreen();
+    const imageSize = isMobile ? 20 : 28;
+
     let linksHTML = `
         <a href="#" data-airline="" class="airline-link">
-            <span style="font-size:20px; width:28px;">🛬</span>
+            <span style="font-size:${isMobile ? 16 : 20}px; width:${imageSize}px;">🛬</span>
             <span class="airline-full">${translations[currentLanguage]["allFlights"]}</span>
             <span class="airline-short">${translations[currentLanguage]["allFlightsShort"]}</span>
         </a>`;
@@ -324,7 +327,7 @@ function generateAirlineLinks(flights) {
             const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${code}.gif`;
             linksHTML += `
                 <a href="#" data-airline="${code}" class="airline-link">
-                    <img alt="${code} Logo" width="28" height="20" src="${logoUrl}">
+                    <img alt="${code} Logo" width="${imageSize}" height="${Math.floor(imageSize * 0.71)}" src="${logoUrl}">
                     <span class="airline-full">${airlines[code]}</span>
                     <span class="airline-short">${code}</span>
                 </a>`;
