@@ -98,13 +98,15 @@ function renderApp() {
         <div class="container position-relative">
             <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
-            <div id="airlineButtons" class="d-flex justify-content-center flex-wrap mb-3"></div>
+            <div id="airlineButtons" class="d-flex justify-content-center mb-3"></div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
             <div id="output" class="container"></div>
             <div id="footer">
-                <div class="lang-switch no-color-link text-muted d-flex justify-content-center mb-2">
-                    <a href="#" data-lang="zh">🇹🇼 繁體中文</a> |
-                    <a href="#" data-lang="en">🇬🇧 English</a> |
+                <div class="lang-links d-flex justify-content-center mb-2">
+                    <a href="#" data-lang="zh">🇹🇼 繁體中文</a> 
+                    <span class="divider">|</span>
+                    <a href="#" data-lang="en">🇬🇧 English</a> 
+                    <span class="divider">|</span>
                     <a href="#" data-lang="jp">🇯🇵 日本語</a>
                 </div>
                 <div class="footer-container">
@@ -157,6 +159,7 @@ function detectLanguage() {
     updateLanguageText();
     fetchData();
     updateApiParams();
+    updateLanguageLinks();
 }
 
 function changeLanguageFont() {
@@ -181,6 +184,17 @@ function changeLanguageFont() {
     document.head.appendChild(linkElement);
 }
 
+function updateLanguageLinks() {
+    // Add 'active' class to current language link
+    document.querySelectorAll('.lang-links a').forEach(link => {
+        if (link.getAttribute('data-lang') === currentLanguage) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+}
+
 function changeLanguage(lang) {
     currentLanguage = lang;
     changeLanguageFont();
@@ -188,6 +202,7 @@ function changeLanguage(lang) {
     fetchData();
     updateApiParams();
     document.getElementById("flightButtons").innerHTML = "";
+    updateLanguageLinks();
 }
 
 function getUTC8Date() {
@@ -269,6 +284,7 @@ function fetchData() {
         
         const ACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
         filterFlights(ACode);
+        updateAirlineLinks();
 
         // Add the table-pop-up class after data is loaded
         const outputTable = document.querySelector('#output table');
@@ -316,6 +332,18 @@ function generateAirlineLinks(flights) {
     document.getElementById('airlineButtons').innerHTML = linksHTML;
 }
 
+function updateAirlineLinks() {
+    // Add 'active' class to current airline link
+    document.querySelectorAll('.airline-link').forEach(link => {
+        const airlineCode = link.getAttribute('data-airline') || '';
+        if (airlineCode === currentACode) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+}
+
 function filterFlights(airlineCode = null) {
     if (airlineCode !== null) {
         setCookie(COOKIE_NAME, airlineCode);
@@ -324,6 +352,9 @@ function filterFlights(airlineCode = null) {
         deleteCookie(COOKIE_NAME);
         currentFilteredFlights = flightData;
     }
+    
+    currentACode = airlineCode;
+    updateAirlineLinks();
 
     if (currentFilteredFlights.length === 0) {
         document.getElementById("output").innerHTML = `
@@ -387,6 +418,7 @@ function isSmallScreen() {
 function displayFlights(flights, ACode) {
     document.getElementById('refresh-icon').style.display = 'none';
     currentACode = ACode;
+    updateAirlineLinks();
 
     const isSmall = isSmallScreen();
     const headers = translations[currentLanguage]["tableHeaders"];
@@ -588,6 +620,9 @@ function toggleTheme() {
     const newTheme = currentTheme === 'light' ? 'dark' : 'light';
     applyTheme(newTheme);
     localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+    // Update airline and language links when theme changes
+    updateAirlineLinks();
+    updateLanguageLinks();
 }
 
 // Update theme toggle button
@@ -604,6 +639,8 @@ function initApp() {
     setupEventListeners();
     detectLanguage();
     initTheme(); // Initialize theme
+    updateLanguageLinks(); // Ensure language links are updated on init
+    updateAirlineLinks(); // Ensure airline links are updated on init
 }
 
 // Run the app

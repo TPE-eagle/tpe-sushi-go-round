@@ -44,6 +44,22 @@
   --table-header-text: var(--color-white);
 }
 
+/* Dark mode adjustments for airline links */
+[data-bs-theme="dark"] .airline-link::after,
+[data-bs-theme="dark"] .airline-link.active::after,
+[data-bs-theme="dark"] .airline-link:hover::after {
+  background-color: var(--text-color);
+  opacity: 0.6;
+}
+
+/* Dark mode adjustments for language links */
+[data-bs-theme="dark"] .lang-links a::after,
+[data-bs-theme="dark"] .lang-links a.active::after,
+[data-bs-theme="dark"] .lang-links a:hover::after {
+  background-color: var(--text-color);
+  opacity: 0.6;
+}
+
 /* Global Styles */
 body {
   color: var(--text-color);
@@ -98,10 +114,43 @@ body {
   text-align: center;
 }
 
-.lang-switch a {
+/* Language Links Styles */
+.lang-links {
+  margin: 15px 0;
+}
+
+.lang-links a {
+  padding: 5px 12px;
+  color: var(--text-color);
   text-decoration: none;
-  margin: 0 10px;
-  color: inherit;
+  position: relative;
+  opacity: 0.8;
+  transition: all 0.2s ease;
+}
+
+.lang-links a:hover,
+.lang-links a.active {
+  opacity: 1;
+}
+
+.lang-links a:hover::after,
+.lang-links a.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  background-color: var(--text-color);
+  opacity: 0.5;
+}
+
+.lang-links .divider {
+  color: var(--text-color);
+  opacity: 0.3;
+  user-select: none;
+  align-self: center;
+  margin: 0 2px;
 }
 
 .no-color-link a {
@@ -238,16 +287,45 @@ body {
 .airline-link {
   display: inline-flex;
   align-items: center;
-  margin-right: 10px;
-  color: inherit;
+  margin: 0 8px;
+  padding: 5px 6px;
+  color: var(--text-color);
+  text-decoration: none;
+  position: relative;
+  opacity: 0.8;
+  transition: all 0.2s ease;
+}
+
+.airline-link:hover,
+.airline-link.active {
+  opacity: 1;
+}
+
+.airline-link:hover::after,
+.airline-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 6px;
+  right: 6px;
+  height: 1px;
+  background-color: var(--text-color);
+  opacity: 0.5;
+}
+
+#airlineButtons {
+  flex-wrap: nowrap;
+  justify-content: center;
 }
 
 .airline-full {
   display: inline;
+  margin-left: 4px;
 }
 
 .airline-short {
   display: none;
+  margin-left: 4px;
 }
 
 /* Animations */
