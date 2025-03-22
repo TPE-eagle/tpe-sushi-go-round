@@ -6,6 +6,7 @@ const AIRLINE_CODES = ['BR', 'CI', 'JX'];
 const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const REFRESH_DELAY = 1500;
+const THEME_STORAGE_KEY = 'tpe-sushi-theme';
 
 // Font URL
 const FONT_BASE_URL = "https://fonts.googleapis.com/css2?family=Noto+Sans";
@@ -21,6 +22,7 @@ let flightData = [];
 let currentFilteredFlights = [];
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentACode = null;
+let currentTheme = 'light'; // Default to light mode
 
 // Translations
 const translations = {
@@ -93,7 +95,8 @@ function renderApp() {
     const appContainer = document.getElementById('app');
     appContainer.innerHTML = `
         <div id="refresh-icon"></div>
-        <div class="container">
+        <div class="container position-relative">
+            <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="airlineButtons" class="d-flex justify-content-center flex-wrap mb-3"></div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
@@ -470,6 +473,15 @@ function setupEventListeners() {
         }
     });
 
+    // Listen for keyboard events to allow keyboard users to toggle theme with Enter or Space
+    document.addEventListener('keydown', (event) => {
+        const themeToggle = document.activeElement;
+        if (themeToggle && themeToggle.id === 'theme-toggle' && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            toggleTheme();
+        }
+    });
+
     document.addEventListener('click', (event) => {
         const langLink = event.target.closest('[data-lang]');
         if (langLink) {
@@ -491,6 +503,12 @@ function setupEventListeners() {
             const flightNumber = flightLink.getAttribute('data-flight');
             const ACode = flightLink.getAttribute('data-acode');
             filterFlightByNumber(flightNumber, ACode);
+        }
+
+        const themeToggle = event.target.closest('#theme-toggle');
+        if (themeToggle) {
+            event.preventDefault();
+            toggleTheme();
         }
     });
 
@@ -533,10 +551,52 @@ function triggerRefresh() {
 }
 
 // Initialize the application
+// Theme management functions
+// Initialize theme
+function initTheme() {
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    if (!savedTheme) {
+        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+        currentTheme = prefersDarkScheme.matches ? 'dark' : 'light';
+    } else {
+        currentTheme = savedTheme;
+    }
+    applyTheme(currentTheme);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem(THEME_STORAGE_KEY)) {
+            applyTheme(e.matches ? 'dark' : 'light');
+        }
+    });
+}
+
+// Apply theme
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    currentTheme = theme;
+    updateThemeToggleButton();
+}
+
+// Toggle theme
+function toggleTheme() {
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    applyTheme(newTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+}
+
+// Update theme toggle button
+function updateThemeToggleButton() {
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        themeToggle.innerHTML = currentTheme === 'light' ? '🌙' : '☀️';
+        themeToggle.setAttribute('aria-label', currentTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
+    }
+}
+
 function initApp() {
     renderApp();
     setupEventListeners();
     detectLanguage();
+    initTheme(); // Initialize theme
 }
 
 // Run the app
