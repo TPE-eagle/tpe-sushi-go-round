@@ -109,7 +109,7 @@ function renderApp() {
                     <span class="divider">|</span>
                     <a href="#" data-lang="en">🇬🇧 English</a> 
                     <span class="divider">|</span>
-                    <a href="#" data-lang="jp">🇯🇵 日本語</a>
+                    <a href="#" data-lang="jp">🇯🇵 にほんご</a>
                 </div>
                 <div class="footer-container">
                     <div class="no-color-link footer-text text-muted fs-6 fs-sm-7 fw-light">
