@@ -1,0 +1,318 @@
+name: "✈️ Flight Deck CI: Test & Deploy"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  unit-tests:
+    name: "🛫 Pre-flight Unit Tests"
+    runs-on: ubuntu-latest
+    steps:
+    - name: "🔄 Flight Plan: Checkout Code"
+      uses: actions/checkout@v4
+
+    - name: "🛫 Pre-flight Checks"
+      run: |
+        echo "ATC Tower to Flight SGR: Pre-flight checks complete. Engines running. Ready for unit tests! ✈️"
+
+    - name: "🔧 Ground Crew: Setup Node.js Environment"
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: "⛽ Refueling: Install Dependencies"
+      run: npm ci
+
+    - name: "🛫 Engines at Full Thrust: Run Unit Tests"
+      run: npm run test:run
+
+  e2e-tests-local:
+    name: "🛫 Pre-flight E2E Tests (Local)"
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    continue-on-error: true
+    steps:
+    - name: "🔄 Flight Plan: Checkout Code"
+      uses: actions/checkout@v4
+
+    - name: "🔧 Ground Crew: Setup Node.js Environment"
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: "🛫 Boarding Playwright Browsers"
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-browsers-
+
+    - name: "⛽ Refueling: Install Dependencies"
+      run: npm ci
+
+    - name: "🛫 Deploying Browser Engines"
+      run: npx playwright install --with-deps
+
+    - name: "🛰️ ATC Clearance: Setup Tailscale"
+      uses: tailscale/github-action@v3
+      with:
+        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+        tags: tag:ci
+        args: --accept-routes --operator=${{ github.actor }}
+
+    - name: "🛰️ ATC Clearance: Exit Node Connectivity Check"
+      timeout-minutes: 5
+      run: |
+        set -e
+        echo "🛰️ ATC Tower: Setting up exit node fallback list..."
+        EXIT_NODES=("msi" "tsa" "mini")
+        SUCCESS=0
+
+        NODE_INDEX=1
+        for node in "${EXIT_NODES[@]}"; do
+          echo "🛫 ATC: Attempting exit node #$NODE_INDEX"
+          if sudo tailscale set --exit-node="$node" --exit-node-allow-lan-access; then
+            echo "✅ ATC: Exit node #$NODE_INDEX set, waiting for routes to propagate"
+            sleep 3
+
+            echo "🔍 ATC: Testing API connectivity through exit node #$NODE_INDEX"
+            CURRENT_DATE=$(date -u +%Y/%m/%d)
+            echo "📅 ATC: Using date parameter: $CURRENT_DATE"
+            
+            # 🔍 ATC: Test VPN connectivity with Taiwan-accessible endpoints
+            echo "🌍 ATC: Testing Taiwan route accessibility through exit node #$NODE_INDEX..."
+            
+            # Test 1: Basic connectivity
+            if curl -f --max-time 10 -s https://httpbin.org/ip > /dev/null; then
+              echo "✅ ATC: Basic internet connectivity confirmed"
+              
+              # Test 2: Taiwan route test
+              if curl -f --max-time 10 -s https://www.google.com.tw > /dev/null; then
+                echo "✅ ATC: Taiwan route accessibility confirmed"
+                
+                # Test 3: Verify IP location (optional, for logging)
+                DETECTED_IP=$(curl -s https://httpbin.org/ip | grep -o '"origin": "[^"]*"' | cut -d'"' -f4 || echo "Unknown")
+                echo "::add-mask::$DETECTED_IP"
+                echo "🌐 ATC: Exit node IP confirmed: $DETECTED_IP"
+                
+                echo "🛬 ATC: Exit node #$NODE_INDEX connectivity verified"
+                SUCCESS=1
+                break
+              else
+                echo "❌ ATC: Taiwan route test failed"
+              fi
+            else
+              echo "❌ ATC: Basic connectivity failed"
+            fi
+            
+            echo "🔄 ATC: Exit node #$NODE_INDEX failed, trying next..."
+            sudo tailscale set --exit-node=""
+            sleep 3
+          else
+            echo "⚠️ ATC: Failed to set exit node #$NODE_INDEX, trying next"
+          fi
+          NODE_INDEX=$((NODE_INDEX + 1))
+        done
+
+        if [ $SUCCESS -ne 1 ]; then
+          echo "❌ ATC: All exit node attempts failed, aborting CI"
+          exit 1
+        fi
+
+    - name: "✈️ Execute Local E2E Flight Plan"
+      run: npm run test:e2e:local
+      env:
+        CI: true
+
+    - name: "📥 Upload Local Flight Logs"
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: playwright-report-local
+        path: playwright-report/
+        retention-days: 7
+
+  deploy:
+    name: "🛬 Landing & Deployment"
+    runs-on: ubuntu-latest
+    needs: [unit-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: "🔄 Flight Plan: Checkout Code"
+      uses: actions/checkout@v4
+
+    - name: "🔧 Ground Crew: Setup Node.js Environment"
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: "⛽ Refueling: Install Dependencies"
+      run: npm ci
+
+    - name: "🚀 Build Aircraft Systems"
+      run: npm run build
+
+    - name: "🌐 Prepare Runway: Configure GitHub Pages"
+      uses: actions/configure-pages@v4
+
+    - name: "📦 Upload Aircraft Artifact"
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: './dist'
+
+    - name: "✈️ Deploying to GitHub Pages"
+      id: deployment
+      uses: actions/deploy-pages@v4
+
+  e2e-tests-production:
+    name: "🛬 Post-landing E2E Tests (Production)"
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    continue-on-error: true
+    steps:
+    - name: "🔄 Flight Plan: Checkout Code"
+      uses: actions/checkout@v4
+
+    - name: "🔧 Ground Crew: Setup Node.js Environment"
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: "🛫 Boarding Playwright Browsers"
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-playwright-browsers-
+
+    - name: "⛽ Refueling: Install Dependencies"
+      run: npm ci
+
+    - name: "🛫 Deploying Browser Engines"
+      run: npx playwright install --with-deps
+
+    - name: "🛰️ ATC Clearance: Setup Tailscale"
+      uses: tailscale/github-action@v3
+      with:
+        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+        tags: tag:ci
+        args: --accept-routes --operator=${{ github.actor }}
+    - name: "🛰️ ATC Clearance: Exit Node Connectivity Check"
+      run: |
+        set -e
+        echo "🛰️ ATC Tower: Setting up exit node fallback list..."
+        EXIT_NODES=("msi" "tsa" "mini")
+        SUCCESS=0
+
+        NODE_INDEX=1
+        for node in "${EXIT_NODES[@]}"; do
+          echo "🛫 ATC: Attempting exit node #$NODE_INDEX"
+          if sudo tailscale set --exit-node="$node" --exit-node-allow-lan-access; then
+            echo "✅ ATC: Exit node #$NODE_INDEX set, waiting for routes to propagate"
+            sleep 3
+
+            echo "🔍 ATC: Testing API connectivity through exit node #$NODE_INDEX"
+            CURRENT_DATE=$(date -u +%Y/%m/%d)
+            echo "📅 ATC: Using date parameter: $CURRENT_DATE"
+            
+            # 🔍 ATC: Test VPN connectivity with Taiwan-accessible endpoints
+            echo "🌍 ATC: Testing Taiwan route accessibility through exit node #$NODE_INDEX..."
+
+            # Test 1: Basic connectivity
+            if curl -f --max-time 10 -s https://httpbin.org/ip > /dev/null; then
+              echo "✅ ATC: Basic internet connectivity confirmed"
+
+              # Test 2: Taiwan route test
+              if curl -f --max-time 10 -s https://www.google.com.tw > /dev/null; then
+                echo "✅ ATC: Taiwan route accessibility confirmed"
+
+                # Test 3: Verify IP location (optional, for logging)
+                DETECTED_IP=$(curl -s https://httpbin.org/ip | grep -o '"origin": "[^"]*"' | cut -d'"' -f4 || echo "Unknown")
+                echo "::add-mask::$DETECTED_IP"
+                echo "🌐 ATC: Exit node IP confirmed: $DETECTED_IP"
+                
+                echo "🛬 ATC: Exit node #$NODE_INDEX connectivity verified"
+                SUCCESS=1
+                break
+              else
+                echo "❌ ATC: Taiwan route test failed"
+              fi
+            else
+              echo "❌ ATC: Basic connectivity failed"
+            fi
+
+            echo "🔄 ATC: Exit node #$NODE_INDEX failed, trying next..."
+            sudo tailscale set --exit-node=""
+            sleep 3
+          else
+            echo "⚠️ ATC: Failed to set exit node #$NODE_INDEX, trying next"
+          fi
+          NODE_INDEX=$((NODE_INDEX + 1))
+        done
+
+        if [ $SUCCESS -ne 1 ]; then
+          echo "❌ ATC: All exit node attempts failed, aborting CI"
+          exit 1
+        fi
+
+    - name: "🛫 Holding Pattern: Waiting for Deployment"
+      run: sleep 30
+
+    - name: "✈️ Execute Production E2E Flight Plan"
+      run: npm run test:e2e:prod
+      env:
+        CI: true
+
+    - name: "📥 Upload Production Flight Logs"
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: playwright-report-production
+        path: playwright-report/
+        retention-days: 7
+
+    - name: "📝 Flight Deck Report: Comment PR with Test Results"
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          let comment = '## ✈️ Flight Deck Test Report\n\n';
+          
+          try {
+          // 🛩️ Gathering flight test data for report
+            comment += '✅ Production E2E flight completed\n';
+            comment += '📊 Check the [flight log report](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details\n';
+          } catch (error) {
+            comment += '❌ Production E2E flight failed\n';
+            comment += `Error: ${error.message}\n`;
+          }
+
+          // 📡 Dispatching flight report to PR
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

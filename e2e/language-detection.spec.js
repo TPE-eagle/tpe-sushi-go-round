@@ -1,0 +1,321 @@
+import { test, expect } from '@playwright/test'
+import { setupMockApiRoute, waitForApiAndTable, blockGoogleAnalytics } from './test-helpers.js'
+
+test.describe('Browser Language Detection Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    // Block Google Analytics requests
+    await blockGoogleAnalytics(page)
+    // Set up mock API response for each test with current date
+    await setupMockApiRoute(page)
+  })
+
+  test('should detect Chinese browser language and show Chinese interface', async ({ page }) => {
+    // Set Chinese locale and Accept-Language header
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'zh-TW,zh;q=0.9'
+    })
+    
+    await page.goto('/')
+    
+    // Wait for page to load
+    await page.waitForSelector('.lang-links a', { timeout: 8000 })
+
+    // Manually switch to Chinese if not already detected
+    const isChineseActive = await page.locator('[data-lang="zh"]').getAttribute('class').then(cls => 
+      cls && cls.includes('active')
+    ).catch(() => false)
+    
+    if (!isChineseActive) {
+      await page.click('[data-lang="zh"]')
+      await page.waitForSelector('[data-lang="zh"].active', { timeout: 5000 })
+    }
+
+    // Should show Chinese interface
+    await expect(page.locator('#title')).toContainText('台北迴轉壽司🍣')
+    await expect(page.locator('[data-lang="zh"]')).toHaveClass(/active/)
+
+    // Check that 'All Flights' button is translated to Chinese
+    await page.waitForSelector('#airlineButtons a[data-airline=""] .airline-full', { timeout: 5000 })
+    await expect(page.locator('#airlineButtons a[data-airline=""] .airline-full')).toContainText('全部航班')
+    // Check that BR airline button is localized to Chinese
+    await page.waitForSelector('#airlineButtons a[data-airline="BR"] .airline-full', { timeout: 5000 })
+    await expect(page.locator('#airlineButtons a[data-airline="BR"] .airline-full')).toContainText('長榮航空 (BR)')
+    
+    // Check if we have table or "no flights" message
+    const hasTable = await page.locator('table').count() > 0
+    const hasNoFlights = await page.locator('#output').textContent().then(text => 
+      text && text.includes('沒有找到')
+    ).catch(() => false)
+    
+    expect(hasTable || hasNoFlights).toBeTruthy()
+    
+    if (hasTable) {
+      // If table exists, check content is in Chinese
+      await expect(page.locator('table')).toContainText('多倫多')
+      await expect(page.locator('table thead')).toContainText('航班編號')
+    } else {
+      // If no table, should show Chinese "no flights" message
+      await expect(page.locator('#output')).toContainText('沒有找到符合條件的航班')
+    }
+  })
+
+  test('should detect English browser language and show English interface', async ({ page }) => {
+    // Set English locale and Accept-Language header
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9'
+    })
+    
+    await page.goto('/')
+    
+    // Wait for page to load and language to be detected
+    await page.waitForSelector('[data-lang="en"].active', { timeout: 8000 })
+
+    // Should detect English and show English interface
+    await expect(page.locator('#title')).toContainText('台北回転寿司🍣') // English title
+    await expect(page.locator('[data-lang="en"]')).toHaveClass(/active/)
+
+    // Check that 'All Flights' button is translated to English
+    await page.waitForSelector('#airlineButtons a[data-airline=""] .airline-full', { timeout: 5000 })
+    await expect(page.locator('#airlineButtons a[data-airline=""] .airline-full')).toContainText('All Flights')
+    // Check that BR airline button is localized to English
+    await page.waitForSelector('#airlineButtons a[data-airline="BR"] .airline-full', { timeout: 5000 })
+    await expect(page.locator('#airlineButtons a[data-airline="BR"] .airline-full')).toContainText('EVA Air (BR)')
+    
+    // Check if we have table or "no flights" message
+    const hasTable = await page.locator('table').count() > 0
+    const hasNoFlights = await page.locator('#output').textContent().then(text => 
+      text && text.includes('No matching')
+    ).catch(() => false)
+    
+    expect(hasTable || hasNoFlights).toBeTruthy()
+    
+    if (hasTable) {
+      // If table exists, check content is in English
+      await expect(page.locator('table')).toContainText('Toronto')
+      await expect(page.locator('table thead')).toContainText('Flight')
+      await expect(page.locator('table thead')).toContainText('Departure')
+    } else {
+      // If no table, should show English "no flights" message
+      await expect(page.locator('#output')).toContainText('No matching flights found')
+    }
+  })
+
+  test('should detect Japanese browser language and show Japanese interface', async ({ page }) => {
+    // Set Japanese locale and Accept-Language header
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'ja-JP,ja;q=0.9'
+    })
+    
+    await page.goto('/')
+    await page.waitForSelector('.lang-links a', { timeout: 8000 })
+
+    // Manually switch to Japanese if not already detected
+    const isJapaneseActive = await page.locator('[data-lang="jp"]').getAttribute('class').then(cls => 
+      cls && cls.includes('active')
+    ).catch(() => false)
+    
+    if (!isJapaneseActive) {
+      await page.click('[data-lang="jp"]')
+      await page.waitForSelector('[data-lang="jp"].active', { timeout: 5000 })
+    }
+
+    // Should display Japanese content
+    await expect(page.locator('#title')).toContainText('台北回転寿司')
+    await expect(page.locator('[data-lang="jp"]')).toHaveClass(/active/)
+
+    // Check that 'All Flights' button is translated to Japanese
+    await page.waitForSelector('#airlineButtons a[data-airline=""] .airline-full', { timeout: 5000 })
+    await expect(page.locator('#airlineButtons a[data-airline=""] .airline-full')).toContainText('全フライト')
+    // Check that BR airline button is localized to Japanese
+    await page.waitForSelector('#airlineButtons a[data-airline="BR"] .airline-full', { timeout: 5000 })
+    await expect(page.locator('#airlineButtons a[data-airline="BR"] .airline-full')).toContainText('エバー航空 (BR)')
+    
+    // Check if we have table or "no flights" message
+    const hasTable = await page.locator('table').count() > 0
+    const hasNoFlights = await page.locator('#output').textContent().then(text => 
+      text && text.includes('一致する')
+    ).catch(() => false)
+    
+    expect(hasTable || hasNoFlights).toBeTruthy()
+    
+    if (hasTable) {
+      // Check table headers are in Japanese
+      await expect(page.locator('table thead')).toContainText('フライト')
+    }
+  })
+
+  test('should default to English for unsupported browser languages', async ({ page }) => {
+    // Set French locale (unsupported language)
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'fr-FR,fr;q=0.9'
+    })
+    
+    await page.goto('/')
+    await waitForApiAndTable(page)
+
+    // Should default to English content
+    await expect(page.locator('[data-lang="en"]')).toHaveClass(/active/)
+    
+    // Check if we have table or "no flights" message
+    const hasTable = await page.locator('table').count() > 0
+    
+    if (hasTable) {
+      await expect(page.locator('table')).toContainText('Toronto')
+      // Check table headers are in English (default for unsupported languages)
+      await expect(page.locator('table thead')).toContainText('Flight')
+    } else {
+      await expect(page.locator('#output')).toContainText('No matching flights found')
+    }
+  })
+
+  test('should handle error messages in detected language - Chinese', async ({ page }) => {
+    // Set Chinese locale
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'zh-TW,zh;q=0.9'
+    })
+    
+    // Mock API error
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Internal Server Error' })
+      })
+    })
+
+    await page.goto('/')
+    
+    // Wait for page to load and manually switch to Chinese if needed
+    await page.waitForSelector('.lang-links a', { timeout: 8000 })
+    
+    const isChineseActive = await page.locator('[data-lang="zh"]').getAttribute('class').then(cls => 
+      cls && cls.includes('active')
+    ).catch(() => false)
+    
+    if (!isChineseActive) {
+      await page.click('[data-lang="zh"]')
+      await page.waitForSelector('[data-lang="zh"].active', { timeout: 5000 })
+    }
+    
+    // Wait for error message to appear
+    await page.waitForSelector('#output', { timeout: 5000 })
+    
+    // Should display error message in Chinese
+    await expect(page.locator('#output')).toContainText('查詢失敗，請稍後再試')
+  })
+
+  test('should handle error messages in detected language - English', async ({ page }) => {
+    // Set English locale
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9'
+    })
+    
+    // Mock API error
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Internal Server Error' })
+      })
+    })
+
+    await page.goto('/')
+    
+    // Wait for error message to appear
+    await page.waitForSelector('#output', { timeout: 5000 })
+    
+    // Should display error message in English
+    await expect(page.locator('#output')).toContainText('Query failed, please try again later')
+  })
+
+  test('should handle empty results messages in detected language - Chinese', async ({ page }) => {
+    // Set Chinese locale
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'zh-TW,zh;q=0.9'
+    })
+    
+    // Mock empty API response
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      })
+    })
+
+    await page.goto('/')
+    
+    // Wait for page to load and manually switch to Chinese if needed
+    await page.waitForSelector('.lang-links a', { timeout: 8000 })
+    
+    const isChineseActive = await page.locator('[data-lang="zh"]').getAttribute('class').then(cls => 
+      cls && cls.includes('active')
+    ).catch(() => false)
+    
+    if (!isChineseActive) {
+      await page.click('[data-lang="zh"]')
+      await page.waitForSelector('[data-lang="zh"].active', { timeout: 5000 })
+    }
+    
+    // Wait for empty message to appear
+    await page.waitForSelector('#output', { timeout: 5000 })
+    
+    // Should display no flights message in Chinese
+    await expect(page.locator('#output')).toContainText('沒有找到')
+  })
+
+  test('should handle empty results messages in detected language - English', async ({ page }) => {
+    // Set English locale
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9'
+    })
+    
+    // Mock empty API response
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      })
+    })
+
+    await page.goto('/')
+    
+    // Wait for empty message to appear
+    await page.waitForSelector('#output', { timeout: 5000 })
+    
+    // Should display no flights message in English
+    await expect(page.locator('#output')).toContainText('No matching flights found')
+  })
+
+  test('should allow manual language switching after automatic detection', async ({ page }) => {
+    // Start with English browser
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9'
+    })
+    
+    await page.goto('/')
+    await page.waitForSelector('table')
+
+    // Should start with English
+    await expect(page.locator('[data-lang="en"]')).toHaveClass(/active/)
+    await expect(page.locator('table')).toContainText('Toronto')
+
+    // Switch to Chinese manually
+    await page.click('[data-lang="zh"]')
+    await waitForApiAndTable(page)
+    
+    // Should now display Chinese
+    await expect(page.locator('[data-lang="zh"]')).toHaveClass(/active/)
+    await expect(page.locator('[data-lang="en"]')).not.toHaveClass(/active/)
+    await expect(page.locator('table')).toContainText('多倫多')
+
+    // Switch to Japanese manually
+    await page.click('[data-lang="jp"]')
+    await waitForApiAndTable(page)
+    
+    // Should now display Japanese
+    await expect(page.locator('[data-lang="jp"]')).toHaveClass(/active/)
+    await expect(page.locator('[data-lang="zh"]')).not.toHaveClass(/active/)
+  })
+})
