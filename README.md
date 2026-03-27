@@ -1,329 +1,174 @@
-# Taipei Sushi Go Round 🍣
+# TPE Sushi Go Round
 
-[![✈️ Flight Deck CI: Test & Deploy](https://github.com/tpe-eagle/tpe-sushi-go-round/actions/workflows/ci.yml/badge.svg)](https://github.com/tpe-eagle/tpe-sushi-go-round/actions/workflows/ci.yml)
+[![Flight Deck CI](https://github.com/tpe-eagle/tpe-sushi-go-round/actions/workflows/ci.yml/badge.svg)](https://github.com/tpe-eagle/tpe-sushi-go-round/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Last Commit](https://img.shields.io/github/last-commit/tpe-eagle/tpe-sushi-go-round?style=flat-square)](https://github.com/tpe-eagle/tpe-sushi-go-round/commits/main)
 
-A responsive web application for quickly checking Taoyuan International Airport baggage carousel information for Taiwan's major airlines (EVA Air, China Airlines, STARLUX Airlines). Designed specifically for flight crew members to get off work faster! 🛫
+A mobile-first web app for Taoyuan International Airport flight information. Flight crew members can quickly check baggage carousel and departure gate info for Taiwan's three major airlines.
 
-## 🌟 Features
+**Live Site**: [https://tpe-eagle.github.io/tpe-sushi-go-round/](https://tpe-eagle.github.io/tpe-sushi-go-round/)
 
-- **Real-time Flight Data**: Fetches live arrival and departure information
-- **Smart Time Window**: Dynamic 2-hour window based on current time
-- **Multi-airline Support**: BR (EVA Air), CI (China Airlines), JX (STARLUX Airlines)
-- **Multilingual**: Traditional Chinese, English, Japanese
-- **Localized API Requests**: Include `Accept-Language` header matching the UI language to fetch airline names in the selected language
-- **Responsive Design**: Optimized for mobile devices
-- **Dark/Light Theme**: Automatic theme detection with manual override
-- **Progressive Web App**: Installable on mobile devices
+## Features
 
-## 🏗️ Architecture Overview
+- Real-time arrival and departure flight data from Taoyuan Airport API
+- Smart time window filtering: 2-hour window based on current time
+- Three airlines: BR (EVA Air), CI (China Airlines), JX (STARLUX Airlines)
+- Multilingual: Traditional Chinese, English, Japanese
+- Dark/light theme with system preference detection and cookie persistence
+- Responsive mobile-first design (768px breakpoint)
+- Progressive Web App (installable on mobile)
+- Pull-to-refresh on mobile
 
-```mermaid
-graph TB
-    subgraph "Client Side"
-        A[User Browser] --> B[Vite SPA]
-        B --> C[Main Application]
-        C --> D[Flight Data Manager]
-        C --> E[UI Components]
-        C --> F[Cookie Manager]
-    end
-    
-    subgraph "External Services"
-        G[Taoyuan Airport API]
-    end
-    
-    subgraph "Data Flow"
-        D --> |Fetch All Day Data| G
-        G --> |JSON Response| D
-        D --> |Filter by Time Window| H[Filtered Results]
-        H --> E
-    end
-    
-    subgraph "State Management"
-        I[Language State]
-        J[Theme State]
-        K[Airline Filter State]
-        L[Flight Mode State]
-    end
-    
-    F --> I
-    F --> J
-    F --> K
-    E --> I
-    E --> J
-    E --> K
-    E --> L
+## Quick Start
+
+```bash
+npm install
+npm run dev       # http://localhost:8080
 ```
 
-## 🔄 Data Processing Flow
+## Project Structure
+
+```
+tpe-sushi-go-round/
+├── main.js                      # Application logic (fetch, filter, display, i18n, theme)
+├── style.scss                   # SCSS styling with CSS variables and animations
+├── index.html                   # SPA entry point (meta tags, CSP, preloads)
+├── vite.config.js               # Vite build + Vitest config
+├── src/
+│   ├── utils/flightUtils.js     # Shared utilities (used by app and tests)
+│   └── test/                    # Unit tests (Vitest)
+│       ├── api.test.js          # Flight parsing, filtering, BR35 regression
+│       ├── cache.test.js        # localStorage caching lifecycle
+│       ├── etag-integration.test.js  # ETag/304 support
+│       └── setup.js             # Global test mocks
+├── e2e/                         # E2E tests (Playwright)
+│   ├── test-helpers.js          # Smart API caching, GA blocking, mock data
+│   ├── api-integration.spec.js  # API parameter validation
+│   ├── language-detection.spec.js  # Browser language detection
+│   ├── user-interaction.spec.js # Cookie persistence, responsive layout
+│   └── production.spec.js       # Live site validation
+├── .claude/                     # Claude Code config and commands
+├── .github/workflows/ci.yml    # CI/CD pipeline
+└── public/                      # PWA icons and manifest
+```
+
+## Data Flow
+
+```mermaid
+flowchart LR
+    A[fetchData] -->|POST, full day| B[Taoyuan Airport API]
+    B -->|JSON array| C[Sort by airline + flight number]
+    C --> D[Filter BR/CI/JX, exclude cancelled]
+    D --> E[filterFlightsByTime]
+    E --> F[displayFlights]
+```
+
+- API always receives `OTimeOpen: null, OTimeClose: null` to fetch all flights
+- Time window filtering is strictly client-side
+- localStorage cache: 2-minute expiry, max 5 entries, disabled on localhost
+
+## Time Window
 
 ```mermaid
 flowchart TD
-    A[API Request] --> B{OTimeOpen/OTimeClose = null?}
-    B -->|Yes| C[Fetch Full Day Data]
-    B -->|No| D[❌ Limited Data - Bug!]
-    
-    C --> E[Raw Flight Data]
-    E --> F[Sort by Airline + Flight Number]
-    F --> G[Filter Supported Airlines<br/>BR, CI, JX]
-    G --> H[Filter Cancelled Flights]
-    H --> I[Apply Time Window Filter]
-    
-    I --> J{Check Flight Times}
-    J --> K[OTime in Window?]
-    J --> L[RTime in Window?]
-    K --> M{Include Flight?}
-    L --> M
-    M -->|OTime OR RTime in range| N[✅ Display Flight]
-    M -->|Both outside range| O[❌ Exclude Flight]
-    
-    N --> P[Render Flight Table]
-    
-    style D fill:#ffcccc
-    style N fill:#ccffcc
-    style O fill:#ffcccc
-```
-
-## ⏰ Time Window Logic
-
-```mermaid
-graph TB
-    A[Current Local Time] --> B[Round Down to 10min]
-    B --> C{Flight Mode?}
-    
-    C -->|Arrival Mode| D[Window Start = Rounded - 40min]
-    C -->|Departure Mode| E[Window Start = Rounded Time]
-    
-    D --> F[Window Duration = 120min]
+    A[Current time] --> B[Round down to 10-min interval]
+    B --> C{Flight mode}
+    C -->|Arrival| D["Start = rounded - 40 min"]
+    C -->|Departure| E["Start = rounded time"]
+    D --> F["End = start + 120 min"]
     E --> F
-    F --> G[Window End = Start + 120min]
-    
-    G --> H[Time Window: Start to End]
-    
-    subgraph "Example: 6:05 AM"
-        I[6:05 AM] --> J[Round to 6:00 AM]
-        J --> K[Arrival: 5:20-7:20]
-        J --> L[Departure: 6:00-8:00]
-    end
+    F --> G["Include if OTime OR RTime in range"]
 ```
 
-## 🧪 Testing Architecture
+| Mode | Offset | Duration | Example (6:05 AM) |
+|------|--------|----------|-------------------|
+| Arrival (A) | -40 min | 120 min | 5:20 - 7:20 |
+| Departure (D) | 0 min | 120 min | 6:00 - 8:00 |
+
+Flight is displayed if **either** scheduled time (ODateTime) **or** actual time (RDateTime) falls within the window. All times are UTC+8.
+
+## API Contract
+
+| Field | Value |
+|-------|-------|
+| Endpoint | `https://www.taoyuan-airport.com/api/api/flight/a_flight` |
+| Method | POST |
+| OTimeOpen / OTimeClose | Always `null` (fetch full day) |
+| AState | `A` (arrival) or `D` (departure) |
+| language | `ch` / `en` / `jp` (note: Chinese is `ch`, not `zh`) |
+
+## State & Persistence
+
+| State | Storage | Expiry |
+|-------|---------|--------|
+| Airline filter (`ACode`) | Cookie | 7 days |
+| Theme (`theme`) | Cookie | 7 days |
+| Language | Browser detection | Not persisted |
+| Flight data cache | localStorage | 2 minutes |
+
+## Testing
+
+```bash
+npm run test:run          # Unit tests (Vitest)
+npm run test:e2e:local    # Local E2E (Playwright, chromium)
+npm run test:e2e:prod     # Production E2E (live site, multi-browser)
+```
+
+| Test File | Coverage |
+|-----------|----------|
+| `api.test.js` | API post data, time window, flight filtering, BR35 regression |
+| `cache.test.js` | localStorage lifecycle, expiry, cleanup, quota exceeded |
+| `etag-integration.test.js` | ETag/304 conditional requests (`NODE_ENV=integration`) |
+| `api-integration.spec.js` | API parameters, flight display, mode switching |
+| `language-detection.spec.js` | 3 languages, browser detection, manual switching |
+| `user-interaction.spec.js` | Airline filter, theme toggle, cookies, responsive |
+| `production.spec.js` | Live site with smart API caching (30-min cache) |
+
+E2E tests use smart API caching (first call real, subsequent cached) and block Google Analytics to prevent test data pollution.
+
+## CI/CD Pipeline
 
 ```mermaid
-graph TB
-    subgraph "Test Pyramid"
-        A[Unit Tests<br/>Vitest] --> B[Integration Tests<br/>Playwright API]
-        B --> C[E2E Tests<br/>Playwright Browser]
-        C --> D[Production Tests<br/>Live Site]
-    end
-    
-    subgraph "Test Coverage"
-        E[API Parameter Validation]
-        F[Time Window Logic]
-        G[Flight Filtering Logic]
-        H[UI Interactions]
-        I[Cookie Persistence]
-        J[Cross-browser Compatibility]
-        K[Responsive Design]
-        L[BR35 Regression Test]
-    end
-    
-    A --> E
-    A --> F
-    A --> G
-    B --> E
-    B --> H
-    C --> H
-    C --> I
-    C --> J
-    C --> K
-    D --> J
-    D --> K
-    
-    subgraph "CI/CD Pipeline"
-        M[Push/PR] --> N[Unit Tests]
-        N --> O[Local E2E Tests]
-        O --> P[Build & Deploy]
-        P --> Q[Production E2E Tests]
-    end
+flowchart LR
+    A[Push/PR] --> B[Unit Tests]
+    B --> C[E2E Local]
+    B --> D[Deploy to GitHub Pages]
+    D --> E[E2E Production]
 ```
 
-## 🚀 Quick Start
+| Job | Trigger | Blocking |
+|-----|---------|----------|
+| Unit Tests | push/PR to main | Yes |
+| E2E Local | after unit tests | No (`continue-on-error`) |
+| Deploy | push to main | Yes |
+| E2E Production | after deploy | No (`continue-on-error`) |
 
-### Prerequisites
-- Node.js 18+
-- npm or yarn
+E2E jobs connect through Tailscale VPN with Taiwan exit nodes (msi/tsa/mini fallback) for API access.
 
-### Installation
-```bash
-git clone https://github.com/tpe-eagle/tpe-sushi-go-round.git
-cd tpe-sushi-go-round
-npm install
-```
+## Tech Stack
 
-### Development
-```bash
-npm run dev
-```
-Visit http://localhost:8080
+| Category | Technology |
+|----------|-----------|
+| Frontend | Vanilla JS (ES module) + Bootstrap 5 |
+| Styling | SCSS/Sass |
+| Build | Vite 6 |
+| Unit Tests | Vitest |
+| E2E Tests | Playwright |
+| CI/CD | GitHub Actions → GitHub Pages |
+| Runtime | Node.js 18 |
 
-### Build for Production
-```bash
-npm run build
-```
+## Known Issues & Solutions
 
-### Testing
-```bash
-# Unit tests (Vitest)
-npm run test
-npm run test:ui          # Interactive test UI
-
-# E2E tests (Playwright)
-npm run test:e2e:local   # Test local dev server
-npm run test:e2e:prod    # Test production site
-```
-
-#### Test Architecture
-The project follows a comprehensive testing pyramid:
-1. **Unit Tests** (Vitest) - Core business logic validation
-2. **E2E Tests** (Playwright) - Complete user workflow testing
-3. **CI/CD Pipeline** - Automated testing on GitHub Actions
-
-#### Test Coverage
-- ✅ **API Logic**: Parameter validation (`OTimeOpen/OTimeClose = null`), time window calculation
-- ✅ **Flight Filtering**: Scheduled OR actual time in range, airline filtering, cancelled flight exclusion
-- ✅ **BR35 Regression**: Critical fix ensuring flights display when actual time in range
-- ✅ **UI Functionality**: Cookie persistence (airline, theme, language), responsive design
-- ✅ **Cross-platform**: Multi-browser and mobile device compatibility
-
-#### Key Test Files
-- `src/test/api.test.js` - Unit tests for flight parsing and filtering logic
-- `e2e/api-integration.spec.js` - API parameter and response validation
-- `e2e/user-interaction.spec.js` - UI interactions and cookie persistence
-- `e2e/production.spec.js` - Live site validation tests
-
-## 📊 Flight Data Structure
-
-```mermaid
-erDiagram
-    FLIGHT {
-        string id PK
-        number BNO "Terminal Number"
-        string AState "A=Arrival, D=Departure"
-        string ACode "Airline Code"
-        string AName "Airline Name"
-        string FlightNo "Flight Number"
-        string Gate "Gate Number"
-        string ODate "Scheduled Date"
-        string OTime "Scheduled Time"
-        string RDate "Actual Date"
-        string RTime "Actual Time"
-        string CityCode "IATA City Code"
-        string CityEname "English City Name"
-        string CityName "Local City Name"
-        string Memo "Status Message"
-        string PlaneNo "Aircraft Type"
-        string StopCode "Baggage Carousel"
-        string CurrentStatus "Current Status"
-        array sharing "Code-share Flights"
-    }
-    
-    SHARING {
-        string ACode "Partner Airline"
-        string AName "Partner Name"
-        string FlightNo "Partner Flight Number"
-        string flightCode "Combined Code"
-    }
-    
-    FLIGHT ||--o{ SHARING : "code-shares"
-```
-
-## 🔧 Configuration
-
-### Environment Variables
-```bash
-# Base path for GitHub Pages deployment
-VITE_BASE_PATH=/tpe-sushi-go-round/
-
-# API endpoint (default: Taoyuan Airport)
-VITE_API_URL=https://www.taoyuan-airport.com/api/api/flight/a_flight
-```
-
-### Supported Airlines
-- **BR** - EVA Air (長榮航空)
-- **CI** - China Airlines (中華航空)
-- **JX** - STARLUX Airlines (星宇航空)
-
-### Playwright Workers Configuration
-- **Local** (`playwright.local.config.js`): uses `os.cpus().length` workers based on CPU cores for maximum parallelism.
-- **CI** (`playwright.local.config.js` when `CI=true`): uses 2 workers for stable test runs.
-
-### Time Window Configuration
-- **Arrival Mode**: Current time - 40 minutes → Current time + 80 minutes
-- **Departure Mode**: Current time → Current time + 120 minutes
-- **Rounding**: 10-minute intervals
-- **Timezone**: UTC+8 (Asia/Taipei)
-
-## 🐛 Known Issues & Solutions
-
-### BR35 Display Issue (Resolved)
-**Problem**: Flight BR35 with scheduled time 05:05 and actual time 05:39 didn't show during 05:20-07:20 window.
-
-**Root Cause**: API request was sending time range parameters, limiting server response.
-
-**Solution**: Always send `OTimeOpen: null` and `OTimeClose: null` to fetch full day data, then filter client-side.
-
-```javascript
-// ❌ Wrong - limits API response
-postData.OTimeOpen = "05:20";
-postData.OTimeClose = "07:20";
-
-// ✅ Correct - gets all flights
-postData.OTimeOpen = null;
-postData.OTimeClose = null;
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests (`npm run test && npm run test:e2e:local`)
-4. Commit your changes (`git commit -m 'Add amazing feature'`)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
-
-### Development Guidelines
-- All code comments must be in English
-- UI text remains in Traditional Chinese (for Taiwanese users)
-- Every feature must have corresponding tests
-- Maintain test coverage above 80%
-- Follow the existing code style
-
-## 📈 Performance Considerations
-
-- **API Optimization**: Single request for all flights, client-side filtering
-- **Responsive Images**: Airline logos with appropriate sizing
-- **Caching**: Static assets cached with service worker
-- **Bundle Size**: Tree-shaking enabled, minimal dependencies
-
-## 🌐 Browser Support
-
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
-- Mobile browsers (iOS Safari, Chrome Mobile)
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+**BR35 display bug (resolved):** Flight with scheduled time 05:05 (outside window) and actual time 05:39 (inside window) was not displaying. Root cause: API request was sending time range parameters. Fix: always send `OTimeOpen: null, OTimeClose: null` and filter client-side.
 
 ## 🙏 Acknowledgments
 
 - Taoyuan International Airport for providing the flight data API
 - Taiwan's aviation community for inspiration
 - All the flight crew members who deserve to get off work faster! ✈️
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
