@@ -1,152 +1,97 @@
-# AI Knowledge Transfer System
-# Taipei Sushi Go Round 🍣 - AI Knowledge Transfer Document
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-This is a Taoyuan International Airport flight information system designed specifically for flight crew members to quickly check baggage carousel information using mobile devices.
+
+**TPE Sushi Go Round** is a mobile-first web app for Taoyuan International Airport flight information. Designed for flight crew members to quickly check baggage carousel and departure gate info.
+
+**Live Site:** https://tpe-eagle.github.io/tpe-sushi-go-round/
+
+**Tech Stack:**
+- **Frontend:** Vanilla JavaScript + Bootstrap 5 + Vite (ES module)
+- **Styling:** SCSS/Sass
+- **Testing:** Vitest (unit) + Playwright (E2E)
+- **CI/CD:** GitHub Actions → GitHub Pages
+
+## Essential Development Commands
+
+### Setup
+```bash
+npm install
+npx playwright install  # For E2E tests
+```
+
+### Development
+```bash
+npm run dev       # Start Vite dev server (port 8080)
+npm run build     # Production build → dist/
+npm run preview   # Preview production build
+```
+
+### Testing
+```bash
+npm run test              # Unit tests (Vitest, watch mode)
+npm run test:run          # Unit tests (single run)
+npm run test:e2e:local    # Local E2E tests (max parallelism)
+npm run test:e2e:prod     # Production E2E tests (includes live site validation)
+```
+
+## Architecture Overview
 
 ### Core Features
-- Query arrival and departure flights for Taiwan's three major airlines (BR/CI/JX)
+- Arrival/departure flights for three airlines: BR (EVA Air), CI (China Airlines), JX (Starlux)
 - Dynamic time window filtering: 2-hour window based on current time
-- Multi-language support (Traditional Chinese/English/Japanese)
-- Theme switching (Light/Dark mode)
-- Responsive design
+- Multi-language: Traditional Chinese / English / Japanese
+- Light/Dark theme with cookie persistence
+- Responsive mobile-first design
 
-## Critical Technical Decisions & Historical Issues
-
-### 1. Time Window Logic (IMPORTANT!)
-**Issue History**: BR35 flight display problem - scheduled time 05:05 outside window, actual time 05:39 within window, but not displaying
-
-**Root Cause**: API request stage was sending time range parameters, causing API to only return flights with OTime within range
-
-**Solution**: 
-- Send `OTimeOpen: null, OTimeClose: null` in API requests to fetch full day data
-- Use client-side `filterFlightsByTime()` for precise filtering
-- Filtering logic: `isODateTimeInRange || isRDateTimeInRange` (display if either scheduled or actual time is within range)
-
-### 2. Time Window Configuration
-Location: `main.js:257-271` getTimeWindowConfig()
-- Arrival mode (A): Start 40 minutes before current time, duration 120 minutes
-- Departure mode (D): Start at current time, duration 120 minutes
-- Time rounding: 10-minute intervals
-
-### 3. Dual Filtering Mechanism
-1. **Data Fetching**: API request for all flights (OTimeOpen/OTimeClose = null)
-2. **Client-side Filtering**: filterFlightsByTime() filters by time window
-3. **Airline Filtering**: Only display BR/CI/JX, exclude cancelled flights
-4. **User Filtering**: Filter by user-selected airline
-
-### 4. E2E Testing Optimizations (NEW!)
-**Smart API Caching**: To prevent DDoS on Taoyuan Airport API while maintaining test quality
-- First test makes real API call and caches response for 30 minutes
-- Subsequent tests use cached real data with language transformations
-- Graceful fallback to mock data if real API fails
-- Blocks Google Analytics requests to prevent data pollution
-
-**CI/CD Optimizations**:
-- Local and production E2E tests use identical exit node connectivity checks
-- Removed problematic API connectivity test from CI (403 errors)
-- Only basic Taiwan route accessibility test needed for VPN validation
-
-## Code Architecture
-
-### Main Functions
-- `fetchData()`: API data fetching (main.js:308-386)
-- `filterFlightsByTime()`: Time range filtering (main.js:468-487)
-- `getTimeWindow()`: Time window calculation (main.js:283-290)
-- `displayFlights()`: Data display (main.js:518-565)
-
-### Test Helper Functions (E2E)
-- `blockGoogleAnalytics()`: Prevents GA tracking during tests (e2e/test-helpers.js)
-- `setupSmartApiRoute()`: Smart caching for real API data (e2e/test-helpers.js)
-- `setupMockApiRoute()`: Traditional mock for unit tests (e2e/test-helpers.js)
+### Key Files
+- `main.js` — Application logic (data fetching, filtering, display, i18n)
+- `style.scss` — All styling
+- `index.html` — Single-page entry point
+- `src/utils/flightUtils.js` — Shared utility functions (used by both app and tests)
+- `e2e/test-helpers.js` — E2E test utilities (smart API caching, GA blocking, mocks)
 
 ### Data Flow
-```mermaid
-graph TD
-    A[User opens webpage] --> B[detectLanguage]
-    B --> C[fetchData]
-    C --> D[API returns full day flight data]
-    D --> E[filterFlightsByTime filters by time window]
-    E --> F[Filter by airline BR/CI/JX]
-    F --> G[generateAirlineLinks generates airline buttons]
-    G --> H[displayFlights shows results]
-```
+1. `fetchData()` — POST to Taoyuan Airport API, fetches full day of flights
+2. `filterFlightsByTime()` — Client-side time window filtering
+3. Filter by airline (BR/CI/JX), exclude cancelled flights
+4. `displayFlights()` — Render results to DOM
 
-### Key Constants
-- `AIRLINE_CODES`: ['BR', 'CI', 'JX']
-- `API_URL`: 'https://www.taoyuan-airport.com/api/api/flight/a_flight'
-- `CACHE_DURATION`: 30 minutes (for smart API caching)
+### API Integration
+- **Endpoint:** `https://www.taoyuan-airport.com/api/api/flight/a_flight`
+- **Critical:** Always send `OTimeOpen: null, OTimeClose: null` in API requests — fetch full day data, filter client-side
 
-## Testing System
+### Time Window Logic
+- Arrival mode (A): Start 40 min before current time, 120 min duration
+- Departure mode (D): Start at current time, 120 min duration
+- Rounding: 10-minute intervals
+- Filter matches if **either** scheduled time (ODateTime) **or** actual time (RDateTime) is within range
 
-### Test Architecture
-- **Unit Tests** (Vitest): Test core logic including API parsing, time calculation, filtering logic
-- **E2E Tests** (Playwright): Test complete functionality including user interactions, cookies, responsive design
-- **Smart API Caching**: First call uses real API, subsequent calls use cached data
-- **CI/CD Integration**: GitHub Actions automatically runs tests and deploys
+## Key Design Decisions
 
-### Key Test Cases
-1. **BR35 Regression Test**: Ensure flights with actual time within range display correctly
-2. **API Parameter Validation**: Ensure `OTimeOpen` and `OTimeClose` always remain `null`
-3. **Data Consistency**: Page display must match API parsing results
-4. **Cookie Persistence**: Airline selection, theme, language settings persistence
-5. **Google Analytics Blocking**: Prevent test traffic from polluting GA data
-6. **Smart Caching**: Real API data cached and reused efficiently
+**Never set time range in API requests.** The API must receive `OTimeOpen: null, OTimeClose: null` to return all flights. Client-side `filterFlightsByTime()` handles the filtering. This was the fix for a critical bug where flights with actual times within range but scheduled times outside range were not displaying (BR35 incident).
 
-### Test Commands
-```bash
-npm run test              # Unit tests
-npm run test:e2e:local    # Local E2E tests (skips production tests)
-npm run test:e2e:prod     # Production E2E tests (includes real site validation)
-```
+**E2E smart API caching.** First test makes a real API call and caches the response for 30 minutes. Subsequent tests reuse cached data. Falls back to mock data if real API fails. This prevents excessive load on the airport API.
 
-> **Worker Configuration**:
-> - **Local** (`npm run test:e2e:local`): configured in `playwright.local.config.js` to use `os.cpus().length` workers for maximum parallelism.
-> - **CI (GitHub Actions)**: configured to use 2 workers for stable test runs.
+**Block Google Analytics in tests.** All E2E test setup calls `blockGoogleAnalytics()` to prevent test traffic from polluting analytics data.
 
-### Shared Utility Functions
-Location: `src/utils/flightUtils.js`
-- Core logic extracted from main.js for reuse in tests
-- Includes API parsing, time calculation, filtering functions
-- Ensures test logic matches actual program logic completely
+## AI Development Workflow
 
-## Common Issues Troubleshooting
+### Before making any change
+1. Run unit tests and confirm they pass:
+   ```bash
+   npm run test:run
+   ```
+2. Read this file to understand the area being changed.
 
-### Q: Why isn't a certain flight displaying?
-1. Check if flight's OTime and RTime are within time window
-2. Confirm airline code is BR/CI/JX
-3. Check if flight is cancelled (Memo contains "取消" or "cancelled")
+### After making changes
+1. Run unit tests again and confirm all pass.
+2. If any test fails, fix the production code first. Do not modify tests without user approval.
+3. Run `npm run build` to verify the build succeeds.
 
-### Q: Time display incorrect?
-- All times use UTC+8 (Taipei time)
-- Time window calculated based on current local time
-
-### Q: API request failed?
-- Check network connection
-- Confirm postData format is correct, especially OTimeOpen/OTimeClose should be null
-- Smart caching will automatically fall back to mock data
-
-### Q: E2E tests failing?
-- Check if exit node connectivity is working (CI logs)
-- Verify smart API caching is functioning (look for cache logs)
-- Ensure Google Analytics blocking is active
-
-## Update History
-- 2025/06/09: Implemented smart API caching and Google Analytics blocking for E2E tests
-- 2025/06/09: Unified exit node connectivity tests between local and production CI
-- 2025/06/08: Fixed BR35 display issue, changed to API request full day data, client-side filtering
-- 2025/06/07: Refactored time window logic, unified A/D mode time handling
-
-## Development Reminders
-1. **Never set time range in API requests** - Must fetch full day data for client-side filtering
-2. Pay attention to timezone issues during testing, all times are UTC+8
-3. Adding new airlines requires updating both AIRLINE_CODES and CSS styles
-4. Language switching reloads data, consider performance
-5. **Run tests for every logic change** - Avoid regression issues
-6. **New features must have corresponding tests** - Maintain test coverage
-7. **E2E tests use smart caching** - First call gets real data, subsequent calls use cache
-8. **Block GA in tests** - Use `blockGoogleAnalytics()` in all E2E test setup
-9. **Keep CI exit node tests simple** - Only basic connectivity checks, not API validation
-
----
-*This document is created by AI assistant for quick context establishment in new sessions*
+### When uncertain
+- Do not guess at API response format. Check the test fixtures or make a real request.
+- All times are UTC+8 (Taipei time) — pay attention to timezone in tests.
+- Adding new airlines requires updating `AIRLINE_CODES` and CSS styles.
