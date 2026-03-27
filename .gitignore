@@ -53,8 +53,9 @@ Thumbs.db
 !.vscode/launch.json
 .idea/
 
-# Claude Code local settings
+# Claude Code local settings and plans
 .claude/settings.local.json
+.claude/plans/
 *.suo
 *.ntvs*
 *.njsproj
