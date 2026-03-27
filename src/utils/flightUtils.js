@@ -3,6 +3,15 @@
 
 export const AIRLINE_CODES = ['BR', 'CI', 'JX'];
 
+// Subsidiary airlines grouped under parent companies
+// B7 (UNI Air / 立榮航空) → BR (EVA Air / 長榮航空)
+// AE (Mandarin Airlines / 華信航空) → CI (China Airlines / 中華航空)
+export const AIRLINE_GROUPS = {
+    'BR': ['BR', 'B7'],
+    'CI': ['CI', 'AE'],
+    'JX': ['JX']
+};
+
 /**
  * Get UTC+8 date string in YYYY/MM/DD format
  */
@@ -88,8 +97,9 @@ export function filterFlightsByTime(flights, mode = 'A', now = new Date()) {
  * Filter supported airlines and exclude cancelled flights
  */
 export function filterSupportedAirlines(flights) {
+    const allCodes = Object.values(AIRLINE_GROUPS).flat();
     return flights.filter(flight =>
-        AIRLINE_CODES.includes(flight.ACode) &&
+        allCodes.includes(flight.ACode) &&
         (!flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
     );
 }

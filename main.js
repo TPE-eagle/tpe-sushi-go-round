@@ -3,6 +3,11 @@ import './style.scss'
 // Constants
 const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const AIRLINE_CODES = ['BR', 'CI', 'JX'];
+const AIRLINE_GROUPS = {
+    'BR': ['BR', 'B7'],
+    'CI': ['CI', 'AE'],
+    'JX': ['JX']
+};
 const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const REFRESH_DELAY = 1500;
@@ -406,8 +411,9 @@ function processFetchedData(data) {
         return flightNumberA - flightNumberB;
     });
 
+    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
     flightData = data.filter(flight =>
-        AIRLINE_CODES.includes(flight.ACode) &&
+        allGroupCodes.includes(flight.ACode) &&
         (!flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
     );
 
@@ -551,7 +557,8 @@ function updateAirlineLinks() {
 function filterFlights(airlineCode = null) {
     if (airlineCode !== null) {
         setCookie(COOKIE_NAME, airlineCode);
-        currentFilteredFlights = flightData.filter(flight => flight.ACode === airlineCode);
+        const groupCodes = AIRLINE_GROUPS[airlineCode] || [airlineCode];
+        currentFilteredFlights = flightData.filter(flight => groupCodes.includes(flight.ACode));
     } else {
         deleteCookie(COOKIE_NAME);
         currentFilteredFlights = flightData;

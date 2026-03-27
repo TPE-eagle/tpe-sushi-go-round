@@ -77,15 +77,15 @@ export async function setupSmartApiRoute(page, forceReal = false) {
         let adjustedFlight = { ...flight }
         
         // Apply language-specific airline name translations for supported airlines
-        if (flight.ACode && ['BR', 'CI', 'JX'].includes(flight.ACode)) {
+        if (flight.ACode && ['BR', 'CI', 'JX', 'B7', 'AE'].includes(flight.ACode)) {
           if (langHeader.startsWith('zh')) {
-            const zhNames = { BR: '長榮航空', CI: '中華航空', JX: '星宇航空' }
+            const zhNames = { BR: '長榮航空', CI: '中華航空', JX: '星宇航空', B7: '立榮航空', AE: '華信航空' }
             adjustedFlight.AName = zhNames[flight.ACode] || flight.AName
           } else if (langHeader.startsWith('ja')) {
-            const jpNames = { BR: 'エバー航空', CI: 'チャイナエアライン', JX: 'スターラックス航空' }
+            const jpNames = { BR: 'エバー航空', CI: 'チャイナエアライン', JX: 'スターラックス航空', B7: 'ユニー航空', AE: 'マンダリン航空' }
             adjustedFlight.AName = jpNames[flight.ACode] || flight.AName
           } else {
-            const enNames = { BR: 'EVA Air', CI: 'China Airlines', JX: 'STARLUX Airlines' }
+            const enNames = { BR: 'EVA Air', CI: 'China Airlines', JX: 'STARLUX Airlines', B7: 'UNI Air', AE: 'Mandarin Airlines' }
             adjustedFlight.AName = enNames[flight.ACode] || flight.AName
           }
         }
@@ -125,7 +125,7 @@ export function getMockFlightData(date = getCurrentUTC8Date()) {
   const nowLocal = new Date()
   const config = getTimeWindowConfig('A')
   const { windowStart } = getTimeWindow(config, nowLocal)
-  const offsets = [10, 20, 30]
+  const offsets = [10, 20, 30, 40, 50]
   const dateTimes = offsets.map(offset => {
     const dt = new Date(windowStart.getTime() + offset * 60 * 1000)
     const dateStr = dt.toISOString().split('T')[0].replace(/-/g, '/')
@@ -201,6 +201,46 @@ export function getMockFlightData(date = getCurrentUTC8Date()) {
       "PlaneNo": "A350",
       "StopCode": "03",
       "flightCode": "JX456"
+    },
+    {
+      "id": `${date.replace(/\//g, '')}_A_B7681`,
+      "BNO": 2,
+      "AState": "A",
+      "ACode": "B7",
+      "AName": "立榮航空",
+      "FlightNo": "681",
+      "Gate": "C5",
+      "ODate": dateTimes[3].dateStr,
+      "OTime": dateTimes[3].timeStr,
+      "RDate": dateTimes[3].dateStr,
+      "RTime": dateTimes[3].timeStr,
+      "CityCode": "SZX",
+      "CityEname": "Shenzhen",
+      "CityName": "深圳",
+      "Memo": "已到",
+      "PlaneNo": "A321-200",
+      "StopCode": "07",
+      "flightCode": "B7681"
+    },
+    {
+      "id": `${date.replace(/\//g, '')}_A_AE991`,
+      "BNO": 2,
+      "AState": "A",
+      "ACode": "AE",
+      "AName": "華信航空",
+      "FlightNo": "991",
+      "Gate": "D3",
+      "ODate": dateTimes[4].dateStr,
+      "OTime": dateTimes[4].timeStr,
+      "RDate": dateTimes[4].dateStr,
+      "RTime": dateTimes[4].timeStr,
+      "CityCode": "XMN",
+      "CityEname": "Xiamen",
+      "CityName": "廈門",
+      "Memo": "已到",
+      "PlaneNo": "A321-271N",
+      "StopCode": "04",
+      "flightCode": "AE991"
     }
   ]
 }
@@ -231,10 +271,10 @@ export async function setupMockApiRoute(page, mockData = null) {
       if (langHeader.startsWith('zh')) {
         name = flight.AName
       } else if (langHeader.startsWith('ja')) {
-        const jpNames = { BR: 'エバー航空', CI: 'チャイナエアライン', JX: 'スターラックス航空' }
+        const jpNames = { BR: 'エバー航空', CI: 'チャイナエアライン', JX: 'スターラックス航空', B7: 'ユニー航空', AE: 'マンダリン航空' }
         name = jpNames[flight.ACode] || flight.AName
       } else {
-        const enNames = { BR: 'EVA Air', CI: 'China Airlines', JX: 'STARLUX Airlines' }
+        const enNames = { BR: 'EVA Air', CI: 'China Airlines', JX: 'STARLUX Airlines', B7: 'UNI Air', AE: 'Mandarin Airlines' }
         name = enNames[flight.ACode] || flight.AName
       }
       return { ...flight, AName: name }

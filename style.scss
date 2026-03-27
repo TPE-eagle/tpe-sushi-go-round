@@ -158,12 +158,13 @@ body {
 }
 
 /* Airline Button Styles */
-.btn-outline-br, .btn-outline-ci, .btn-outline-jx {
+/* B7 (UNI Air) uses BR (EVA Air) colors, AE (Mandarin) uses CI (China Airlines) colors */
+.btn-outline-br, .btn-outline-b7, .btn-outline-ci, .btn-outline-ae, .btn-outline-jx {
   border-color: var(--color-br);
   color: var(--color-br);
 }
 
-.btn-outline-ci {
+.btn-outline-ci, .btn-outline-ae {
   border-color: var(--color-ci);
   color: var(--color-ci);
 }
@@ -174,16 +175,20 @@ body {
 }
 
 .btn-outline-br:hover, .btn-outline-br.active,
+.btn-outline-b7:hover, .btn-outline-b7.active,
 .btn-outline-ci:hover, .btn-outline-ci.active,
+.btn-outline-ae:hover, .btn-outline-ae.active,
 .btn-outline-jx:hover, .btn-outline-jx.active {
   color: var(--color-white);
 }
 
-.btn-outline-br:hover, .btn-outline-br.active {
+.btn-outline-br:hover, .btn-outline-br.active,
+.btn-outline-b7:hover, .btn-outline-b7.active {
   background-color: var(--color-br);
 }
 
-.btn-outline-ci:hover, .btn-outline-ci.active {
+.btn-outline-ci:hover, .btn-outline-ci.active,
+.btn-outline-ae:hover, .btn-outline-ae.active {
   background-color: var(--color-ci);
 }
 
@@ -193,19 +198,25 @@ body {
 
 /* Dark mode button styles */
 [data-bs-theme="dark"] .btn-outline-br,
+[data-bs-theme="dark"] .btn-outline-b7,
 [data-bs-theme="dark"] .btn-outline-ci,
+[data-bs-theme="dark"] .btn-outline-ae,
 [data-bs-theme="dark"] .btn-outline-jx {
   color: var(--text-color);
   border-color: var(--border-color);
 }
 [data-bs-theme="dark"] .btn-outline-br:hover,
-[data-bs-theme="dark"] .btn-outline-br.active {
+[data-bs-theme="dark"] .btn-outline-br.active,
+[data-bs-theme="dark"] .btn-outline-b7:hover,
+[data-bs-theme="dark"] .btn-outline-b7.active {
   background-color: var(--color-br);
   color: var(--table-header-text);
   border-color: var(--color-br);
 }
 [data-bs-theme="dark"] .btn-outline-ci:hover,
-[data-bs-theme="dark"] .btn-outline-ci.active {
+[data-bs-theme="dark"] .btn-outline-ci.active,
+[data-bs-theme="dark"] .btn-outline-ae:hover,
+[data-bs-theme="dark"] .btn-outline-ae.active {
   background-color: var(--color-ci);
   color: var(--table-header-text);
   border-color: var(--color-ci);
@@ -218,15 +229,15 @@ body {
 }
 
 /* Table Styles */
-.table-br, .table-ci, .table-jx {
+.table-br, .table-b7, .table-ci, .table-ae, .table-jx {
   --bs-table-color: var(--table-header-text);
 }
 
-.table-br {
+.table-br, .table-b7 {
   --bs-table-bg: var(--color-br);
 }
 
-.table-ci {
+.table-ci, .table-ae {
   --bs-table-bg: var(--color-ci);
 }
 
