@@ -65,7 +65,6 @@ jobs:
         oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
         oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
         tags: tag:ci
-        args: --accept-routes --operator=${{ github.actor }}
 
     - name: "🛰️ ATC Clearance: Exit Node Connectivity Check"
       timeout-minutes: 5
@@ -215,7 +214,6 @@ jobs:
         oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
         oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
         tags: tag:ci
-        args: --accept-routes --operator=${{ github.actor }}
     - name: "🛰️ ATC Clearance: Exit Node Connectivity Check"
       run: |
         set -e
