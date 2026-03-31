@@ -35,50 +35,36 @@ test.describe('Production Environment Tests', () => {
 test('should validate API request parameters', async ({ page }) => {
     const apiRequests = []
     
-    // Monitor API requests to verify parameters
-    page.on('request', request => {
-      if (request.url().includes('taoyuan-airport.com/api/api/flight/a_flight')) {
-        try {
-          apiRequests.push({
-            url: request.url(),
-            method: request.method(),
-            postData: request.postDataJSON()
-          })
-        } catch (error) {
-          // Handle parsing errors gracefully
-          apiRequests.push({
-            url: request.url(),
-            method: request.method(),
-            postData: {}
-          })
-        }
-      }
+    // Capture request details inside a route handler (page.route intercepts
+    // before page.on('request'), so we use route.fallback to chain handlers)
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+      try {
+        apiRequests.push({
+          method: route.request().method(),
+          postData: route.request().postDataJSON()
+        })
+      } catch { /* ignore parse errors */ }
+      await route.fallback()
     })
 
     await page.goto('')
-    
-    // Wait for API request to be made
-    await page.waitForRequest(
-      request => request.url().includes('taoyuan-airport.com/api/api/flight/a_flight'),
-      { timeout: 10000 }
-    )
-    
-    // Verify API request was made with correct parameters
-    if (apiRequests.length > 0) {
-      const apiRequest = apiRequests[0]
-      expect(apiRequest.method).toBe('POST')
-      
-      const postData = apiRequest.postData
-      expect(postData).toHaveProperty('ODate')
-      expect(postData).toHaveProperty('AState', 'A')
-      
-      // Ensure time parameters are null for full day data (IMPORTANT!)
-      if (postData.hasOwnProperty('OTimeOpen')) {
-        expect(postData.OTimeOpen).toBeNull()
-      }
-      if (postData.hasOwnProperty('OTimeClose')) {
-        expect(postData.OTimeClose).toBeNull()
-      }
+    await page.waitForSelector('table, #output', { timeout: 10000 })
+
+    // Verify API request was captured with correct parameters
+    expect(apiRequests.length).toBeGreaterThan(0)
+    const apiRequest = apiRequests[0]
+    expect(apiRequest.method).toBe('POST')
+
+    const postData = apiRequest.postData
+    expect(postData).toHaveProperty('ODate')
+    expect(postData).toHaveProperty('AState', 'A')
+
+    // Ensure time parameters are null for full day data (IMPORTANT!)
+    if (postData.hasOwnProperty('OTimeOpen')) {
+      expect(postData.OTimeOpen).toBeNull()
+    }
+    if (postData.hasOwnProperty('OTimeClose')) {
+      expect(postData.OTimeClose).toBeNull()
     }
   })
 
@@ -125,7 +111,7 @@ test('should validate API request parameters', async ({ page }) => {
       await expect(cells.first().locator('img')).toBeVisible()
     } else {
       // If no flight data, should display appropriate message
-      await expect(page.locator('#output')).toContainText('沒有找到符合條件的航班')
+      await expect(page.locator('#output')).toContainText(/沒有找到|No matching|一致する/)
     }
   })
 
