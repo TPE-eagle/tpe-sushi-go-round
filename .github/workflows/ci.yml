@@ -110,7 +110,7 @@ jobs:
 
     - name: "✈️ Deploying to GitHub Pages"
       id: deployment
-      uses: actions/deploy-pages@v5
+      uses: actions/deploy-pages@v4
 
   e2e-tests-production:
     name: "🛬 Post-landing E2E Tests (Production)"
