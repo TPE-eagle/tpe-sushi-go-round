@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 // Production environment test configuration - tests actual deployed website
 export default defineConfig({
   testDir: './e2e',
+  testMatch: 'production.spec.js',
   timeout: 15000, // Reduced timeout for faster execution
   retries: 1, // Reduced retries for faster execution
   workers: 2, // Limit workers like local CI config

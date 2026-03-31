@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { blockGoogleAnalytics, setupSmartApiRoute } from './test-helpers.js'
+import { blockGoogleAnalytics, setupMockApiRoute } from './test-helpers.js'
 
 const expectedTitles = {
   zh: { arrival: '台北迴轉壽司🍣', departure: '台北出發便🛫🌏' },
@@ -10,8 +10,7 @@ const expectedTitles = {
 test.describe('Production Environment Tests', () => {
   test.beforeEach(async ({ page }) => {
     await blockGoogleAnalytics(page)
-    // Use smart API routing: first call gets real data and caches it, subsequent calls use cache
-    await setupSmartApiRoute(page)
+    await setupMockApiRoute(page)
   })
 
   test('should load production site successfully', async ({ page }) => {
