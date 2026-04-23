@@ -397,18 +397,20 @@ function fetchData() {
         apiParamsElement.innerText = apiParamsText;
     }
 
-    // Simple caching with localStorage (only for production)
+    // localStorage is retained solely as an offline fallback. When online we
+    // always hit the API so that gate / carousel changes surface immediately.
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
     const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-    if (!isTestEnvironment) {
+    if (!isTestEnvironment && !isOnline()) {
         const cachedData = getCachedFlightData(cacheKey);
-        // Offline: accept any cached data regardless of age and surface staleness.
-        if (cachedData && (!isOnline() || !isCacheExpired(cachedData.timestamp))) {
+        if (cachedData) {
             processFetchedData(cachedData.data);
             updateOfflineBanner(cachedData.timestamp);
             return;
         }
+        // No cache and offline: fall through; the fetch will fail and the
+        // offline-no-cache message will render.
     }
 
     const acceptLanguageHeader = currentLanguage === 'zh'
@@ -418,6 +420,7 @@ function fetchData() {
             : 'en-US,en;q=0.9';
     fetch(API_URL, {
         method: "POST",
+        cache: "no-store",
         headers: {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": acceptLanguageHeader,
@@ -427,7 +430,7 @@ function fetchData() {
     })
     .then(response => response.json())
     .then(data => {
-        // Cache the data (only for production)
+        // Store for offline fallback only; never served while online.
         if (!isTestEnvironment) {
             setCachedFlightData(cacheKey, {
                 data: data,
@@ -439,15 +442,10 @@ function fetchData() {
         processFetchedData(data);
     })
     .catch(error => {
-        // If fetch fails, try to use cached data as fallback regardless of age.
-        if (!isTestEnvironment) {
-            const cachedData = getCachedFlightData(cacheKey);
-            if (cachedData) {
-                processFetchedData(cachedData.data);
-                updateOfflineBanner(cachedData.timestamp);
-                return;
-            }
-        }
+        // Offline without any cached data -> dedicated message.
+        // Online but the request failed -> generic error. We intentionally do
+        // NOT fall back to stale cache here: a working network connection with
+        // a failed API call should not silently serve yesterday's carousels.
         if (!isOnline()) {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["offlineNoCache"]}</div>`;
@@ -564,11 +562,6 @@ function setCachedFlightData(key, data) {
             clearFlightCache();
         }
     }
-}
-
-function isCacheExpired(timestamp) {
-    const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
-    return Date.now() - timestamp > CACHE_DURATION;
 }
 
 function cleanupOldCache() {

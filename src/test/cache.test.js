@@ -155,46 +155,30 @@ describe('Flight Data Caching', () => {
     expect(cacheKey2).toContain('flight_data_')
   })
 
-  // The offline policy: cached data should be served whenever the browser is
-  // offline, even past the normal 2-minute freshness window. The existing
-  // freshness rule still applies when online. This mirrors the logic inlined
-  // in main.js fetchData().
-  describe('offline cache policy', () => {
-    const CACHE_DURATION_MS = 2 * 60 * 1000
-    const shouldServe = (cached, now, online) => {
-      if (!cached) return false
-      const expired = (now - cached.timestamp) > CACHE_DURATION_MS
-      return !online || !expired
-    }
+  // Caching policy: flight data is live; gate and carousel change over time
+  // and a stale value is worse than a momentary empty state. So when online
+  // we always fetch fresh and never serve localStorage, regardless of age.
+  // localStorage is kept purely as an offline fallback.
+  describe('always-fresh-online policy', () => {
+    const shouldServeCache = (cached, online) => !!cached && !online
 
-    test('serves fresh cache when online', () => {
+    test('refuses cache of any age when online', () => {
       const now = Date.now()
-      const cached = { timestamp: now - 60_000 }
-      expect(shouldServe(cached, now, true)).toBe(true)
+      const fresh = { timestamp: now - 30_000 }
+      const aged = { timestamp: now - 5 * 60 * 1000 }
+      expect(shouldServeCache(fresh, true)).toBe(false)
+      expect(shouldServeCache(aged, true)).toBe(false)
     })
 
-    test('refuses expired cache when online', () => {
+    test('serves cache when offline regardless of age', () => {
       const now = Date.now()
-      const cached = { timestamp: now - 5 * 60 * 1000 }
-      expect(shouldServe(cached, now, true)).toBe(false)
-    })
-
-    test('serves expired cache when offline', () => {
-      const now = Date.now()
-      const cached = { timestamp: now - 30 * 60 * 1000 }
-      expect(shouldServe(cached, now, false)).toBe(true)
-    })
-
-    test('serves fresh cache when offline', () => {
-      const now = Date.now()
-      const cached = { timestamp: now - 30_000 }
-      expect(shouldServe(cached, now, false)).toBe(true)
+      expect(shouldServeCache({ timestamp: now - 30_000 }, false)).toBe(true)
+      expect(shouldServeCache({ timestamp: now - 24 * 60 * 60 * 1000 }, false)).toBe(true)
     })
 
     test('returns false when nothing is cached regardless of connectivity', () => {
-      const now = Date.now()
-      expect(shouldServe(null, now, true)).toBe(false)
-      expect(shouldServe(null, now, false)).toBe(false)
+      expect(shouldServeCache(null, true)).toBe(false)
+      expect(shouldServeCache(null, false)).toBe(false)
     })
   })
 

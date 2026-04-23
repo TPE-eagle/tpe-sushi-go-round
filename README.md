@@ -55,7 +55,7 @@ flowchart LR
 ```
 
 - The API always receives `OTimeOpen: null, OTimeClose: null`; the 2-hour window is applied client-side.
-- `localStorage` cache: 2-minute expiry online, any age accepted when offline; max 5 entries; disabled on localhost.
+- `localStorage` never serves online reads — every API call is fresh. The cache is kept only as an offline fallback (served when `navigator.onLine === false`). Max 5 entries; disabled on localhost.
 - Service Worker precaches the app shell only (HTML / JS / CSS / icons / webmanifest); the airport API and other external origins pass through to the network.
 
 ## Time Window
@@ -96,7 +96,7 @@ All times are UTC+8.
 | Aircraft family (`PlaneType`) | Cookie | 7 days |
 | Theme (`theme`) | Cookie | 7 days |
 | Language | Detected from `navigator.language` | Not persisted |
-| Flight data cache | `localStorage` | 2 minutes |
+| Flight data (offline fallback) | `localStorage` | Never served while online |
 
 ## Testing
 
@@ -109,7 +109,7 @@ npm run test:e2e:prod     # Production E2E (live site, multi-browser)
 | Test File | Coverage |
 |-----------|----------|
 | `api.test.js` | Post data, time window math, filtering |
-| `cache.test.js` | `localStorage` lifecycle, expiry, cleanup |
+| `cache.test.js` | `localStorage` lifecycle, cleanup, quota, always-fresh-online policy |
 | `etag-integration.test.js` | ETag / 304 conditional requests |
 | `planetype.test.js` | Family extraction, TBD handling, type filter |
 | `api-integration.spec.js` | API parameters, display, mode switching |
