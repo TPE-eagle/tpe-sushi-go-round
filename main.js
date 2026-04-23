@@ -10,6 +10,7 @@ const AIRLINE_GROUPS = {
 };
 const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
+const PLANE_TYPE_COOKIE_NAME = 'PlaneType';
 const REFRESH_DELAY = 1500;
 const THEME_COOKIE_NAME = 'theme';
 const LIGHT_THEME_COLOR = '#ffffff';
@@ -29,6 +30,7 @@ let flightData = [];
 let currentFilteredFlights = [];
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentACode = null;
+let currentPlaneType = null;
 let currentTheme = 'light'; // Default to light mode
 let currentFlightMode = 'A'; // 'A' for Arrival, 'D' for Departure
 
@@ -45,6 +47,11 @@ const translations = {
         "loading": "資料載入中...🧳",
         "refreshing": "🔄 正在重新整理...",
         "error": "查詢失敗，請稍後再試。",
+        "flightsInWindow": "時段內 {aname} 共 {n} 班",
+        "currentFilter": "目前過濾條件：機型 {type}",
+        "noMatch": "此條件下無符合航班",
+        "clearAircraftType": "清除機型",
+        "airlineNoFlights": "時段內 {acode} 無航班",
         "tableHeaders": {
             "FlightNumber": "航班編號",
             "FlightNumberShort": "航班",
@@ -70,6 +77,11 @@ const translations = {
         "loading": "Data loading...🧳",
         "refreshing": "🔄 Refreshing...",
         "error": "Query failed, please try again later.",
+        "flightsInWindow": "{n} {aname} flight(s) in this time window",
+        "currentFilter": "Current filter: Aircraft type {type}",
+        "noMatch": "No flights match this filter",
+        "clearAircraftType": "Clear aircraft type",
+        "airlineNoFlights": "No {acode} flights in this time window",
         "tableHeaders": {
             "FlightNumber": "Flight Number",
             "FlightNumberShort": "Flt. No",
@@ -95,6 +107,11 @@ const translations = {
         "loading": "データを読み込み中...🧳",
         "refreshing": "🔄 再読み込み中...",
         "error": "クエリに失敗しました。後でもう一度やり直してください。",
+        "flightsInWindow": "この時間帯の{aname}便は {n} 便",
+        "currentFilter": "現在のフィルター：機種 {type}",
+        "noMatch": "該当する便はありません",
+        "clearAircraftType": "機種をクリア",
+        "airlineNoFlights": "この時間帯に {acode} 便はありません",
         "tableHeaders": {
             "FlightNumber": "フライト番号",
             "FlightNumberShort": "番号",
@@ -122,6 +139,7 @@ function renderApp() {
             </div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
+            <div id="planeTypeButtons" class="d-flex justify-content-center flex-wrap mb-2"></div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
             <div id="output" class="container"></div>
             <div id="footer">
@@ -239,6 +257,7 @@ function changeLanguage(lang) {
     fetchData();
     updateApiParams();
     document.getElementById("flightButtons").innerHTML = "";
+    document.getElementById('planeTypeButtons').innerHTML = "";
     updateLanguageLinks();
 }
 
@@ -317,6 +336,7 @@ function updateApiParams() {
 
 function fetchData() {
     document.getElementById('airlineButtons').innerHTML = '';
+    document.getElementById('planeTypeButtons').innerHTML = '';
     document.getElementById("flightButtons").innerHTML = '';
     document.getElementById("output").innerHTML = `
         <div class="blinking-text text-center">
@@ -423,9 +443,21 @@ function processFetchedData(data) {
     }
     generateAirlineLinks(flightData);
 
-    const ACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
-    filterFlights(ACode);
-    updateAirlineLinks();
+    currentACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
+    currentPlaneType = checkCookie(PLANE_TYPE_COOKIE_NAME) ? getCookie(PLANE_TYPE_COOKIE_NAME) : null;
+
+    // If the saved plane type is no longer valid for the current airline scope
+    // (e.g., that family is not flying this window), drop it silently.
+    if (currentACode !== null) {
+        const airlineFiltered = applyAirlineScope(flightData, currentACode);
+        reconcilePlaneTypePin(airlineFiltered);
+    } else if (currentPlaneType !== null) {
+        // Plane type only persists under an airline pin; clear otherwise.
+        currentPlaneType = null;
+        deleteCookie(PLANE_TYPE_COOKIE_NAME);
+    }
+
+    renderFilteredView();
 
     const outputTable = document.querySelector('#output table');
     if (outputTable) {
@@ -554,33 +586,177 @@ function updateAirlineLinks() {
     });
 }
 
-function filterFlights(airlineCode = null) {
+// Apply a new airline pin. Switching airline always clears the plane type pin
+// because families rarely carry over meaningfully (a 777 pilot at BR is not
+// automatically a 777 pilot at CI).
+function applyAirlineFilter(airlineCode) {
+    currentACode = airlineCode;
+    currentPlaneType = null;
+    deleteCookie(PLANE_TYPE_COOKIE_NAME);
+
     if (airlineCode !== null) {
         setCookie(COOKIE_NAME, airlineCode);
-        const groupCodes = AIRLINE_GROUPS[airlineCode] || [airlineCode];
-        currentFilteredFlights = flightData.filter(flight => groupCodes.includes(flight.ACode));
     } else {
         deleteCookie(COOKIE_NAME);
-        currentFilteredFlights = flightData;
     }
-    
-    currentACode = airlineCode;
+
+    renderFilteredView();
+}
+
+// Apply a new plane type pin. null clears the pin.
+function applyPlaneTypeFilter(planeType) {
+    currentPlaneType = planeType;
+    if (planeType !== null) {
+        setCookie(PLANE_TYPE_COOKIE_NAME, planeType);
+    } else {
+        deleteCookie(PLANE_TYPE_COOKIE_NAME);
+    }
+    renderFilteredView();
+}
+
+// Compute the filtered flight list from current pins and render the UI.
+function renderFilteredView() {
+    const airlineFiltered = applyAirlineScope(flightData, currentACode);
+
+    if (currentACode !== null) {
+        generatePlaneTypeLinks(airlineFiltered);
+    } else {
+        document.getElementById('planeTypeButtons').innerHTML = '';
+    }
+
+    currentFilteredFlights = filterByPlaneType(airlineFiltered, currentPlaneType);
+
     updateAirlineLinks();
+    updatePlaneTypeLinks();
 
     if (currentFilteredFlights.length === 0) {
-        document.getElementById("output").innerHTML = `
-            <div class="text-center">
-                ${translations[currentLanguage]["noFlights"]}
-            </div>`;
-        document.getElementById("flightButtons").innerHTML = "";
+        renderEmptyState(airlineFiltered);
+        document.getElementById('flightButtons').innerHTML = '';
     } else {
-        if (airlineCode !== null) {
+        if (currentACode !== null) {
             generateFlightNumberButtons(currentFilteredFlights);
         } else {
-            document.getElementById("flightButtons").innerHTML = "";
+            document.getElementById('flightButtons').innerHTML = '';
         }
-        displayFlights(currentFilteredFlights, airlineCode);
+        displayFlights(currentFilteredFlights, currentACode);
     }
+}
+
+// Narrow flights to the selected airline group, or all when no pin is set.
+function applyAirlineScope(flights, airlineCode) {
+    if (airlineCode === null) return flights;
+    const groupCodes = AIRLINE_GROUPS[airlineCode] || [airlineCode];
+    return flights.filter(flight => groupCodes.includes(flight.ACode));
+}
+
+// Drop a stale plane type pin if the family is no longer present in the
+// current airline's flights (e.g., cookie from a past session, different time window).
+function reconcilePlaneTypePin(airlineFilteredFlights) {
+    if (currentPlaneType === null) return;
+    const available = getAvailableFamilies(airlineFilteredFlights);
+    if (!available.includes(currentPlaneType)) {
+        currentPlaneType = null;
+        deleteCookie(PLANE_TYPE_COOKIE_NAME);
+    }
+}
+
+function renderEmptyState(airlineFilteredFlights) {
+    const t = translations[currentLanguage];
+    const output = document.getElementById('output');
+
+    // No airline pin and zero flights in window: keep the legacy message.
+    if (currentACode === null) {
+        output.innerHTML = `<div class="text-center">${t['noFlights']}</div>`;
+        return;
+    }
+
+    // Airline pin set but zero flights for that airline in the window.
+    if (airlineFilteredFlights.length === 0) {
+        const msg = t['airlineNoFlights'].replace('{acode}', currentACode);
+        output.innerHTML = `<div class="text-center">${msg}</div>`;
+        return;
+    }
+
+    // Airline + plane type pin set, no flights match the combination.
+    const aname = airlineFilteredFlights[0].AName || currentACode;
+    const line1 = t['flightsInWindow']
+        .replace('{aname}', aname)
+        .replace('{n}', airlineFilteredFlights.length);
+    const line2 = t['currentFilter'].replace('{type}', currentPlaneType || '');
+    const line3 = t['noMatch'];
+    const btn = t['clearAircraftType'];
+
+    output.innerHTML = `
+        <div class="empty-state text-center">
+            <div class="empty-state-line">${line1}</div>
+            <div class="empty-state-line empty-state-filter">${line2}</div>
+            <div class="empty-state-line empty-state-reason">${line3}</div>
+            <button type="button" class="btn btn-sm btn-outline-secondary clear-aircraft-type mt-2">${btn}</button>
+        </div>`;
+}
+
+function generatePlaneTypeLinks(flights) {
+    const container = document.getElementById('planeTypeButtons');
+    const families = getAvailableFamilies(flights);
+
+    if (families.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const airlineClass = currentACode ? currentACode.toLowerCase() : 'secondary';
+    const btnClass = `btn-outline-${airlineClass}`;
+    const sizeClass = isSmallScreen() ? 'btn-sm' : '';
+
+    const allLabel = translations[currentLanguage]['allFlightsShort'];
+    let html = `<a href="#" class="btn ${btnClass} ${sizeClass} btn-no-hover planetype-link m-1" data-planetype="">${allLabel}</a>`;
+    for (const family of families) {
+        html += `<a href="#" class="btn ${btnClass} ${sizeClass} btn-no-hover planetype-link m-1" data-planetype="${family}">${family}</a>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function updatePlaneTypeLinks() {
+    document.querySelectorAll('.planetype-link').forEach(link => {
+        const family = link.getAttribute('data-planetype') || '';
+        const matches = (family === '' && currentPlaneType === null) || (family === currentPlaneType);
+        if (matches) {
+            link.classList.add('active');
+        } else {
+            link.classList.remove('active');
+        }
+    });
+}
+
+// Extract aircraft family (e.g., A321-271N -> A321). Returns null for TBD values.
+// Must stay in sync with src/utils/flightUtils.js.
+function extractPlaneFamily(planeNo) {
+    if (!planeNo) return null;
+    const trimmed = String(planeNo).trim();
+    if (trimmed === '' || trimmed === '-') return null;
+    const match = trimmed.match(/^([AB]\d{3})/);
+    return match ? match[1] : null;
+}
+
+function getAvailableFamilies(flights) {
+    const families = new Set();
+    for (const flight of flights) {
+        const family = extractPlaneFamily(flight.PlaneNo);
+        if (family) families.add(family);
+    }
+    return Array.from(families).sort();
+}
+
+// TBD flights (unknown family) always pass so pilots do not miss their
+// assignment before the fleet is confirmed.
+function filterByPlaneType(flights, family) {
+    if (!family) return flights;
+    return flights.filter(flight => {
+        const flightFamily = extractPlaneFamily(flight.PlaneNo);
+        if (flightFamily === null) return true;
+        return flightFamily === family;
+    });
 }
 
 /**
@@ -752,7 +928,20 @@ function setupEventListeners() {
         if (airlineLink) {
             event.preventDefault();
             const airline = airlineLink.getAttribute('data-airline') || null;
-            filterFlights(airline);
+            applyAirlineFilter(airline);
+        }
+
+        const planeTypeLink = event.target.closest('a[data-planetype]');
+        if (planeTypeLink) {
+            event.preventDefault();
+            const family = planeTypeLink.getAttribute('data-planetype') || null;
+            applyPlaneTypeFilter(family);
+        }
+
+        const clearAircraftBtn = event.target.closest('.clear-aircraft-type');
+        if (clearAircraftBtn) {
+            event.preventDefault();
+            applyPlaneTypeFilter(null);
         }
 
         const flightLink = event.target.closest('a[data-flight]');

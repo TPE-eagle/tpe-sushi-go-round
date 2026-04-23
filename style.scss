@@ -70,8 +70,9 @@ body {
 /* Title Animation */
 #title {
   animation: dropShadowAnimation 2s ease-out forwards;
-  padding: 20px;
-  margin: 20px 0;
+  padding: 8px;
+  margin: 12px 0;
+  font-size: 2rem;
   position: relative;
   z-index: 1;
   text-shadow: 3px 3px 6px var(--shadow-dark);
@@ -87,12 +88,12 @@ body {
   0% {
     filter: drop-shadow(0 0 0 transparent);
     transform: rotateX(0deg) rotateY(0deg) translateZ(0);
-    letter-spacing: 80px;
+    letter-spacing: 40px;
   }
   20% {
     filter: drop-shadow(2px 2px 4px var(--shadow-light));
     transform: rotateX(0deg) rotateY(0deg) translateZ(0);
-    letter-spacing: 20px;
+    letter-spacing: 10px;
   }
   100% {
     filter: drop-shadow(5px 5px 10px var(--shadow-dark));
@@ -321,6 +322,35 @@ body {
   justify-content: center;
 }
 
+/* Plane type filter row */
+.planetype-link {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.planetype-link:hover,
+.planetype-link.active {
+  opacity: 1;
+}
+
+/* Empty-state block for airline+aircraft filter combos with zero matches */
+.empty-state {
+  padding: 16px 12px;
+  line-height: 1.6;
+}
+
+.empty-state-filter {
+  opacity: 0.85;
+}
+
+.empty-state-reason {
+  font-weight: 600;
+  margin-top: 4px;
+}
+
 .airline-full {
   display: inline;
   margin-left: 4px;
@@ -468,12 +498,12 @@ body {
     0% {
       filter: drop-shadow(0 0 0 transparent);
       transform: rotateX(0deg) rotateY(0deg) translateZ(0);
-      letter-spacing: 20px;
+      letter-spacing: 10px;
     }
     20% {
       filter: drop-shadow(2px 2px 4px var(--shadow-light));
       transform: rotateX(0deg) rotateY(0deg) translateZ(0);
-      letter-spacing: 5px;
+      letter-spacing: 3px;
     }
     100% {
       filter: drop-shadow(5px 5px 10px var(--shadow-dark));
@@ -482,9 +512,9 @@ body {
     }
   }
   #title {
-    padding: 10px;
-    margin: 10px 0;
-    font-size: 1.8rem;
+    padding: 4px;
+    margin: 6px 0;
+    font-size: 1.5rem;
   }
 
   .theme-toggle-btn {

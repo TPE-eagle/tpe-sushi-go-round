@@ -120,6 +120,45 @@ export function createApiPostData(flightMode, language) {
 }
 
 /**
+ * Extract aircraft family from PlaneNo.
+ * Examples: "A321-200" -> "A321", "B777-300ER" -> "B777", "A350-900" -> "A350".
+ * Returns null for TBD values ("", "-", null, undefined) or unparseable strings.
+ */
+export function extractPlaneFamily(planeNo) {
+    if (!planeNo) return null;
+    const trimmed = String(planeNo).trim();
+    if (trimmed === '' || trimmed === '-') return null;
+    const match = trimmed.match(/^([AB]\d{3})/);
+    return match ? match[1] : null;
+}
+
+/**
+ * Collect the list of aircraft families present in the given flights,
+ * sorted ascending. TBD flights contribute nothing.
+ */
+export function getAvailableFamilies(flights) {
+    const families = new Set();
+    for (const flight of flights) {
+        const family = extractPlaneFamily(flight.PlaneNo);
+        if (family) families.add(family);
+    }
+    return Array.from(families).sort();
+}
+
+/**
+ * Filter flights by aircraft family. TBD flights (no resolvable family) always
+ * pass so pilots do not miss their assignment before the fleet is confirmed.
+ */
+export function filterByPlaneType(flights, family) {
+    if (!family) return flights;
+    return flights.filter(flight => {
+        const flightFamily = extractPlaneFamily(flight.PlaneNo);
+        if (flightFamily === null) return true;
+        return flightFamily === family;
+    });
+}
+
+/**
  * Parse API response and apply all filtering logic
  */
 export function parseApiResponse(apiData, flightMode = 'A', currentTime = new Date()) {

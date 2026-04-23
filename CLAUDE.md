@@ -1,160 +1,163 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repo.
 
-## Project Overview
+## Project
 
-**TPE Sushi Go Round** is a mobile-first web app for Taoyuan International Airport flight information. Designed for flight crew members to quickly check baggage carousel and departure gate info.
+Mobile-first web app for Taoyuan International Airport flight info, aimed at pilots and cabin crew on BR / CI / JX (including B7 / AE subsidiaries).
 
-**Live Site:** https://tpe-eagle.github.io/tpe-sushi-go-round/
-
-**Tech Stack:**
-- **Frontend:** Vanilla JavaScript (ES module) + Bootstrap 5 + Vite 6
-- **Styling:** SCSS/Sass with Bootstrap CSS variables
-- **Testing:** Vitest (unit) + Playwright (E2E)
+- **Live site:** https://tpe-eagle.github.io/tpe-sushi-go-round/
+- **Stack:** Vanilla JS (ES module), Bootstrap 5, Vite 6, SCSS, Vitest, Playwright
 - **CI/CD:** GitHub Actions → GitHub Pages (Node 18)
 
-## Essential Development Commands
+## Essential Commands
 
-### Setup
 ```bash
 npm install
-npx playwright install --with-deps  # For E2E tests
+npx playwright install --with-deps    # once, for E2E
+
+npm run dev                # Vite dev server at http://localhost:8080
+npm run build              # Production build → dist/
+
+npm run test:run           # Unit tests (Vitest, single run)
+npm run test:e2e:local     # Local E2E (Playwright, chromium, max workers)
+npm run test:e2e:prod      # Production E2E against the live site
 ```
 
-### Development
-```bash
-npm run dev       # Vite dev server (port 8080)
-npm run build     # Production build → dist/
-npm run preview   # Preview production build
-```
+## Key Files
 
-### Testing
-```bash
-npm run test:run          # Unit tests (single run)
-npm run test              # Unit tests (watch mode)
-npm run test:e2e:local    # Local E2E (max parallelism, chromium only)
-npm run test:e2e:prod     # Production E2E (live site, multi-browser)
-```
-
-## Architecture Overview
-
-### Key Files
 | File | Purpose |
 |------|---------|
-| `main.js` | Application logic: data fetching, filtering, display, i18n, theme, events |
-| `style.scss` | All styling with CSS variables, responsive breakpoints, animations |
-| `index.html` | SPA entry point with meta tags, CSP, preloads, deferred GTM |
-| `src/utils/flightUtils.js` | Shared utility functions (used by both app and tests) |
-| `e2e/test-helpers.js` | E2E utilities: smart API caching, GA blocking, mock data |
+| `main.js` | Application logic: data fetching, filtering, rendering, i18n, theme, events |
+| `style.scss` | All styling (CSS variables, responsive breakpoints, animations) |
+| `index.html` | SPA entry point (meta tags, CSP, preloads, deferred GTM) |
+| `src/utils/flightUtils.js` | Shared utilities (imported by unit tests; mirrored inline in `main.js`) |
+| `e2e/test-helpers.js` | Smart API caching, GA blocking, mock flight generation |
 
-### Data Flow
-1. `fetchData()` — POST to Taoyuan Airport API, fetches **full day** of flights
-2. Sort by airline code → flight number (numeric ascending)
-3. `filterSupportedAirlines()` — Keep only BR/CI/JX, exclude cancelled flights
-4. `filterFlightsByTime()` — Client-side time window filtering
-5. `generateAirlineLinks()` → `displayFlights()` — Render to DOM
+## Data Flow
 
-### Global State
+1. `fetchData()` — POST to Taoyuan Airport API with `OTimeOpen: null, OTimeClose: null` (full day).
+2. Sort by airline code then flight number (numeric ascending).
+3. Keep BR/CI/JX groups (BR+B7, CI+AE, JX), drop cancelled flights.
+4. `filterFlightsByTime()` narrows to the current time window.
+5. `renderFilteredView()` applies the airline + plane type pins and renders the airline row, plane type row, flight number row, and table.
+
+## Global State (main.js)
+
 ```javascript
-let flightData = [];              // All filtered flights for current mode
-let currentFilteredFlights = [];  // User-filtered subset (by airline/flight number)
+let flightData = [];              // Airline-group-filtered, time-windowed flights
+let currentFilteredFlights = [];  // After airline + plane type pins
 let currentLanguage = 'zh';       // 'zh' | 'en' | 'jp'
-let currentACode = null;          // Selected airline filter (null = all)
+let currentACode = null;          // null = all airlines
+let currentPlaneType = null;      // null = all families; family strings like 'A330', 'B777'
 let currentTheme = 'light';       // 'light' | 'dark'
-let currentFlightMode = 'A';     // 'A' (Arrival) | 'D' (Departure)
+let currentFlightMode = 'A';      // 'A' (Arrival) | 'D' (Departure)
 ```
 
-### API Integration
-- **Endpoint:** `https://www.taoyuan-airport.com/api/api/flight/a_flight` (POST)
-- **Critical:** Always send `OTimeOpen: null, OTimeClose: null` — fetch full day data, filter client-side
-- **Language mapping:** `zh` → `ch` for API `language` field; `en` and `jp` sent as-is
-- **Accept-Language header:** `zh-TW`, `ja-JP`, or `en-US` based on `currentLanguage`
-- **Client caching:** localStorage with 2-minute expiry, max 5 entries, disabled on localhost
+## API Contract
 
-### Time Window Logic
-- **Arrival (A):** Round current time down to 10-min interval, offset -40 min, 120 min duration
-- **Departure (D):** Round current time down to 10-min interval, offset 0 min, 120 min duration
-- Flight included if **either** scheduled time (ODateTime) **or** actual time (RDateTime) is within range
-- All times are UTC+8 (Taipei time)
+- Endpoint: `https://www.taoyuan-airport.com/api/api/flight/a_flight` (POST)
+- Always send `OTimeOpen: null, OTimeClose: null` — fetch full day, filter client-side.
+- `language` field: `ch` for Traditional Chinese (not `zh`); `en` and `jp` as-is.
+- `Accept-Language` header: `zh-TW`, `ja-JP`, or `en-US` based on current language.
+- Response fields consumed: `ACode`, `AName`, `FlightNo`, `Gate`, `ODate`/`OTime`, `RDate`/`RTime`, `CityCode`, `CityEname`, `CityName`, `Memo`, `PlaneNo`, `StopCode`, `BNO`, `flightCode`.
 
-### Cookie Persistence
-- `ACode` — Selected airline filter (7-day expiry)
-- `theme` — Light/dark preference (7-day expiry); falls back to system `prefers-color-scheme`
-- Language is **not** persisted — detected from `navigator.language` on each load
+## Time Window
 
-### Responsive Design
-- **Breakpoint:** 768px (`isSmallScreen()`)
-- Mobile: abbreviated table headers, city codes instead of names, smaller airline logos
-- Desktop: full headers, city names, standard logos
-- Events: `resize` and `orientationchange` trigger re-render
+- **Arrival (A):** round current time down to 10-min interval, offset −40 min, 120-min duration.
+- **Departure (D):** round down to 10-min interval, offset 0, 120-min duration.
+- A flight is shown when **either** `ODateTime` or `RDateTime` falls in the window.
+- All times are UTC+8.
 
-### i18n System
-- Three languages: `zh` (Traditional Chinese), `en` (English), `jp` (Japanese)
-- Dynamic Google Font loading: Noto Sans TC / default / JP
-- Translations object covers: titles, descriptions, error messages, table headers
-- Meta tags (OG, Twitter) updated on language switch
+## Plane Type Filter
+
+Pilots pin their airline first, then optionally pin an aircraft family.
+
+- Family granularity: regex `/^([AB]\d{3})/` on `PlaneNo` (e.g., `A321-271N` → `A321`, `B777-300ER` → `B777`). `-`, empty, or unparseable values are TBD.
+- **TBD flights always pass the plane type filter** so a pilot does not miss a flight before the fleet is assigned by the airline.
+- The plane type row only renders when an airline is pinned. Its buttons are dynamically generated from the families actually present in the current airline's flights (`getAvailableFamilies`).
+- Switching airline always clears the plane type pin (families rarely carry meaningful intent across carriers).
+- A saved `PlaneType` cookie pointing to a family not present in the current window is silently dropped (`reconcilePlaneTypePin`) on load.
+
+## Cookies
+
+| Name | Scope | Expiry |
+|---|---|---|
+| `ACode` | Selected airline | 7 days |
+| `PlaneType` | Selected aircraft family | 7 days |
+| `theme` | `light` / `dark` (falls back to `prefers-color-scheme`) | 7 days |
+
+Language is detected from `navigator.language` on each load; not persisted.
+
+## Responsive
+
+- Breakpoint: 768px (`isSmallScreen()`).
+- Mobile: abbreviated table headers, city codes instead of names, smaller airline logos.
+- `resize` and `orientationchange` trigger re-render.
+
+## i18n
+
+- Languages: `zh` (Traditional Chinese), `en`, `jp`.
+- Dynamic Google Font loading: Noto Sans / Noto Sans TC / Noto Sans JP.
+- `translations` object in `main.js` is the single source of truth for UI strings.
+- Airline and city names come from the API (localized by the `language` field); do not hardcode.
 
 ## Key Design Decisions
 
-**Never set time range in API requests.** The API must receive `OTimeOpen: null, OTimeClose: null`. Client-side `filterFlightsByTime()` handles filtering. This was the fix for BR35 bug: scheduled time 05:05 outside window, actual time 05:39 inside window — with server-side filtering, flight was missing.
+**Never set time range in API requests.** Always send `OTimeOpen: null, OTimeClose: null`; rely on client-side `filterFlightsByTime()`. Historical rationale: a flight with scheduled time outside the window but actual time inside was being dropped at the server. Server-side filtering uses one of the two fields, not both.
 
-**E2E smart API caching.** First E2E test makes a real API call and caches the response for 30 minutes. Subsequent tests reuse cached data with language transformations. Falls back to mock data if real API fails. Prevents excessive load on the airport API.
+**Localhost skips client-side time filtering.** `filterFlightsByTime()` is intentionally bypassed when `window.location.hostname` is `localhost` or `127.0.0.1` (see `processFetchedData` in `main.js`). This keeps mock E2E data visible regardless of wall-clock drift during the test run. `npm run dev` therefore shows the full day; production respects the window. If you change the mock's time generation, revisit whether this skip is still needed.
 
-**Block Google Analytics in E2E tests.** All E2E test setup calls `blockGoogleAnalytics()` to block requests to googletagmanager.com, google-analytics.com, etc.
+**E2E smart API caching.** First E2E run makes a real API call and caches the response for 30 minutes; subsequent tests reuse it with language-specific `AName` rewrites. Falls back to generated mock data if the real call fails.
 
-**Shared utility module.** `src/utils/flightUtils.js` exports the core logic functions (`filterFlightsByTime`, `filterSupportedAirlines`, `createApiPostData`, `parseApiResponse`, etc.) so unit tests exercise the same code paths as the app.
+**Block Google Analytics in E2E.** All setups call `blockGoogleAnalytics()` to avoid tracking noise and CSP flakiness.
 
-## CI/CD Pipeline
+**Shared utility module with inline duplication.** `src/utils/flightUtils.js` is imported by unit tests. `main.js` re-implements the same functions inline (no import) to keep the bundle self-contained. **These two copies must stay in sync.** Current duplicated functions: `filterFlightsByTime`, `filterSupportedAirlines`, `getTimeWindowConfig`, `getTimeWindow`, `roundDownToStep`, `extractPlaneFamily`, `getAvailableFamilies`, `filterByPlaneType`.
 
-**Workflow:** `.github/workflows/ci.yml`
+## Testing
 
-| Job | Trigger | Description |
-|-----|---------|-------------|
-| `unit-tests` | push/PR to main | Run `npm run test:run` |
-| `e2e-tests-local` | after unit-tests | Playwright + Tailscale VPN (exit nodes: msi/tsa/mini) |
-| `deploy` | push to main | `npm run build` → GitHub Pages |
-| `e2e-tests-production` | after deploy | Test live site with real/cached API data |
+### Unit (`src/test/`)
+- `api.test.js` — post-data shape, time window math, flight filtering, BR35 regression.
+- `cache.test.js` — localStorage lifecycle, expiry, cleanup, quota handling.
+- `etag-integration.test.js` — ETag / 304 support (run with `NODE_ENV=integration`).
+- `planetype.test.js` — family extraction, TBD handling, per-airline family list, type filter.
+- `setup.js` — global mocks (fetch, matchMedia, localStorage, console).
 
-- E2E tests require **Tailscale VPN** with Taiwan exit node for API access
-- E2E jobs are `continue-on-error: true` (non-blocking)
-- Secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
+### E2E (`e2e/`)
+- `api-integration.spec.js` — API parameter validation, display, mode switching.
+- `language-detection.spec.js` — browser detection, manual switching, all three languages.
+- `user-interaction.spec.js` — airline filter, theme toggle, cookie persistence, responsive layout.
+- `plane-type.spec.js` — plane type row visibility, dynamic family list, pin / clear, airline switch reset, TBD flights always visible, stale cookie reconcile, flight mode toggle preserves pin.
+- `production.spec.js` — live site smoke tests against GitHub Pages.
 
-## Testing Architecture
+### Playwright configs
+- `playwright.local.config.js` — chromium only, `os.cpus().length` workers locally, 2 in CI, 10s timeout.
+- `playwright.prod.config.js` — Chromium + Mobile Chrome + Mobile Safari against the live site.
 
-### Unit Tests (`src/test/`)
-- `api.test.js` — API post data creation, time window calculation, flight filtering, BR35 regression
-- `cache.test.js` — localStorage caching lifecycle, expiry, cleanup, quota exceeded handling
-- `etag-integration.test.js` — ETag/304 support (integration tests, run with `NODE_ENV=integration`)
-- `setup.js` — Global mocks for fetch, matchMedia, localStorage, console
+## CI/CD
 
-### E2E Tests (`e2e/`)
-- `api-integration.spec.js` — API parameter validation, flight data display, mode switching
-- `language-detection.spec.js` — Browser language detection, manual switching, all 3 languages
-- `user-interaction.spec.js` — Airline filtering, theme toggle, cookie persistence, responsive layout
-- `production.spec.js` — Live site validation with smart API caching
+Workflow: `.github/workflows/ci.yml`.
 
-### Playwright Configs
-- **Local** (`playwright.local.config.js`): Chromium only, `os.cpus().length` workers, 10s timeout
-- **CI**: 2 workers, headless
-- **Production** (`playwright.prod.config.js`): Chromium + Mobile Chrome + Mobile Safari, tests live site
+| Job | Trigger | Blocking |
+|-----|---------|----------|
+| `unit-tests` | push/PR to main | Yes |
+| `e2e-tests-local` | after unit-tests | No (`continue-on-error`) |
+| `deploy` | push to main | Yes |
+| `e2e-tests-production` | after deploy | No (`continue-on-error`) |
 
 ## AI Development Workflow
 
-### Before making any change
-1. Run unit tests and confirm they pass:
-   ```bash
-   npm run test:run
-   ```
-2. Read this file to understand the area being changed.
+Before changes:
+1. `npm run test:run` — confirm the baseline passes.
+2. Read this file and the file you're about to edit.
 
-### After making changes
-1. Run unit tests again and confirm all pass.
-2. If any test fails, fix the production code first. Do not modify tests without user approval.
-3. Run `npm run build` to verify the build succeeds.
+After changes:
+1. `npm run test:run` again. Fix production code, not tests, unless the user explicitly approves.
+2. `npm run build` to confirm the bundle still compiles.
+3. For UI changes, open `npm run dev` and exercise the change in a browser. Type checks and test suites verify code, not feature correctness.
 
-### When uncertain
-- Do not guess at API response format — check test fixtures or make a real request.
-- All times are UTC+8 (Taipei time) — watch for timezone issues in tests.
-- Adding new airlines requires updating `AIRLINE_CODES` in both `main.js` and `src/utils/flightUtils.js`, plus CSS styles.
-- The `filterFlightsByTime()` in `main.js` and `flightUtils.js` must stay in sync.
+When uncertain:
+- All times are UTC+8. Watch for timezone drift in new tests.
+- Do not guess at API response fields; probe the real endpoint or inspect `e2e/test-helpers.js` mock.
+- Adding an airline: update `AIRLINE_CODES` and `AIRLINE_GROUPS` in both `main.js` and `src/utils/flightUtils.js`, plus logo / colour styles in `style.scss`.
+- Changing a duplicated utility: update both `main.js` and `src/utils/flightUtils.js` in the same commit.
