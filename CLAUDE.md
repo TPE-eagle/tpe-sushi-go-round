@@ -8,7 +8,7 @@ Mobile-first web app for Taoyuan International Airport flight info, aimed at pil
 
 - **Live site:** https://tpe-eagle.github.io/tpe-sushi-go-round/
 - **Stack:** Vanilla JS (ES module), Bootstrap 5, Vite 6, SCSS, Vitest, Playwright
-- **CI/CD:** GitHub Actions → GitHub Pages (Node 18)
+- **CI/CD:** GitHub Actions → GitHub Pages (Node 22 LTS)
 
 ## Essential Commands
 

@@ -145,7 +145,7 @@ flowchart LR
 | Unit Tests | Vitest |
 | E2E Tests | Playwright |
 | CI/CD | GitHub Actions → GitHub Pages |
-| Runtime | Node.js 18 |
+| Runtime | Node.js 22 LTS |
 
 ## Acknowledgments
 

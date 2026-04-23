@@ -21,7 +21,7 @@ jobs:
     - name: "🔧 Ground Crew: Setup Node.js Environment"
       uses: actions/setup-node@v6
       with:
-        node-version: '18'
+        node-version: '22'
         cache: 'npm'
 
     - name: "⛽ Refueling: Install Dependencies"
@@ -42,7 +42,7 @@ jobs:
     - name: "🔧 Ground Crew: Setup Node.js Environment"
       uses: actions/setup-node@v6
       with:
-        node-version: '18'
+        node-version: '22'
         cache: 'npm'
 
     - name: "🛫 Boarding Playwright Browsers"
@@ -91,7 +91,7 @@ jobs:
     - name: "🔧 Ground Crew: Setup Node.js Environment"
       uses: actions/setup-node@v6
       with:
-        node-version: '18'
+        node-version: '22'
         cache: 'npm'
 
     - name: "⛽ Refueling: Install Dependencies"
@@ -104,13 +104,13 @@ jobs:
       uses: actions/configure-pages@v6
 
     - name: "📦 Upload Aircraft Artifact"
-      uses: actions/upload-pages-artifact@v4
+      uses: actions/upload-pages-artifact@v5
       with:
         path: './dist'
 
     - name: "✈️ Deploying to GitHub Pages"
       id: deployment
-      uses: actions/deploy-pages@v4
+      uses: actions/deploy-pages@v5
 
   e2e-tests-production:
     name: "🛬 Post-landing E2E Tests (Production)"
@@ -125,7 +125,7 @@ jobs:
     - name: "🔧 Ground Crew: Setup Node.js Environment"
       uses: actions/setup-node@v6
       with:
-        node-version: '18'
+        node-version: '22'
         cache: 'npm'
 
     - name: "🛫 Boarding Playwright Browsers"
@@ -160,7 +160,7 @@ jobs:
 
     - name: "📝 Flight Deck Report: Comment PR with Test Results"
       if: github.event_name == 'pull_request' && always()
-      uses: actions/github-script@v8
+      uses: actions/github-script@v9
       with:
         script: |
           const fs = require('fs');
