@@ -151,12 +151,12 @@ function renderApp() {
                     <a href="#" data-lang="jp">🇯🇵 にほんご</a>
                 </div>
                 <div class="footer-container">
-                    <div class="no-color-link footer-text text-muted fs-6 fs-sm-7 fw-light">
-                        Data source: <a href="https://www.taoyuan-airport.com/flight_arrival" class="text-muted fs-6 fs-sm-7 fw-light text-decoration-underline">Taoyuan International Airport</a>
+                    <div class="footer-meta">
+                        Data source: <a class="footer-link" href="https://www.taoyuan-airport.com/flight_arrival">Taoyuan International Airport</a>
                     </div>
-                    <div id="apiParams" class="footer-text text-muted fs-6 fs-sm-7 fw-light"></div>
-                    <div class="footer-text fs-6 fs-sm-7">
-                        Made by EVA Pilot with <span style="color: red;">❤️</span>
+                    <div id="apiParams" class="footer-meta"></div>
+                    <div class="footer-meta">
+                        Made by <span class="footer-brand">EVA</span> Pilot with <span class="footer-heart">❤️</span>
                     </div>
                 </div>
             </div>
@@ -418,7 +418,7 @@ function fetchData() {
                 return;
             }
         }
-        document.getElementById("output").innerText = translations[currentLanguage]["error"];
+        document.getElementById("output").innerHTML = `<div class="empty-state text-center">${translations[currentLanguage]["error"]}</div>`;
     });
 }
 
@@ -664,16 +664,16 @@ function renderEmptyState(airlineFilteredFlights) {
     const t = translations[currentLanguage];
     const output = document.getElementById('output');
 
-    // No airline pin and zero flights in window: keep the legacy message.
+    // No airline pin and zero flights in window.
     if (currentACode === null) {
-        output.innerHTML = `<div class="text-center">${t['noFlights']}</div>`;
+        output.innerHTML = `<div class="empty-state text-center">${t['noFlights']}</div>`;
         return;
     }
 
     // Airline pin set but zero flights for that airline in the window.
     if (airlineFilteredFlights.length === 0) {
         const msg = t['airlineNoFlights'].replace('{acode}', currentACode);
-        output.innerHTML = `<div class="text-center">${msg}</div>`;
+        output.innerHTML = `<div class="empty-state text-center">${msg}</div>`;
         return;
     }
 

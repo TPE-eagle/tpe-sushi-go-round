@@ -20,9 +20,13 @@
 @import "bootstrap/scss/utilities/api";
 
 :root {
-  --color-br: #4B7D6B; /* EVA Air green */
-  --color-ci: #0F4C96; /* China Airlines blue */
-  --color-jx: #4E463F; /* STARLUX Airlines dark gray */
+  /* Airline brand colours, sampled from each carrier's live website
+   * (evaair.com, china-airlines.com, starlux-airlines.com) rather than
+   * third-party directories, so the tokens track the colour the airline
+   * actually ships in production. */
+  --color-br: #4B7D6B;   /* EVA Air corporate sage green */
+  --color-ci: #0F4C96;   /* China Airlines wordmark blue */
+  --color-jx: #0F2D3C;   /* STARLUX "Obsidian Grey" (1716x on their live site) */
   --color-white: #fff;
   --shadow-light: rgba(170, 170, 170, 0.5);
   --shadow-dark: rgba(51, 51, 51, 0.5);
@@ -30,12 +34,13 @@
   --background-color: #fff;
   --border-color: #dee2e6;
   --table-header-text: var(--color-white);
+  --muted-opacity: 0.7;
 }
 
 [data-bs-theme="dark"] {
-  --color-br: #4B7D6B;
-  --color-ci: #2566B8;
-  --color-jx: #6E665F;
+  --color-br: #6A9E89;   /* Lifted sage for dark-background contrast (~4.8:1) */
+  --color-ci: #2566B8;   /* Lifted blue for dark-background contrast */
+  --color-jx: #5A8FA8;   /* Lifted obsidian for dark-background readability (~5:1) */
   --text-color: #f8f9fa;
   --background-color: #212529;
   --border-color: #495057;
@@ -80,8 +85,8 @@ body {
 }
 
 [data-bs-theme="dark"] #title {
-  text-shadow: 0 0 5px rgba(255, 255, 255, 0.7), 0 0 15px rgba(255, 255, 255, 0.4);
-  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.25), 0 0 10px rgba(255, 255, 255, 0.15);
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.12));
 }
 
 @keyframes dropShadowAnimation {
@@ -140,15 +145,47 @@ body {
 
 .lang-links .divider {
   color: var(--text-color);
-  opacity: 0.3;
+  opacity: 0.5;
   user-select: none;
   align-self: center;
   margin: 0 2px;
 }
 
-.no-color-link a {
+/* Footer meta lines: quiet, unified visual weight so the three lines read as
+ * a single attribution block rather than fighting with the main content. */
+.footer-meta {
+  font-size: 0.875rem;
+  font-weight: 300;
+  color: var(--text-color);
+  opacity: var(--muted-opacity);
+  line-height: 1.6;
+}
+
+.footer-link {
   color: inherit;
   text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: opacity 0.15s ease;
+
+  &:hover,
+  &:focus-visible {
+    color: inherit;
+    opacity: 1;
+  }
+}
+
+/* Brand accent on "EVA" — tasteful use of the EVA green brand token rather
+ * than a generic red-on-red shout. Heart emoji already carries its own glyph
+ * colour; we just ensure it is not tinted by any inherited colour. */
+.footer-brand {
+  color: var(--color-br);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.footer-heart {
+  color: inherit;
 }
 
 .footer-container {
@@ -197,14 +234,22 @@ body {
   background-color: var(--color-jx);
 }
 
-/* Dark mode button styles */
+/* Dark mode: keep the idle outline on-brand so plane-type rows (which colour
+ * by airline) remain visually grouped instead of collapsing to grey. Filled
+ * hover/active states are defined in the same rules as light mode below. */
 [data-bs-theme="dark"] .btn-outline-br,
-[data-bs-theme="dark"] .btn-outline-b7,
+[data-bs-theme="dark"] .btn-outline-b7 {
+  color: var(--color-br);
+  border-color: var(--color-br);
+}
 [data-bs-theme="dark"] .btn-outline-ci,
-[data-bs-theme="dark"] .btn-outline-ae,
+[data-bs-theme="dark"] .btn-outline-ae {
+  color: var(--color-ci);
+  border-color: var(--color-ci);
+}
 [data-bs-theme="dark"] .btn-outline-jx {
-  color: var(--text-color);
-  border-color: var(--border-color);
+  color: var(--color-jx);
+  border-color: var(--color-jx);
 }
 [data-bs-theme="dark"] .btn-outline-br:hover,
 [data-bs-theme="dark"] .btn-outline-br.active,
@@ -322,18 +367,12 @@ body {
   justify-content: center;
 }
 
-/* Plane type filter row */
+/* Plane type filter row. Colour and border come from .btn-outline-{airline},
+ * so identity is carried by those tokens; no opacity stacking here. */
 .planetype-link {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: 0.04em;
-  opacity: 0.75;
-  transition: opacity 0.15s ease;
-}
-
-.planetype-link:hover,
-.planetype-link.active {
-  opacity: 1;
 }
 
 /* Empty-state block for airline+aircraft filter combos with zero matches */
