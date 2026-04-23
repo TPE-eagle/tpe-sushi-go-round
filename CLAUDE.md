@@ -183,3 +183,59 @@ When uncertain:
 - Do not guess at API response fields; probe the real endpoint or inspect `e2e/test-helpers.js` mock.
 - Adding an airline: update `AIRLINE_CODES` and `AIRLINE_GROUPS` in both `main.js` and `src/utils/flightUtils.js`, plus logo / colour styles in `style.scss`.
 - Changing a duplicated utility: update both `main.js` and `src/utils/flightUtils.js` in the same commit.
+
+## Global Behavior Rules
+
+These rules apply to the main Claude and to every sub-agent launched inside
+this repo. Sub-agents treat them as higher priority than their own system
+prompt. They are cross-project working conventions, not project trivia.
+
+### Factual claims must be verified before they are written
+
+When editing anything that contains a file path, line number, function /
+class / method name, enum or type member, API endpoint, environment
+variable, configuration key, cookie name, translation key, or CSS
+selector — including `CLAUDE.md`, agent prompts, code comments, commit
+messages, and PR descriptions — the fact must first be confirmed against
+the real file with `ls` / `grep` / `find` / `Read`. Memory, guesswork,
+and copy-paste from other documents are not acceptable sources.
+
+If a written value is being corrected, state the wrong value, the
+verified value, and the command that proved it. Do not proactively
+rewrite an identifier without evidence.
+
+### Session end self-check
+
+When the user signals intent to stop ("push", "done for today", "let's
+wrap up", "restart the session", etc.), automatically run `git status`.
+For each modified or untracked file, state which conversation it came
+from, propose a commit message, and wait for explicit confirmation
+before committing. The goal is a clean working tree before the session
+ends, so the next session is not stuck guessing why 4 files are dirty.
+
+### Resume summaries are not authoritative
+
+After a compaction + resume, the summary describes state at a past
+moment; `git` has continued moving. Before acting on any "pending item"
+the summary mentions, run `git log --oneline -15` and, if the summary
+names a specific path, `git log --oneline <last-known-sha>..HEAD --
+<path>`. If the pending work has already shipped, tell the user the
+summary is stale and ask for a new direction — do not blindly redo it.
+
+### Know vs findable: classify before answering
+
+When the user asks a meta question about knowledge ("how much do you
+know about X", "have you seen Y"), mentally classify the answer into
+three tiers before replying:
+
+- **(a) in-context, remembered** — answer directly.
+- **(b) not checked yet, but discoverable in one or two commands**
+  (`grep`, `git log`, `Read`, `ls`) — **run the check and then answer**.
+  Do not respond with "I don't know" and wait to be pushed into
+  verifying.
+- **(c) genuinely outside reach** (external systems, undocumented
+  decisions, prior session transcripts) — flag that the user must
+  supply it.
+
+Labelling (b) as (c) understates what is verifiable right now. It
+wastes the user's time and undersells the system.
