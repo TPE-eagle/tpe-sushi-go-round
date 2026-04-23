@@ -25,6 +25,20 @@ const FONT_FAMILIES = {
     jp: "+JP"
 };
 
+// Map the internal language key to a standards-compliant BCP 47 tag (used on
+// <html lang>) and an Open Graph locale. `jp` is our internal shorthand; the
+// correct IETF / OG code is `ja` / `ja_JP`.
+const HTML_LANG_TAG = {
+    zh: 'zh-Hant',
+    en: 'en',
+    jp: 'ja'
+};
+const OG_LOCALE = {
+    zh: 'zh_TW',
+    en: 'en_US',
+    jp: 'ja_JP'
+};
+
 // Global variables
 let flightData = [];
 let currentFilteredFlights = [];
@@ -198,8 +212,10 @@ function updateLanguageText() {
     updateMetaTag('meta[name="description"]', description);
     updateMetaTag('meta[property="og:title"]', title);
     updateMetaTag('meta[property="og:description"]', description);
+    updateMetaTag('meta[property="og:locale"]', OG_LOCALE[currentLanguage] || OG_LOCALE.en);
     updateMetaTag('meta[name="twitter:title"]', title);
     updateMetaTag('meta[name="twitter:description"]', description);
+    document.documentElement.lang = HTML_LANG_TAG[currentLanguage] || HTML_LANG_TAG.en;
 }
 
 function resetAnimation(element) {

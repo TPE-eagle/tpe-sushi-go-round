@@ -1,14 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#ffffff" id="theme-color-meta">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" id="apple-status-bar-style">
+    <meta name="apple-mobile-web-app-title" content="台北回轉壽司">
     <meta name="description" content="Airport screens too small? Don't sweat it – just use your phone to find your bags like a boss. 😎">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://www.taoyuan-airport.com; connect-src 'self' https://www.taoyuan-airport.com https://www.google-analytics.com; object-src 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://www.taoyuan-airport.com; connect-src 'self' https://www.taoyuan-airport.com https://www.google-analytics.com; object-src 'none'; upgrade-insecure-requests;">
     <title>台北回転寿司🍣</title>
+    <link rel="canonical" href="https://tpe-eagle.github.io/tpe-sushi-go-round/">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
@@ -21,6 +23,10 @@
     <meta property="og:image" content="https://tpe-eagle.github.io/tpe-sushi-go-round/android-chrome-512x512.png" />
     <meta property="og:url" content="https://tpe-eagle.github.io/tpe-sushi-go-round/" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="台北回轉壽司" />
+    <meta property="og:locale" content="zh_TW" id="og-locale-meta" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <meta property="og:locale:alternate" content="ja_JP" />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
 
@@ -30,10 +36,33 @@
     <meta name="twitter:description" content="Airport screens too small? Don't sweat it – just use your phone to find your bags like a boss. 😎">
     <meta name="twitter:image" content="https://tpe-eagle.github.io/tpe-sushi-go-round/android-chrome-512x512.png">
 
+    <!-- Structured data: declare this as a web application so crawlers treat
+         it as an app (not an article or newsfeed) and skip content scraping. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "台北回轉壽司",
+      "alternateName": ["台北回転寿司", "Taipei Sushi Go Round"],
+      "description": "Taoyuan International Airport flight information for pilots and cabin crew. Find gate and baggage carousel in seconds.",
+      "applicationCategory": "TravelApplication",
+      "operatingSystem": "Any",
+      "url": "https://tpe-eagle.github.io/tpe-sushi-go-round/",
+      "inLanguage": ["zh-Hant", "en", "ja"],
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
     <!-- Preconnect for critical resources -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://www.taoyuan-airport.com">
+    <link rel="preconnect" href="https://www.googletagmanager.com">
     
     <!-- Preload critical resources -->
     <link rel="preload" href="/main.js" as="script">

@@ -40,6 +40,7 @@ export default defineConfig({
         name: '台北回轉壽司🍣',
         short_name: '台北回轉壽司',
         description: 'Taoyuan Airport flight info for crew — find your gate and carousel in seconds.',
+        lang: 'zh-Hant',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
