@@ -155,6 +155,49 @@ describe('Flight Data Caching', () => {
     expect(cacheKey2).toContain('flight_data_')
   })
 
+  // The offline policy: cached data should be served whenever the browser is
+  // offline, even past the normal 2-minute freshness window. The existing
+  // freshness rule still applies when online. This mirrors the logic inlined
+  // in main.js fetchData().
+  describe('offline cache policy', () => {
+    const CACHE_DURATION_MS = 2 * 60 * 1000
+    const shouldServe = (cached, now, online) => {
+      if (!cached) return false
+      const expired = (now - cached.timestamp) > CACHE_DURATION_MS
+      return !online || !expired
+    }
+
+    test('serves fresh cache when online', () => {
+      const now = Date.now()
+      const cached = { timestamp: now - 60_000 }
+      expect(shouldServe(cached, now, true)).toBe(true)
+    })
+
+    test('refuses expired cache when online', () => {
+      const now = Date.now()
+      const cached = { timestamp: now - 5 * 60 * 1000 }
+      expect(shouldServe(cached, now, true)).toBe(false)
+    })
+
+    test('serves expired cache when offline', () => {
+      const now = Date.now()
+      const cached = { timestamp: now - 30 * 60 * 1000 }
+      expect(shouldServe(cached, now, false)).toBe(true)
+    })
+
+    test('serves fresh cache when offline', () => {
+      const now = Date.now()
+      const cached = { timestamp: now - 30_000 }
+      expect(shouldServe(cached, now, false)).toBe(true)
+    })
+
+    test('returns false when nothing is cached regardless of connectivity', () => {
+      const now = Date.now()
+      expect(shouldServe(null, now, true)).toBe(false)
+      expect(shouldServe(null, now, false)).toBe(false)
+    })
+  })
+
   test('should handle JSON parsing errors gracefully', () => {
     // Store invalid JSON
     localStorage.setItem('invalid_json_key', 'invalid json data')

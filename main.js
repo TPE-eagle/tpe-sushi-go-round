@@ -52,6 +52,9 @@ const translations = {
         "noMatch": "此條件下無符合航班",
         "clearAircraftType": "清除機型",
         "airlineNoFlights": "時段內 {acode} 無航班",
+        "offlineBanner": "目前離線，顯示 {min} 分鐘前的快取資料",
+        "offlineFresh": "目前離線",
+        "offlineNoCache": "目前離線，且無可用快取。請連上網路後重試。",
         "tableHeaders": {
             "FlightNumber": "航班編號",
             "FlightNumberShort": "航班",
@@ -82,6 +85,9 @@ const translations = {
         "noMatch": "No flights match this filter",
         "clearAircraftType": "Clear aircraft type",
         "airlineNoFlights": "No {acode} flights in this time window",
+        "offlineBanner": "Offline — showing data from {min} min ago",
+        "offlineFresh": "Offline",
+        "offlineNoCache": "Offline with no cached data. Please reconnect and retry.",
         "tableHeaders": {
             "FlightNumber": "Flight Number",
             "FlightNumberShort": "Flt. No",
@@ -112,6 +118,9 @@ const translations = {
         "noMatch": "該当する便はありません",
         "clearAircraftType": "機種をクリア",
         "airlineNoFlights": "この時間帯に {acode} 便はありません",
+        "offlineBanner": "オフライン中 — {min} 分前のキャッシュを表示",
+        "offlineFresh": "オフライン中",
+        "offlineNoCache": "オフラインで、利用可能なキャッシュもありません。再接続してお試しください。",
         "tableHeaders": {
             "FlightNumber": "フライト番号",
             "FlightNumberShort": "番号",
@@ -132,6 +141,7 @@ function renderApp() {
     const appContainer = document.getElementById('app');
     appContainer.innerHTML = `
         <div id="refresh-icon"></div>
+        <div id="offline-banner" class="offline-banner" hidden></div>
         <div class="container position-relative">
             <div class="theme-buttons-container">
                 <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
@@ -374,11 +384,13 @@ function fetchData() {
     // Simple caching with localStorage (only for production)
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
     const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-    
+
     if (!isTestEnvironment) {
         const cachedData = getCachedFlightData(cacheKey);
-        if (cachedData && !isCacheExpired(cachedData.timestamp)) {
+        // Offline: accept any cached data regardless of age and surface staleness.
+        if (cachedData && (!isOnline() || !isCacheExpired(cachedData.timestamp))) {
             processFetchedData(cachedData.data);
+            updateOfflineBanner(cachedData.timestamp);
             return;
         }
     }
@@ -406,20 +418,64 @@ function fetchData() {
                 timestamp: Date.now()
             });
         }
-        
+
+        hideOfflineBanner();
         processFetchedData(data);
     })
     .catch(error => {
-        // If fetch fails, try to use cached data as fallback
+        // If fetch fails, try to use cached data as fallback regardless of age.
         if (!isTestEnvironment) {
             const cachedData = getCachedFlightData(cacheKey);
             if (cachedData) {
                 processFetchedData(cachedData.data);
+                updateOfflineBanner(cachedData.timestamp);
                 return;
             }
         }
-        document.getElementById("output").innerHTML = `<div class="empty-state text-center">${translations[currentLanguage]["error"]}</div>`;
+        if (!isOnline()) {
+            document.getElementById("output").innerHTML =
+                `<div class="empty-state text-center">${translations[currentLanguage]["offlineNoCache"]}</div>`;
+            updateOfflineBanner(null);
+        } else {
+            document.getElementById("output").innerHTML =
+                `<div class="empty-state text-center">${translations[currentLanguage]["error"]}</div>`;
+        }
     });
+}
+
+function isOnline() {
+    return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
+
+// Show or refresh the offline banner. Pass the cache timestamp so the user
+// sees how stale the data is; pass null when no cache is available.
+function updateOfflineBanner(cacheTimestamp) {
+    const banner = document.getElementById('offline-banner');
+    if (!banner) return;
+    if (isOnline()) {
+        banner.hidden = true;
+        banner.innerText = '';
+        return;
+    }
+    const t = translations[currentLanguage];
+    let msg;
+    if (cacheTimestamp == null) {
+        msg = t['offlineFresh'];
+    } else {
+        const ageMin = Math.max(0, Math.round((Date.now() - cacheTimestamp) / 60000));
+        msg = ageMin === 0
+            ? t['offlineFresh']
+            : t['offlineBanner'].replace('{min}', ageMin);
+    }
+    banner.innerText = msg;
+    banner.hidden = false;
+}
+
+function hideOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    if (!banner) return;
+    banner.hidden = true;
+    banner.innerText = '';
 }
 
 function processFetchedData(data) {
@@ -993,6 +1049,14 @@ function setupEventListeners() {
             event.preventDefault();
             toggleFlightMode();
         }
+    });
+
+    window.addEventListener('online', () => {
+        hideOfflineBanner();
+        fetchData();
+    });
+    window.addEventListener('offline', () => {
+        updateOfflineBanner(null);
     });
 }
 

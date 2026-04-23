@@ -107,6 +107,32 @@ body {
   }
 }
 
+/* Offline banner: sits above the container so it does not shift layout on
+ * toggle. Muted amber tone with solid left border to read as a non-blocking
+ * status strip rather than a warning. */
+.offline-banner {
+  padding: 6px 12px;
+  margin: 0 0 8px 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+  color: #8a5a00;
+  background-color: #fff4d6;
+  border-top: 1px solid #f0c96b;
+  border-bottom: 1px solid #f0c96b;
+  letter-spacing: 0.01em;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+[data-bs-theme="dark"] .offline-banner {
+  color: #ffd580;
+  background-color: rgba(255, 180, 0, 0.12);
+  border-color: rgba(255, 180, 0, 0.35);
+}
+
 /* Footer Styles */
 #footer {
   text-align: center;
