@@ -34,7 +34,6 @@
   --background-color: #fff;
   --border-color: #dee2e6;
   --table-header-text: var(--color-white);
-  --muted-opacity: 0.7;
 }
 
 [data-bs-theme="dark"] {
@@ -178,12 +177,14 @@ body {
 }
 
 /* Footer meta lines: quiet, unified visual weight so the three lines read as
- * a single attribution block rather than fighting with the main content. */
+ * a single attribution block rather than fighting with the main content.
+ * Alpha is applied via color-mix on the text color rather than parent opacity;
+ * parent opacity would composite onto descendants (e.g. .footer-brand), which
+ * dims the brand accent below the WCAG AA contrast threshold. */
 .footer-meta {
   font-size: 0.875rem;
   font-weight: 300;
-  color: var(--text-color);
-  opacity: var(--muted-opacity);
+  color: color-mix(in srgb, var(--text-color) 70%, transparent);
   line-height: 1.6;
 }
 

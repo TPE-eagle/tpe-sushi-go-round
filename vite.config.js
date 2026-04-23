@@ -22,6 +22,10 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
+      // Inline the SW registration script so it does not render-block the
+      // paint (the default 'auto' emits a separate <script src="registerSW.js">
+      // which Lighthouse flagged at ~200 ms of blocking time on slow 4G).
+      injectRegister: 'inline',
       includeAssets: [
         'favicon.ico',
         'favicon-16x16.png',
