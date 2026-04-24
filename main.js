@@ -61,6 +61,7 @@ const translations = {
         "allFlightsShort": "ALL",
         "loading": "資料載入中...🧳",
         "refreshing": "🔄 正在重新整理...",
+        "releaseToRefresh": "放開以重新整理",
         "error": "查詢失敗，請稍後再試。",
         "flightsInWindow": "時段內 {aname} 共 {n} 班",
         "currentFilter": "目前過濾條件：機型 {type}",
@@ -94,6 +95,7 @@ const translations = {
         "allFlightsShort": "ALL",
         "loading": "Data loading...🧳",
         "refreshing": "🔄 Refreshing...",
+        "releaseToRefresh": "Release to refresh",
         "error": "Query failed, please try again later.",
         "flightsInWindow": "{n} {aname} flight(s) in this time window",
         "currentFilter": "Current filter: Aircraft type {type}",
@@ -127,6 +129,7 @@ const translations = {
         "allFlightsShort": "ALL",
         "loading": "データを読み込み中...🧳",
         "refreshing": "🔄 再読み込み中...",
+        "releaseToRefresh": "離して更新",
         "error": "クエリに失敗しました。後でもう一度やり直してください。",
         "flightsInWindow": "この時間帯の{aname}便は {n} 便",
         "currentFilter": "現在のフィルター：機種 {type}",
@@ -902,7 +905,7 @@ function isSmallScreen() {
 }
 
 function displayFlights(flights, ACode) {
-    document.getElementById('refresh-icon').style.display = 'none';
+    hideRefreshIndicator();
     currentACode = ACode;
     updateAirlineLinks();
 
@@ -1046,6 +1049,11 @@ function setupEventListeners() {
         }
     });
 
+    // Pull-to-refresh: the pill tracks the finger as the user pulls down.
+    // Three visual states, driven by class + inline transform/opacity:
+    //   - pulling (below threshold): fades in + slides down with the pull
+    //   - .armed (at or past threshold): solid brand-coloured pill, "release to refresh"
+    //   - .refreshing: locked in place while fetchData runs, subtle pulse
     let startY = 0;
     let isPulling = false;
     const refreshThreshold = 200;
@@ -1059,17 +1067,38 @@ function setupEventListeners() {
     });
 
     document.addEventListener('touchmove', (event) => {
-        if (isPulling) {
-            const currentY = event.touches[0].clientY;
-            const distance = currentY - startY;
+        if (!isPulling) return;
+        const currentY = event.touches[0].clientY;
+        const distance = currentY - startY;
 
-            refreshIcon.style.display = distance > refreshThreshold ? 'block' : 'none';
+        if (distance <= 0) {
+            hideRefreshIndicator();
+            return;
+        }
+
+        const progress = Math.min(distance / refreshThreshold, 1);
+        const offset = Math.min(distance * 0.4, 40);
+        refreshIcon.style.opacity = String(progress);
+        refreshIcon.style.transform = `translate(-50%, ${offset}px)`;
+
+        if (distance >= refreshThreshold) {
+            if (!refreshIcon.classList.contains('armed')) {
+                refreshIcon.classList.add('armed');
+                refreshIcon.innerText = translations[currentLanguage]['releaseToRefresh'];
+            }
+        } else if (refreshIcon.classList.contains('armed')) {
+            refreshIcon.classList.remove('armed');
+            refreshIcon.innerText = '🔄';
+        } else if (!refreshIcon.innerText) {
+            refreshIcon.innerText = '🔄';
         }
     });
 
     document.addEventListener('touchend', () => {
-        if (isPulling && refreshIcon.style.display === 'block') {
+        if (isPulling && refreshIcon.classList.contains('armed')) {
             triggerRefresh();
+        } else if (isPulling) {
+            hideRefreshIndicator();
         }
         isPulling = false;
     });
@@ -1093,11 +1122,21 @@ function setupEventListeners() {
 
 function triggerRefresh() {
     const refreshIcon = document.getElementById('refresh-icon');
-    refreshIcon.style.display = 'block';
+    refreshIcon.classList.remove('armed');
+    refreshIcon.classList.add('refreshing');
+    refreshIcon.style.opacity = '1';
+    refreshIcon.style.transform = 'translate(-50%, 12px)';
+    refreshIcon.innerText = translations[currentLanguage]['refreshing'];
     fetchData();
-    setTimeout(() => {
-        refreshIcon.style.display = 'none';
-    }, REFRESH_DELAY);
+    setTimeout(hideRefreshIndicator, REFRESH_DELAY);
+}
+
+function hideRefreshIndicator() {
+    const el = document.getElementById('refresh-icon');
+    if (!el) return;
+    el.classList.remove('armed', 'refreshing');
+    el.style.opacity = '0';
+    el.style.transform = 'translate(-50%, -100%)';
 }
 
 // Initialize the application

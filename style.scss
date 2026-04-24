@@ -455,13 +455,47 @@ body {
   font-family: "Noto Sans", sans-serif;
 }
 
-/* Refresh Icon */
+/* Pull-to-refresh pill. Hidden position is above the viewport; touchmove
+ * drives opacity + translateY as the user pulls, then .armed /.refreshing
+ * swap the colour and copy. */
 #refresh-icon {
-  display: none;
   position: absolute;
   top: 0;
   left: 50%;
-  transform: translateX(-50%);
+  padding: 6px 18px;
+  border-radius: 999px;
+  background-color: var(--background-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transform: translate(-50%, -100%);
+  transition:
+    opacity 0.15s ease,
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+#refresh-icon.armed {
+  background-color: var(--color-br);
+  color: var(--color-white);
+  border-color: var(--color-br);
+}
+
+#refresh-icon.refreshing {
+  animation: refresh-pulse 1s ease-in-out infinite;
+}
+
+@keyframes refresh-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 /* Custom fs-7 class for smaller font size */
