@@ -408,14 +408,23 @@ body {
   line-height: 1.6;
 }
 
+/* Alpha via color-mix (not parent opacity) so the nested .airline-tint-*
+ * spans keep their full brand saturation against the muted surrounding text. */
 .empty-state-filter {
-  opacity: 0.85;
+  color: color-mix(in srgb, var(--text-color) 75%, transparent);
 }
 
 .empty-state-reason {
   font-weight: 600;
   margin-top: 4px;
 }
+
+/* Brand accents used inline inside the empty-state copy: the pinned
+ * airline name and the pinned aircraft family both render in the carrier's
+ * colour so the user's active filter reads as a single visual unit. */
+.airline-tint-br { color: var(--color-br); font-weight: 600; }
+.airline-tint-ci { color: var(--color-ci); font-weight: 600; }
+.airline-tint-jx { color: var(--color-jx); font-weight: 600; }
 
 .airline-full {
   display: inline;

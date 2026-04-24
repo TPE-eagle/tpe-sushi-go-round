@@ -742,11 +742,18 @@ function renderEmptyState(airlineFilteredFlights) {
     }
 
     // Airline + plane type pin set, no flights match the combination.
+    // Tint the airline name and the pinned family in that airline's brand
+    // colour so the two identifying pieces of the filter read as a pair at
+    // a glance (e.g., "EVA Air" and "B787" both in EVA sage).
     const aname = airlineFilteredFlights[0].AName || currentACode;
+    const tintClass = `airline-tint-${currentACode.toLowerCase()}`;
+    const anameHtml = `<span class="${tintClass}">${escapeHtml(aname)}</span>`;
+    const typeHtml = `<span class="${tintClass}">${escapeHtml(currentPlaneType || '')}</span>`;
+
     const line1 = t['flightsInWindow']
-        .replace('{aname}', aname)
+        .replace('{aname}', anameHtml)
         .replace('{n}', airlineFilteredFlights.length);
-    const line2 = t['currentFilter'].replace('{type}', currentPlaneType || '');
+    const line2 = t['currentFilter'].replace('{type}', typeHtml);
     const line3 = t['noMatch'];
     const btn = t['clearAircraftType'];
 
@@ -757,6 +764,18 @@ function renderEmptyState(airlineFilteredFlights) {
             <div class="empty-state-line empty-state-reason">${line3}</div>
             <button type="button" class="btn btn-sm btn-outline-secondary clear-aircraft-type mt-2">${btn}</button>
         </div>`;
+}
+
+// Minimal HTML escape so API-provided strings can be interpolated into
+// templates that already contain markup (the empty-state tint spans).
+function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    })[c]);
 }
 
 function generatePlaneTypeLinks(flights) {
