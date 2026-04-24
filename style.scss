@@ -371,6 +371,45 @@ body {
   margin-top: 1.5rem;
 }
 
+/* First and last columns should not sit flush against the table edge.
+ * Bootstrap .table-sm only reserves ~4 px of padding; bumping to 12 px
+ * prevents the logo and the gate value from pressing into the frame.
+ * Mobile keeps the tighter default — the zh-TW abbreviated headers and
+ * 5-character flight codes like B7681 already push the 5-column layout
+ * to the limit on a 393 px viewport. */
+@media (min-width: 769px) {
+  #output table tbody td:first-child,
+  #output table thead th:first-child {
+    padding-left: 0.75rem;
+  }
+  #output table tbody td:last-child,
+  #output table thead th:last-child {
+    padding-right: 0.75rem;
+  }
+}
+/* Keep logo and flight code on one line even when the cell is narrow
+ * (happens on mobile when a 5-char code like B7681 is the longest one). */
+#output table tbody td:first-child {
+  white-space: nowrap;
+}
+/* Gap between the airline logo and the flight code, plus optical
+ * vertical centering (default inline alignment leaves the logo sitting
+ * slightly below the text cap line). */
+#output table tbody td:first-child img {
+  margin-right: 0.5em;
+  vertical-align: middle;
+}
+
+/* Dark-mode ease on the logo GIFs. The source files are mostly
+ * transparent but the 3 % opaque pixels include ~#E0E0E0 antialiasing
+ * that haloes slightly against the pure dark background. Trimming
+ * brightness and saturation a touch takes the edge off without
+ * muddying the brand colour. */
+[data-bs-theme="dark"] #output table img,
+[data-bs-theme="dark"] .airline-link img {
+  filter: brightness(0.92) saturate(0.95);
+}
+
 /* Table Pop-up Animation */
 @keyframes tablePopUp {
   0% {
