@@ -3,8 +3,17 @@ name: "✈️ Flight Deck CI: Test & Deploy"
 on:
   push:
     branches: [ main ]
+    # Skip CI entirely for commits that only touch markdown. Saves ~6 minutes
+    # of build + E2E per docs-only change. If a commit mixes markdown with
+    # source changes, this filter is bypassed and the full pipeline runs.
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
 
 jobs:
   unit-tests:
