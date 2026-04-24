@@ -322,6 +322,25 @@ body {
   --bs-table-bg: var(--color-jx);
 }
 
+/* In dark mode the airline palette is lifted so airline-colored *text* on
+ * the dark body stays readable (airline row, plane-type row). But when
+ * those same lifted tokens are used as a *background* for a white-text
+ * table header, the pairing drops to ~3.1:1 contrast and reads as a
+ * glowing band on OLED. Pin the dark-mode table header to the original
+ * (deeper) airline colours so white header text lands at ~5:1 and reads
+ * as ink rather than light. */
+[data-bs-theme="dark"] .table-br,
+[data-bs-theme="dark"] .table-b7 {
+  --bs-table-bg: #4B7D6B;
+}
+[data-bs-theme="dark"] .table-ci,
+[data-bs-theme="dark"] .table-ae {
+  --bs-table-bg: #0F4C96;
+}
+[data-bs-theme="dark"] .table-jx {
+  --bs-table-bg: #0F2D3C;
+}
+
 /* Table styles for dark mode */
 [data-bs-theme="dark"] .table {
   --bs-table-color: var(--text-color);
