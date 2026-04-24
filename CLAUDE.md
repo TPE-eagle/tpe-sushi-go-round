@@ -96,9 +96,9 @@ Pilots pin their airline first, then optionally pin an aircraft family.
 - **TBD flights always pass the plane type filter** so a pilot does not miss a flight before the fleet is assigned by the airline.
 - The plane type row only renders when an airline is pinned. Its buttons are dynamically generated from the families actually present in the current airline's flights (`getAvailableFamilies`).
 - Switching airline always clears the plane type pin (families rarely carry meaningful intent across carriers).
-- Flight mode toggles, language changes, and pull-to-refresh **preserve** the plane type pin even when the family has no matching flights in the newly fetched list. The empty-state block surfaces instead, with a "clear aircraft type" button. Cookies are restored and reconciled **only on the first fetch of a page load** (`initialPinsRestored` guard in `processFetchedData`), so in-session refetches never drop user intent silently.
-- A `PlaneType` cookie pointing to a family not present in the current window is silently dropped (`reconcilePlaneTypePin`) **only on initial page load**, to avoid the confusing "pin exists, row empty" state for users returning after schedules have moved on.
-- When the pinned family has no flights in the current scope, `generatePlaneTypeLinks` still renders its button so the user can see and clear the pin.
+- Every other action (flight mode toggle, language change, pull-to-refresh, cold load from cookie) **preserves** the plane type pin, even when the family has no matching flights in the current fetched list. The app never silently drops a user-set pin: the empty-state block surfaces with a "clear aircraft type" button, and `generatePlaneTypeLinks` keeps the pinned family's button visible so the user can see and remove the pin deliberately.
+- Cookies are restored once per page load via the `initialPinsRestored` guard in `processFetchedData`; in-session refetches preserve the in-memory state as-is.
+- The one tidy-up on cold load: a `PlaneType` cookie with no corresponding `ACode` cookie is cleared, because plane type is scoped to an airline pin.
 
 ## Cookies
 

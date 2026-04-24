@@ -517,25 +517,19 @@ function processFetchedData(data) {
     }
     generateAirlineLinks(flightData);
 
-    // Restore pins from cookies only once per page load. Subsequent fetches
-    // (flight mode toggle, language switch, pull-to-refresh) must preserve
-    // whatever is already in memory — in particular they must not drop the
-    // plane type pin just because the newly fetched list happens to not
-    // include that family right now. The user set that pin deliberately and
-    // expects it to survive until they clear it themselves.
+    // Restore pins from cookies once per page load. In-session refetches
+    // (flight mode toggle, language switch, pull-to-refresh) preserve the
+    // in-memory state. The pin also survives across sessions even if the
+    // pinned family happens not to be flying right now: the empty-state
+    // block renders with a "clear aircraft type" button and
+    // generatePlaneTypeLinks always keeps the pinned family's button
+    // visible, so the user can see and clear it deliberately.
     if (!initialPinsRestored) {
         currentACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
         currentPlaneType = checkCookie(PLANE_TYPE_COOKIE_NAME) ? getCookie(PLANE_TYPE_COOKIE_NAME) : null;
 
-        // On first load only, drop a stale plane type pin if that family is
-        // not flying in the current airline scope. Avoids the confusing
-        // "pin exists, row shows nothing" state for users returning after
-        // schedules have moved on.
-        if (currentACode !== null) {
-            const airlineFiltered = applyAirlineScope(flightData, currentACode);
-            reconcilePlaneTypePin(airlineFiltered);
-        } else if (currentPlaneType !== null) {
-            // Plane type only persists under an airline pin; clear otherwise.
+        // Plane type only makes sense under an airline pin; clear the orphan.
+        if (currentACode === null && currentPlaneType !== null) {
             currentPlaneType = null;
             deleteCookie(PLANE_TYPE_COOKIE_NAME);
         }
@@ -728,17 +722,6 @@ function applyAirlineScope(flights, airlineCode) {
     if (airlineCode === null) return flights;
     const groupCodes = AIRLINE_GROUPS[airlineCode] || [airlineCode];
     return flights.filter(flight => groupCodes.includes(flight.ACode));
-}
-
-// Drop a stale plane type pin if the family is no longer present in the
-// current airline's flights (e.g., cookie from a past session, different time window).
-function reconcilePlaneTypePin(airlineFilteredFlights) {
-    if (currentPlaneType === null) return;
-    const available = getAvailableFamilies(airlineFilteredFlights);
-    if (!available.includes(currentPlaneType)) {
-        currentPlaneType = null;
-        deleteCookie(PLANE_TYPE_COOKIE_NAME);
-    }
 }
 
 function renderEmptyState(airlineFilteredFlights) {

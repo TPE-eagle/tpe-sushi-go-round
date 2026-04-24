@@ -108,24 +108,43 @@ test.describe('Plane type filter', () => {
     await expect(page.locator('table')).toContainText('B7681')
   })
 
-  test('stale plane type cookie is reconciled silently on load', async ({ page }) => {
+  test('plane type pin survives cold load even when the family is not flying now', async ({ page }) => {
     await setupMockApiRoute(page)
-    // Pre-seed cookies as if a past session pinned a family that is not flying
-    // in the current window. Reconciliation should drop the plane type pin
-    // without forcing the user into a broken empty state.
+    // Pre-seed cookies as if a past session pinned a family that happens to
+    // not be in the current mock window. The pin must survive: the empty
+    // state surfaces and lets the user clear it themselves.
     await page.context().addCookies([
       { name: 'ACode', value: 'BR', domain: 'localhost', path: '/' },
       { name: 'PlaneType', value: 'A350', domain: 'localhost', path: '/' }
     ])
 
     await page.goto('/')
+    await page.waitForSelector('.empty-state .clear-aircraft-type', { timeout: 5000 })
+
+    // Airline pin respected.
+    await expect(page.locator('[data-airline="BR"]')).toHaveClass(/active/)
+    // Plane type pin NOT dropped — cookie intact, A350 button still shown and active.
+    const cookies = await page.context().cookies()
+    expect(cookies.find(c => c.name === 'PlaneType')?.value).toBe('A350')
+    await expect(page.locator('[data-planetype="A350"]')).toHaveClass(/active/)
+
+    // User can clear the pin via the empty-state button.
+    await page.click('.empty-state .clear-aircraft-type')
+    const cookiesAfter = await page.context().cookies()
+    expect(cookiesAfter.find(c => c.name === 'PlaneType')).toBeUndefined()
+  })
+
+  test('orphan plane type cookie without airline is cleaned up on load', async ({ page }) => {
+    await setupMockApiRoute(page)
+    // PlaneType only makes sense scoped to an airline. A cookie carrying
+    // plane type but no airline pin is an invariant violation we silently fix.
+    await page.context().addCookies([
+      { name: 'PlaneType', value: 'A330', domain: 'localhost', path: '/' }
+    ])
+
+    await page.goto('/')
     await waitForApiAndTable(page)
 
-    // BR flights still show; the airline pin is respected.
-    await expect(page.locator('table')).toContainText('BR35')
-    await expect(page.locator('[data-airline="BR"]')).toHaveClass(/active/)
-    // The stale plane type pin was silently cleared.
-    await expect(page.locator('[data-planetype=""]')).toHaveClass(/active/)
     const cookies = await page.context().cookies()
     expect(cookies.find(c => c.name === 'PlaneType')).toBeUndefined()
   })
