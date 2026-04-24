@@ -100,6 +100,16 @@ Pilots pin their airline first, then optionally pin an aircraft family.
 - Cookies are restored once per page load via the `initialPinsRestored` guard in `processFetchedData`; in-session refetches preserve the in-memory state as-is.
 - The one tidy-up on cold load: a `PlaneType` cookie with no corresponding `ACode` cookie is cleared, because plane type is scoped to an airline pin.
 
+## Pull-to-refresh
+
+Mobile gesture implemented with three visual states, all driven by CSS transitions on `#refresh-icon`:
+
+- **Pulling** (below threshold): pill fades in and slides down proportional to pull distance, shows just the 🔄 emoji.
+- **Armed** (at or past the 200px threshold): pill locks into the EVA sage colour and swaps copy to the `releaseToRefresh` translation key.
+- **Refreshing** (after release): pill pulses while `fetchData` runs; text becomes the existing `refreshing` copy.
+
+`hideRefreshIndicator()` is the shared exit animation, called from `displayFlights` (fetch complete), the cancel path in `touchend` (released without crossing threshold), and the safety `setTimeout` in `triggerRefresh`.
+
 ## Cookies
 
 | Name | Scope | Expiry |
@@ -120,7 +130,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 - Languages: `zh` (Traditional Chinese), `en`, `jp`.
 - Dynamic Google Font loading: Noto Sans / Noto Sans TC / Noto Sans JP.
-- `translations` object in `main.js` is the single source of truth for UI strings, including plane type filter copy (`flightsInWindow`, `currentFilter`, `noMatch`, `clearAircraftType`, `airlineNoFlights`) and offline UX copy (`offlineBanner`, `offlineFresh`, `offlineNoCache`).
+- `translations` object in `main.js` is the single source of truth for UI strings, including plane type filter copy (`flightsInWindow`, `currentFilter`, `noMatch`, `clearAircraftType`, `airlineNoFlights`), offline UX copy (`offlineBanner`, `offlineFresh`, `offlineNoCache`), and pull-to-refresh state copy (`releaseToRefresh`, plus the existing `refreshing`).
 - Airline and city names come from the API (localized by the `language` field); do not hardcode.
 
 ## Key Design Decisions
@@ -150,7 +160,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 - `api-integration.spec.js` — API parameter validation, display, mode switching.
 - `language-detection.spec.js` — browser detection, manual switching, all three languages.
 - `user-interaction.spec.js` — airline filter, theme toggle, cookie persistence, responsive layout.
-- `plane-type.spec.js` — plane type row visibility, dynamic family list, pin / clear, airline switch reset, TBD flights always visible, stale cookie reconcile, flight mode toggle preserves pin.
+- `plane-type.spec.js` — plane type row visibility, dynamic family list, pin / clear, airline switch reset, TBD flights always visible, pin survives cold load and flight mode toggle even when the family has no matches, orphan cookie cleanup.
 - `offline.spec.js` — offline banner visibility on `offline` / `online` events. (Dev server has no active SW, so the SW cache path itself is not exercised here.)
 - `production.spec.js` — live site smoke tests against GitHub Pages.
 

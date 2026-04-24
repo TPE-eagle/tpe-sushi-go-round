@@ -12,10 +12,10 @@ A mobile-first web app for Taoyuan International Airport flight information. Bui
 - Real-time arrival / departure data from the Taoyuan Airport API
 - 2-hour time window around the current time, filtered client-side
 - Airlines: BR (EVA Air + B7 UNI Air), CI (China Airlines + AE Mandarin), JX (STARLUX)
-- **Aircraft family filter** — pilots pin an airline then narrow to A321 / A330 / A350 / B777 / B787 etc. (family level, dynamic per airline)
+- **Aircraft family filter** — pilots pin an airline then narrow to A321 / A330 / A350 / B777 / B787 etc. (family level, dynamic per airline). The pin sticks across sessions; it is only cleared when the pilot clears it themselves (or switches airline).
 - Traditional Chinese / English / Japanese with auto-detection
 - Dark / light theme with system preference detection and cookie persistence
-- Responsive mobile-first design (768px breakpoint), pull-to-refresh on mobile
+- Responsive mobile-first design (768px breakpoint). Pull-to-refresh has three states: pull-to-preview, release-to-refresh (branded pill), refreshing (pulsing indicator).
 - Installable PWA with Service Worker: app shell loads offline, last cached flight data is re-served with a staleness banner
 
 ## Quick Start
@@ -115,7 +115,7 @@ npm run test:e2e:prod     # Production E2E (live site, multi-browser)
 | `api-integration.spec.js` | API parameters, display, mode switching |
 | `language-detection.spec.js` | Three languages, browser detection |
 | `user-interaction.spec.js` | Airline filter, theme, cookies, responsive |
-| `plane-type.spec.js` | Plane type row, dynamic list, pin / clear, reconcile |
+| `plane-type.spec.js` | Plane type row, dynamic list, pin / clear, pin survives mode toggle and cold load, orphan cookie cleanup |
 | `offline.spec.js` | Offline banner visibility on `offline` / `online` events |
 | `production.spec.js` | Live site smoke tests |
 
