@@ -265,7 +265,18 @@ export async function setupMockApiRoute(page, mockData = null) {
   const baseData = mockData || getMockFlightData()
 
   await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
-    const langHeader = route.request().headers()['accept-language'] || ''
+    const request = route.request()
+    const langHeader = request.headers()['accept-language'] || ''
+    // Real API responses for Arrival and Departure are almost never the same
+    // set of flights or plane families. To catch bugs that only surface when
+    // the two lists differ (e.g., pinned aircraft family missing in the other
+    // mode), adapt the mock so BR35's plane family changes per mode. That way
+    // a test pinning B777 in Arrival and toggling to Departure actually hits
+    // a list without B777 — the real-world failure mode.
+    let body = {}
+    try { body = request.postDataJSON() || {} } catch (_) { /* empty body is fine */ }
+    const mode = body.AState === 'D' ? 'D' : 'A'
+
     const flightData = baseData.map((flight) => {
       let name
       if (langHeader.startsWith('zh')) {
@@ -277,7 +288,12 @@ export async function setupMockApiRoute(page, mockData = null) {
         const enNames = { BR: 'EVA Air', CI: 'China Airlines', JX: 'STARLUX Airlines', B7: 'UNI Air', AE: 'Mandarin Airlines' }
         name = enNames[flight.ACode] || flight.AName
       }
-      return { ...flight, AName: name }
+      // In Departure mode, swap the lone BR widebody entry to an A321 so the
+      // BR group in that mode only contains A321 family flights.
+      const planeNo = (mode === 'D' && flight.flightCode === 'BR35')
+        ? 'A321-252NX'
+        : flight.PlaneNo
+      return { ...flight, AName: name, PlaneNo: planeNo, AState: mode }
     })
     await route.fulfill({
       status: 200,

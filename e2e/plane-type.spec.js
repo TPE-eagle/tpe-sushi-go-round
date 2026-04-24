@@ -130,7 +130,11 @@ test.describe('Plane type filter', () => {
     expect(cookies.find(c => c.name === 'PlaneType')).toBeUndefined()
   })
 
-  test('plane type pin survives flight mode toggle when still valid', async ({ page }) => {
+  test('plane type pin survives flight mode toggle even when the family is absent in the new mode', async ({ page }) => {
+    // Mock is mode-aware: BR35 is B777 in Arrival but an A321 variant in
+    // Departure, so after the toggle the BR group in Departure has no B777.
+    // The pin must still survive — we never silently drop user intent on an
+    // in-session refresh.
     await setupMockApiRoute(page)
     await page.goto('/')
     await waitForApiAndTable(page)
@@ -140,9 +144,20 @@ test.describe('Plane type filter', () => {
     await expect(page.locator('[data-planetype="B777"]')).toHaveClass(/active/)
 
     await page.click('#flight-mode-toggle')
-    await waitForApiAndTable(page)
+    // Departure mode: BR group has flights but none is B777, so the combined
+    // airline + type filter yields zero matches. The dedicated empty-state
+    // block renders with the "clear aircraft type" button.
+    await page.waitForSelector('.empty-state .clear-aircraft-type', { timeout: 5000 })
 
+    // Pin survives in state and in the cookie.
     const cookies = await page.context().cookies()
     expect(cookies.find(c => c.name === 'PlaneType')?.value).toBe('B777')
+    await expect(page.locator('[data-planetype="B777"]')).toHaveClass(/active/)
+
+    // Using the clear button restores the airline-wide view and drops the pin.
+    await page.click('.empty-state .clear-aircraft-type')
+    await expect(page.locator('table')).toBeVisible()
+    const cookiesAfter = await page.context().cookies()
+    expect(cookiesAfter.find(c => c.name === 'PlaneType')).toBeUndefined()
   })
 })

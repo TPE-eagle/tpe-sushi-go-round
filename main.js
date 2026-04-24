@@ -45,6 +45,7 @@ let currentFilteredFlights = [];
 let currentLanguage = DEFAULT_LANGUAGE;
 let currentACode = null;
 let currentPlaneType = null;
+let initialPinsRestored = false; // Guards the one-shot cookie restore in processFetchedData
 let currentTheme = 'light'; // Default to light mode
 let currentFlightMode = 'A'; // 'A' for Arrival, 'D' for Departure
 
@@ -513,18 +514,30 @@ function processFetchedData(data) {
     }
     generateAirlineLinks(flightData);
 
-    currentACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
-    currentPlaneType = checkCookie(PLANE_TYPE_COOKIE_NAME) ? getCookie(PLANE_TYPE_COOKIE_NAME) : null;
+    // Restore pins from cookies only once per page load. Subsequent fetches
+    // (flight mode toggle, language switch, pull-to-refresh) must preserve
+    // whatever is already in memory — in particular they must not drop the
+    // plane type pin just because the newly fetched list happens to not
+    // include that family right now. The user set that pin deliberately and
+    // expects it to survive until they clear it themselves.
+    if (!initialPinsRestored) {
+        currentACode = checkCookie(COOKIE_NAME) ? getCookie(COOKIE_NAME) : null;
+        currentPlaneType = checkCookie(PLANE_TYPE_COOKIE_NAME) ? getCookie(PLANE_TYPE_COOKIE_NAME) : null;
 
-    // If the saved plane type is no longer valid for the current airline scope
-    // (e.g., that family is not flying this window), drop it silently.
-    if (currentACode !== null) {
-        const airlineFiltered = applyAirlineScope(flightData, currentACode);
-        reconcilePlaneTypePin(airlineFiltered);
-    } else if (currentPlaneType !== null) {
-        // Plane type only persists under an airline pin; clear otherwise.
-        currentPlaneType = null;
-        deleteCookie(PLANE_TYPE_COOKIE_NAME);
+        // On first load only, drop a stale plane type pin if that family is
+        // not flying in the current airline scope. Avoids the confusing
+        // "pin exists, row shows nothing" state for users returning after
+        // schedules have moved on.
+        if (currentACode !== null) {
+            const airlineFiltered = applyAirlineScope(flightData, currentACode);
+            reconcilePlaneTypePin(airlineFiltered);
+        } else if (currentPlaneType !== null) {
+            // Plane type only persists under an airline pin; clear otherwise.
+            currentPlaneType = null;
+            deleteCookie(PLANE_TYPE_COOKIE_NAME);
+        }
+
+        initialPinsRestored = true;
     }
 
     renderFilteredView();
@@ -763,6 +776,15 @@ function renderEmptyState(airlineFilteredFlights) {
 function generatePlaneTypeLinks(flights) {
     const container = document.getElementById('planeTypeButtons');
     const families = getAvailableFamilies(flights);
+
+    // If the user has pinned a family that is not in the current list (e.g.,
+    // they pinned B777 in Arrival mode and toggled to Departure, where the
+    // current airline has no B777 flights), keep the button visible anyway
+    // so they can see and clear their pin.
+    if (currentPlaneType && !families.includes(currentPlaneType)) {
+        families.push(currentPlaneType);
+        families.sort();
+    }
 
     if (families.length === 0) {
         container.innerHTML = '';

@@ -96,7 +96,9 @@ Pilots pin their airline first, then optionally pin an aircraft family.
 - **TBD flights always pass the plane type filter** so a pilot does not miss a flight before the fleet is assigned by the airline.
 - The plane type row only renders when an airline is pinned. Its buttons are dynamically generated from the families actually present in the current airline's flights (`getAvailableFamilies`).
 - Switching airline always clears the plane type pin (families rarely carry meaningful intent across carriers).
-- A saved `PlaneType` cookie pointing to a family not present in the current window is silently dropped (`reconcilePlaneTypePin`) on load.
+- Flight mode toggles, language changes, and pull-to-refresh **preserve** the plane type pin even when the family has no matching flights in the newly fetched list. The empty-state block surfaces instead, with a "clear aircraft type" button. Cookies are restored and reconciled **only on the first fetch of a page load** (`initialPinsRestored` guard in `processFetchedData`), so in-session refetches never drop user intent silently.
+- A `PlaneType` cookie pointing to a family not present in the current window is silently dropped (`reconcilePlaneTypePin`) **only on initial page load**, to avoid the confusing "pin exists, row empty" state for users returning after schedules have moved on.
+- When the pinned family has no flights in the current scope, `generatePlaneTypeLinks` still renders its button so the user can see and clear the pin.
 
 ## Cookies
 
