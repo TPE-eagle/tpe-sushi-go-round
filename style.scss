@@ -42,9 +42,11 @@
   --color-jx: #5A8FA8;   /* Lifted obsidian for dark-background readability (~5:1) */
   /* Body text is deliberately softer than Bootstrap's default #f8f9fa. Pure
    * white on #212529 lands at ~14.5:1 — past AAA and visibly harsh on OLED
-   * iPhones. #d0d3d6 holds ~10.5:1 (still AAA) while reading as calmer
-   * ambient lighting, closer to Material Design's dark-theme body text spec. */
-  --text-color: #d0d3d6;
+   * iPhones. #d3d1ce holds ~10.5:1 (still AAA) while reading as calmer
+   * ambient lighting. Warm-leaning grey (R>G>B) rather than cool grey so
+   * late-night reading feels more like an instrument panel and less like
+   * a laptop screen; pairs with the sage/obsidian airline tokens too. */
+  --text-color: #d3d1ce;
   --background-color: #212529;
   --border-color: #495057;
   --shadow-light: rgba(255, 255, 255, 0.2);
@@ -88,8 +90,8 @@ body {
 }
 
 [data-bs-theme="dark"] #title {
-  text-shadow: 0 0 4px rgba(255, 255, 255, 0.25), 0 0 10px rgba(255, 255, 255, 0.15);
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.12));
+  text-shadow: 0 0 3px rgba(255, 255, 255, 0.15), 0 0 8px rgba(255, 255, 255, 0.08);
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.06));
 }
 
 @keyframes dropShadowAnimation {
@@ -394,6 +396,25 @@ body {
   margin-top: 1.5rem;
 }
 
+/* Container width tuning.
+ * - Desktop (≥769 px): extend past Bootstrap's 1320 px cap so a 1440 /
+ *   1920 screen does not leave huge empty gutters, but never exceed
+ *   95 vw so the content still has a frame.
+ * - Mobile (≤768 px): compress the Bootstrap default 0.75 rem gutter
+ *   down to 0.5 rem; the table's 5 columns already run tight on a
+ *   393 px viewport and 8 px more width per row shows up immediately. */
+@media (min-width: 769px) {
+  .container {
+    max-width: min(1480px, 95vw);
+  }
+}
+@media (max-width: 768px) {
+  .container {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+}
+
 /* First and last columns should not sit flush against the table edge.
  * Bootstrap .table-sm only reserves ~4 px of padding; bumping to 12 px
  * prevents the logo and the gate value from pressing into the frame.
@@ -433,20 +454,17 @@ body {
   filter: brightness(0.92) saturate(0.95);
 }
 
-/* Table Pop-up Animation */
-@keyframes tablePopUp {
-  0% {
-    opacity: 0;
-    transform: scale(0.9) translateY(20px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+/* Table Pop-up Animation. Kept intentionally minimal: a 150 ms opacity
+ * fade, no scale/translate. Pilots are on a 25-second session checking
+ * gate numbers; any animation longer than this is perceived as "the app
+ * is making me wait" rather than "the app feels polished". */
+@keyframes tableFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .table-pop-up {
-  animation: tablePopUp 0.5s ease-out forwards;
+  animation: tableFadeIn 0.15s ease-out forwards;
 }
 
 /* Global tap feedback for every filter button. Mobile users (96% of
