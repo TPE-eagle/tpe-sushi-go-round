@@ -343,6 +343,34 @@ body {
   --bs-table-bg: #e2e3e5;
 }
 
+/* Flight table typography. Baseline nudged up a notch for readability; Gate
+ * and Carousel (columns 4-5) get an extra bump plus tabular-nums since those
+ * are the two values a crew member actually came here to read. Flight code
+ * column also goes tabular-nums + 600 so "BR35" reads as an identifier, not
+ * prose. */
+#output table {
+  font-size: 1.0625rem;
+}
+#output table tbody td:first-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+#output table tbody td:nth-child(4),
+#output table tbody td:nth-child(5) {
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Pull flight-button-to-table only when there actually are flight buttons,
+ * so the gap does not appear in the "ALL airline" no-pin case. */
+#flightButtons:not(:empty) {
+  margin-bottom: 0.75rem;
+}
+/* Breathing room between the table and the attribution block. */
+#footer {
+  margin-top: 1.5rem;
+}
+
 /* Table Pop-up Animation */
 @keyframes tablePopUp {
   0% {
@@ -359,6 +387,29 @@ body {
   animation: tablePopUp 0.5s ease-out forwards;
 }
 
+/* Global tap feedback for every filter button. Mobile users (96% of
+ * traffic) get no :hover state, so the only way a tap reads as "received"
+ * is a brief scale-down. Bootstrap's own .btn transitions stay intact. */
+.airline-link,
+.btn-outline-br, .btn-outline-b7,
+.btn-outline-ci, .btn-outline-ae,
+.btn-outline-jx,
+.btn-outline-secondary {
+  transition:
+    transform 0.12s ease,
+    opacity 0.15s ease,
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.airline-link:active,
+.btn-outline-br:active, .btn-outline-b7:active,
+.btn-outline-ci:active, .btn-outline-ae:active,
+.btn-outline-jx:active,
+.btn-outline-secondary:active {
+  transform: scale(0.96);
+}
+
 /* Airline Link Styles */
 .airline-link {
   display: inline-flex;
@@ -369,6 +420,7 @@ body {
   text-decoration: none;
   position: relative;
   opacity: 0.8;
+  letter-spacing: 0.02em;
   transition: all 0.2s ease;
 }
 
@@ -531,11 +583,17 @@ body {
   user-select: none;
 }
 
-.theme-toggle-btn:hover, .theme-toggle-btn:focus, .theme-toggle-btn:active {
+.theme-toggle-btn:hover, .theme-toggle-btn:focus {
   transform: scale(1.05);
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
   outline: none;
   border-color: var(--border-color);
+}
+/* Press feels like a press: rotate the sun/moon 180° while scaling down.
+ * Pairs with the icon swap in applyTheme() for a "flip" sensation. */
+.theme-toggle-btn:active {
+  transform: rotate(180deg) scale(0.92);
+  transition-duration: 0.3s;
 }
 
 [data-bs-theme="dark"] .theme-toggle-btn {
@@ -580,11 +638,16 @@ body {
   user-select: none;
 }
 
-.flight-toggle-btn:hover, .flight-toggle-btn:focus, .flight-toggle-btn:active {
+.flight-toggle-btn:hover, .flight-toggle-btn:focus {
   transform: scale(1.05);
   box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
   outline: none;
   border-color: var(--border-color);
+}
+/* Plane icon should not rotate (it would look like a loop); just a tactile
+ * press-down. */
+.flight-toggle-btn:active {
+  transform: scale(0.92);
 }
 
 [data-bs-theme="dark"] .flight-toggle-btn {
