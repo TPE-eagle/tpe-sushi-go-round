@@ -40,7 +40,11 @@
   --color-br: #6A9E89;   /* Lifted sage for dark-background contrast (~4.8:1) */
   --color-ci: #2566B8;   /* Lifted blue for dark-background contrast */
   --color-jx: #5A8FA8;   /* Lifted obsidian for dark-background readability (~5:1) */
-  --text-color: #f8f9fa;
+  /* Body text is deliberately softer than Bootstrap's default #f8f9fa. Pure
+   * white on #212529 lands at ~14.5:1 — past AAA and visibly harsh on OLED
+   * iPhones. #d0d3d6 holds ~10.5:1 (still AAA) while reading as calmer
+   * ambient lighting, closer to Material Design's dark-theme body text spec. */
+  --text-color: #d0d3d6;
   --background-color: #212529;
   --border-color: #495057;
   --shadow-light: rgba(255, 255, 255, 0.2);
