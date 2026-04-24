@@ -569,13 +569,17 @@ body {
 }
 
 /* Animations */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+/* Loading state breathing pulse — never disappears (min 0.55), ease-in-out
+ * so the rhythm reads as "system working" rather than a broken neon sign. */
+@keyframes blinkingPulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
 }
 
 .blinking-text {
-  animation: blink 1s infinite;
+  animation: blinkingPulse 1.4s ease-in-out infinite;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.12);
+  letter-spacing: 0.02em;
 }
 
 /* Font Styles */
@@ -611,6 +615,7 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   font-size: 0.875rem;
   font-weight: 500;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
@@ -621,22 +626,32 @@ body {
     transform 0.2s ease,
     background-color 0.2s ease,
     color 0.2s ease,
-    border-color 0.2s ease;
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
+/* Armed: branded sage glow under the pill, like an instrument light. */
 #refresh-icon.armed {
   background-color: var(--color-br);
   color: var(--color-white);
   border-color: var(--color-br);
+  box-shadow:
+    0 2px 10px rgba(75, 125, 107, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
+/* Refreshing: tighter pulse (0.7 s) + soft white halo so it reads as
+ * active status rather than generic fade. */
 #refresh-icon.refreshing {
-  animation: refresh-pulse 1s ease-in-out infinite;
+  animation: refresh-pulse 0.7s ease-in-out infinite;
+  box-shadow:
+    0 0 16px rgba(255, 255, 255, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 @keyframes refresh-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+  50%      { opacity: 0.55; }
 }
 
 /* Custom fs-7 class for smaller font size */
@@ -644,7 +659,14 @@ body {
   font-size: 0.875rem !important;
 }
 
-/* Theme toggle button styles */
+/* Theme toggle button styles: semi-transparent "liquid glass" pill.
+ * The previous design used a solid bg + a crisp 0.2-alpha border, which
+ * read as a ring drawn on the page. Here the bg is 4 % white, the border
+ * is 8 % (barely visible but still locatable by finger), and a 5 % inset
+ * highlight along the top edge adds the iOS 26 liquid-glass tell.
+ * backdrop-filter blurs any content (e.g. the title glow) that sits
+ * behind the button on mobile; on empty areas it just renders as the
+ * semi-transparent background. */
 .theme-toggle-btn {
   width: 38px;
   height: 38px;
@@ -652,10 +674,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-color);
-  background-color: var(--background-color);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background-color: rgba(0, 0, 0, 0.03);
   color: var(--text-color);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 1rem;
@@ -665,9 +691,12 @@ body {
 
 .theme-toggle-btn:hover, .theme-toggle-btn:focus {
   transform: scale(1.05);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 5px rgba(0, 0, 0, 0.12);
   outline: none;
-  border-color: var(--border-color);
 }
 /* Press feels like a press: rotate the sun/moon 180° while scaling down.
  * Pairs with the icon swap in applyTheme() for a "flip" sensation. */
@@ -677,15 +706,21 @@ body {
 }
 
 [data-bs-theme="dark"] .theme-toggle-btn {
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 [data-bs-theme="dark"] .theme-toggle-btn:hover,
 [data-bs-theme="dark"] .theme-toggle-btn:focus,
 [data-bs-theme="dark"] .theme-toggle-btn:active {
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.4);
   outline: none;
 }
 
@@ -708,10 +743,14 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  background-color: var(--background-color);
+  background-color: rgba(0, 0, 0, 0.03);
   color: var(--text-color);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   cursor: pointer;
   transition: all 0.2s ease;
   padding: 0;
@@ -720,9 +759,12 @@ body {
 
 .flight-toggle-btn:hover, .flight-toggle-btn:focus {
   transform: scale(1.05);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 5px rgba(0, 0, 0, 0.12);
   outline: none;
-  border-color: var(--border-color);
 }
 /* Plane icon should not rotate (it would look like a loop); just a tactile
  * press-down. */
@@ -731,17 +773,22 @@ body {
 }
 
 [data-bs-theme="dark"] .flight-toggle-btn {
-  border-color: rgba(255, 255, 255, 0.2);
-  background-color: var(--background-color);
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
   color: var(--text-color);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 [data-bs-theme="dark"] .flight-toggle-btn:hover,
 [data-bs-theme="dark"] .flight-toggle-btn:focus,
 [data-bs-theme="dark"] .flight-toggle-btn:active {
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 /* Media Queries */
