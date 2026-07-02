@@ -13,7 +13,7 @@ Mobile-first web app for Taoyuan International Airport flight info, aimed at pil
 ## Essential Commands
 
 ```bash
-npm install                # .npmrc pins legacy-peer-deps=true; see note below
+npm install
 npx playwright install --with-deps    # once, for E2E
 
 npm run dev                # Vite dev server at http://localhost:8080
@@ -23,11 +23,6 @@ npm run test:run           # Unit tests (Vitest, single run)
 npm run test:e2e:local     # Local E2E (Playwright, chromium, max workers)
 npm run test:e2e:prod      # Production E2E against the live site
 ```
-
-> `.npmrc` sets `legacy-peer-deps=true` because `vite-plugin-pwa@1.2.0` only
-> declares peer support up to Vite 7, but the project runs on Vite 8. Remove
-> the flag once vite-plugin-pwa releases a version with Vite 8 in its
-> peer range.
 
 ## Key Files
 
@@ -39,7 +34,6 @@ npm run test:e2e:prod      # Production E2E against the live site
 | `vite.config.js` | Vite build + Vitest config + `vite-plugin-pwa` (Workbox generateSW) + manifest |
 | `src/utils/flightUtils.js` | Shared utilities (imported by unit tests; mirrored inline in `main.js`) |
 | `e2e/test-helpers.js` | Smart API caching, GA blocking, mock flight generation |
-| `.npmrc` | `legacy-peer-deps=true` (Vite 8 vs vite-plugin-pwa 1.2.0 peer) |
 
 ## Data Flow
 
