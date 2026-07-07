@@ -63,6 +63,7 @@ async function ghApi(method, path, body) {
 }
 
 async function findOpenIncident() {
+  if (!GITHUB_TOKEN) return null; // local/no-token run: skip state management, probe only
   const issues = await ghApi(
     'GET',
     `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=1`,
