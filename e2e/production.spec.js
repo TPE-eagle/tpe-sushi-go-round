@@ -15,40 +15,36 @@ test.describe('Production Environment Tests', () => {
 
   test('should load production site successfully', async ({ page }) => {
     await page.goto('')
-    
-    // Check if basic elements are loaded
+
     await page.waitForSelector('#title', { timeout: 10000 })
     await expect(page.locator('#title')).toBeVisible()
-    
-    // Wait for either flight table or no-flights message to appear
-    await page.waitForSelector('table, #output', { timeout: 10000 })
-    
-    // Check if either table is loaded OR no flights message is shown
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasNoFlightsMessage = await page.locator('#output').textContent().then(text => 
-      text && (text.includes('沒有找到') || text.includes('No matching') || text.includes('一致する'))
-    ).catch(() => false)
-    
-    expect(hasTable || hasNoFlightsMessage).toBeTruthy()
+
+    // Mock data always provides 5 flights in the current time window, so the
+    // table must render with rows. An empty table or missing table here means
+    // the API intercept failed and the app saw a real-network 403.
+    await page.waitForSelector('table tbody tr', { timeout: 10000 })
+    const rowCount = await page.locator('table tbody tr').count()
+    expect(rowCount).toBeGreaterThan(0)
   })
 
-test('should validate API request parameters', async ({ page }) => {
+  test('should validate API request parameters', async ({ page }) => {
     const apiRequests = []
-    
-    // Capture request details inside a route handler (page.route intercepts
-    // before page.on('request'), so we use route.fallback to chain handlers)
-    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
-      try {
-        apiRequests.push({
-          method: route.request().method(),
-          postData: route.request().postDataJSON()
-        })
-      } catch { /* ignore parse errors */ }
-      await route.fallback()
+
+    // Passively observe requests — page.on('request') fires before routing, so
+    // it captures POST params without affecting the mock route set up in beforeEach.
+    page.on('request', (request) => {
+      if (request.url() === 'https://www.taoyuan-airport.com/api/api/flight/a_flight') {
+        try {
+          apiRequests.push({
+            method: request.method(),
+            postData: request.postDataJSON()
+          })
+        } catch { /* ignore parse errors */ }
+      }
     })
 
     await page.goto('')
-    await page.waitForSelector('table, #output', { timeout: 10000 })
+    await page.waitForSelector('table tbody tr', { timeout: 10000 })
 
     // Verify API request was captured with correct parameters
     expect(apiRequests.length).toBeGreaterThan(0)
