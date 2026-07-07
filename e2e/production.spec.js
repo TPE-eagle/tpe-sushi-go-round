@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { blockGoogleAnalytics, setupMockApiRoute } from './test-helpers.js'
+import { AIRLINE_GROUPS } from '../src/utils/flightUtils.js'
 
 const expectedTitles = {
   zh: { arrival: '台北迴轉壽司🍣', departure: '台北出發便🛫🌏' },
@@ -163,12 +164,15 @@ test.describe('Production Environment Tests', () => {
         // Wait for filtering to complete
         await expect(button).toHaveClass(/active/, { timeout: 5000 })
         
-        // If there is flight data, should only display flights from that airline
+        // If there is flight data, should only display flights from that airline group.
+        // CI includes AE (Mandarin), BR includes B7 (UNI Air) — check against group
+        // members, not a bare toContain(airline) which breaks for subsidiary codes.
         const hasTable = await page.locator('table').count() > 0
         if (hasTable) {
           const flightCodes = await page.locator('table tbody td:first-child').allTextContents()
+          const members = AIRLINE_GROUPS[airline] || [airline]
           for (const code of flightCodes) {
-            expect(code).toContain(airline)
+            expect(members.some(prefix => code.startsWith(prefix))).toBe(true)
           }
         }
         
@@ -265,7 +269,7 @@ test.describe('Production Environment Tests', () => {
   })
 
   test('should be responsive across different screen sizes', async ({ page }) => {
-    // Test different screen sizes and wait for layout to update
+    // Verify the app loads at various widths.
     await page.setViewportSize({ width: 1200, height: 800 })
     await page.goto('')
     await page.waitForSelector('table, #output', { timeout: 10000 })
@@ -273,15 +277,19 @@ test.describe('Production Environment Tests', () => {
     await page.setViewportSize({ width: 768, height: 1024 })
     await page.waitForSelector('table, #output', { timeout: 5000 })
 
+    // Navigate fresh at 375px so the initial render picks up isSmallScreen()=true.
+    // The resize event handler only re-renders when an airline pin is active, so
+    // resizing an already-loaded desktop page does not switch to short headers.
     await page.setViewportSize({ width: 375, height: 667 })
-    await page.waitForSelector('table, #output', { timeout: 5000 })
+    await page.goto('')
+    await page.waitForSelector('table, #output', { timeout: 10000 })
 
     // Check if there is appropriate display on small screens
     const hasTable = await page.locator('table').count() > 0
     if (hasTable) {
       // On mobile version should display simplified headers
       const headers = await page.locator('table th').allTextContents()
-      const hasShortHeaders = headers.some(header => 
+      const hasShortHeaders = headers.some(header =>
         header.includes('航班') || header.includes('Flt')
       )
       expect(hasShortHeaders).toBeTruthy()
