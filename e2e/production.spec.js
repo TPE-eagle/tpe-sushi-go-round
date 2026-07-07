@@ -20,8 +20,9 @@ test.describe('Production Environment Tests', () => {
     await expect(page.locator('#title')).toBeVisible()
 
     // Mock data always provides 5 flights in the current time window, so the
-    // table must render with rows. An empty table or missing table here means
-    // the API intercept failed and the app saw a real-network 403.
+    // table must render with rows. An empty table here means the mock's
+    // time-window computation or the rendering logic has a bug — not a network
+    // issue (setupMockApiRoute in beforeEach is LIFO-prioritised and always fulfils).
     await page.waitForSelector('table tbody tr', { timeout: 10000 })
     const rowCount = await page.locator('table tbody tr').count()
     expect(rowCount).toBeGreaterThan(0)
