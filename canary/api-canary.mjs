@@ -71,7 +71,19 @@ async function findOpenIncident() {
   return Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
 }
 
+async function ensureLabel() {
+  try {
+    await ghApi('GET', `/repos/${REPO_OWNER}/${REPO_NAME}/labels/${encodeURIComponent(INCIDENT_LABEL)}`);
+  } catch {
+    // 404 = not found; create it. Any other error is unexpected but non-fatal.
+    await ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/labels`, {
+      name: INCIDENT_LABEL, color: 'e11d48', description: 'API canary incident',
+    }).catch(() => {}); // ignore 422 if another run just created it concurrently
+  }
+}
+
 async function openIncidentIssue(failureType, detail, startedAt) {
+  await ensureLabel();
   return ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
     title: `🚨 API down (${failureType}) — started ${startedAt.slice(0, 16)}Z`,
     body: [
