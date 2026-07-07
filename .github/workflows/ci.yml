@@ -148,8 +148,13 @@ jobs:
     name: "🛬 Post-landing E2E Tests (Production)"
     runs-on: ubuntu-latest
     needs: deploy
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    continue-on-error: true
+    # Also run on PRs so changes to this suite (prod config / specs) are verified
+    # pre-merge, not only post-merge. The prod config mocks the API via page.route and
+    # points baseURL at the already-deployed live site, so it needs no fresh deploy — a
+    # PR run exercises the current deployment. !cancelled() lets it run when the push-only
+    # `deploy` dep is skipped on PRs. Caveat: a PR run tests the *current* deployment, so
+    # it verifies test-harness changes; app-code regressions are gated by e2e-tests-local.
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) }}
     steps:
     - name: "🔄 Flight Plan: Checkout Code"
       uses: actions/checkout@v6
@@ -175,6 +180,7 @@ jobs:
       run: npx playwright install --with-deps
 
     - name: "🛫 Holding Pattern: Waiting for Deployment"
+      if: github.event_name == 'push'   # only a fresh deploy needs propagation time; PR runs test the live site as-is
       run: sleep 30
 
     - name: "✈️ Execute Production E2E Flight Plan"
@@ -192,6 +198,7 @@ jobs:
 
     - name: "📝 Flight Deck Report: Comment PR with Test Results"
       if: github.event_name == 'pull_request' && always()
+      continue-on-error: true   # reporting-only nicety; needs pull-requests:write the default token lacks ("Resource not accessible by integration") — must not fail the gate. The real gate is the Execute step.
       uses: actions/github-script@v9
       with:
         script: |
