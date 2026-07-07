@@ -13,7 +13,7 @@ export default defineConfig({
   workers: process.env.CI ? 2 : os.cpus().length,
   use: {
     headless: process.env.CI ? true : false, // Headless in CI, headed locally
-    baseURL: 'http://localhost:8080/tpe-sushi-go-round',
+    baseURL: 'http://localhost:8080/tpe-sushi-go-round/',  // trailing slash: production.spec.js uses page.goto('') which resolves to baseURL — vite dev only serves the app at the base *with* the slash (prod config already has it)
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
