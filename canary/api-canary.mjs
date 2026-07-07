@@ -1,20 +1,30 @@
 #!/usr/bin/env node
-// API availability + contract canary for the Taoyuan Airport flight API.
-// Runs hourly via GHA. On failure, posts an embed to Discord #gh-events.
+// Hourly API availability + contract canary for the Taoyuan Airport flight API.
 //
-// Uses curl rather than Node.js native fetch: Cloudflare's TLS/JA3 fingerprint
-// checks block undici (Node 22 built-in fetch) even with a browser UA, while
-// curl's OpenSSL TLS profile passes. Both issue the exact same HTTP headers.
+// State model: healthy / down-availability (non-200) / down-contract (shape drift).
+// State is stored in open GitHub issues (label: status:incident) — Upptime pattern.
+// Discord alerts fire only on state TRANSITIONS, not every run:
+//   healthy → down : open GitHub issue + Discord 🚨 alert
+//   down    → down : silent (incident issue already open)
+//   down    → healthy : close issue with recovery comment + Discord ✅ alert
+//   healthy → healthy : silent
 //
-// Contract is derived from getMockFlightData() in e2e/test-helpers.js and
-// the "Response fields consumed" list in CLAUDE.md. Only shape is asserted —
-// no flight counts, no specific values (volatile; legitimately empty at night).
+// Uses curl for API probing: Cloudflare's TLS/JA3 fingerprint checks block undici
+// (Node 22 native fetch) even with a browser UA, while curl's OpenSSL profile passes.
+// Discord + GitHub API calls use native fetch (no TLS gating on those services).
+//
+// Contract is derived from getMockFlightData() in e2e/test-helpers.js and the
+// "Response fields consumed" list in CLAUDE.md. Only shape is asserted — no flight
+// counts, no specific values (volatile; legitimately empty at night).
 
 import { execFileSync } from 'child_process';
 
 const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = 'TPE-eagle/tpe-sushi-go-round';
+const [REPO_OWNER, REPO_NAME] = REPO.split('/');
+const INCIDENT_LABEL = 'status:incident';
 
 // Fields parseApiResponse() and the rendering pipeline depend on.
 const REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 'CityCode', 'CityEname', 'Memo'];
@@ -30,6 +40,77 @@ function getTaiwanDate() {
   const tw = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   return tw.toISOString().split('T')[0].replace(/-/g, '/');
 }
+
+// ── GitHub API helpers ────────────────────────────────────────────────────────
+
+async function ghApi(method, path, body) {
+  if (!GITHUB_TOKEN) throw new Error('GITHUB_TOKEN not set — cannot manage incident issues');
+  const r = await fetch(`https://api.github.com${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${GITHUB_TOKEN}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`GitHub API ${method} ${path} → ${r.status}: ${text.slice(0, 200)}`);
+  }
+  return r.json();
+}
+
+async function findOpenIncident() {
+  const issues = await ghApi(
+    'GET',
+    `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=1`,
+  );
+  return Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
+}
+
+async function openIncidentIssue(failureType, detail, startedAt) {
+  return ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
+    title: `🚨 API down (${failureType}) — started ${startedAt.slice(0, 16)}Z`,
+    body: [
+      `## Taoyuan Airport API Outage`,
+      ``,
+      `**Started:** ${startedAt}`,
+      `**Type:** ${failureType}`,
+      ``,
+      `### Failure detail`,
+      detail,
+      ``,
+      `---`,
+      `*Opened by api-canary. Will be auto-closed on recovery.*`,
+    ].join('\n'),
+    labels: [INCIDENT_LABEL],
+  });
+}
+
+async function closeIncidentIssue(issue, recoveredAt) {
+  const durationMs = new Date(recoveredAt) - new Date(issue.created_at);
+  const hours = Math.floor(durationMs / 3_600_000);
+  const mins = Math.floor((durationMs % 3_600_000) / 60_000);
+  const duration = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+  await ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issue.number}/comments`, {
+    body: [
+      `## ✅ Recovered`,
+      ``,
+      `**Recovered:** ${recoveredAt}`,
+      `**Outage duration:** ${duration}`,
+      ``,
+      `*Closed by api-canary.*`,
+    ].join('\n'),
+  });
+  await ghApi('PATCH', `/repos/${REPO_OWNER}/${REPO_NAME}/issues/${issue.number}`, {
+    state: 'closed',
+  });
+}
+
+// ── Discord helper ────────────────────────────────────────────────────────────
 
 async function sendDiscordAlert(title, description, isOk = false) {
   if (!DISCORD_WEBHOOK) {
@@ -57,12 +138,13 @@ async function sendDiscordAlert(title, description, isOk = false) {
   }
 }
 
+// ── API probe ─────────────────────────────────────────────────────────────────
+
 function callApi(date) {
   const body = JSON.stringify({
     ODate: date, OTimeOpen: null, OTimeClose: null,
     BNO: null, AState: 'A', language: 'ch', keyword: '',
   });
-  // Separator appended by curl's -w flag; split on last occurrence.
   const SEP = '\n__STATUS__';
   try {
     const raw = execFileSync('curl', [
@@ -108,65 +190,100 @@ function checkRecordShape(record, index) {
   return issues;
 }
 
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 async function run() {
   const date = getTaiwanDate();
+  const now = new Date().toISOString();
 
-  // 1 — Availability
+  // Probe the API.
+  let failureType = null;
+  let failureDetail = null;
+  let recordCount = null;
+
   const { status, body: rawBody, networkError } = callApi(date);
 
   if (networkError || status === 0) {
-    await sendDiscordAlert('API unreachable', `curl network error: \`${networkError ?? 'unknown'}\``);
-    process.exit(1);
-  }
-  if (status !== 200) {
-    await sendDiscordAlert(
-      'Availability failure',
-      `HTTP \`${status}\` from Taoyuan Airport API\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``
-    );
-    process.exit(1);
-  }
-
-  // 2 — Contract: response must be a JSON array
-  let data;
-  try {
-    data = JSON.parse(rawBody);
-  } catch {
-    await sendDiscordAlert('Contract drift', `Response is not valid JSON:\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``);
-    process.exit(1);
-  }
-  if (!Array.isArray(data)) {
-    await sendDiscordAlert(
-      'Contract drift',
-      `Response is not an array (got \`${typeof data}\`):\n\`\`\`json\n${JSON.stringify(data).slice(0, 400)}\n\`\`\``
-    );
-    process.exit(1);
-  }
-
-  // Empty array is legitimate during off-peak windows — not an alert.
-  if (data.length === 0) {
-    console.log('[canary] ✅ 200 OK, 0 records (off-peak window) — no alert');
-    return;
-  }
-
-  // 3 — Contract: sample 5 records (head + midpoint + tail) for shape
-  const idxs = [...new Set([0, 1, 2, Math.floor(data.length / 2), data.length - 1])].filter(i => i < data.length);
-  const issues = idxs.flatMap(i => checkRecordShape(data[i], i));
-  const unique = [...new Set(issues)];
-
-  if (unique.length > 0) {
-    const detail = unique.map(s => `• ${s}`).join('\n');
-    const liveKeys = Object.keys(data[0]).join(', ');
-    await sendDiscordAlert(
-      'Contract drift',
-      `Shape mismatch (${data.length} records; sampled indices ${idxs.join(', ')}):\n${detail}\n\nLive record keys: \`${liveKeys}\``
-    );
-    process.exit(1);
+    failureType = 'availability';
+    failureDetail = `Network error: \`${networkError ?? 'unknown'}\``;
+  } else if (status !== 200) {
+    failureType = 'availability';
+    failureDetail = `HTTP \`${status}\` from Taoyuan Airport API\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``;
+  } else {
+    let data;
+    try {
+      data = JSON.parse(rawBody);
+    } catch {
+      failureType = 'contract';
+      failureDetail = `Response is not valid JSON:\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``;
+    }
+    if (!failureType) {
+      if (!Array.isArray(data)) {
+        failureType = 'contract';
+        failureDetail = `Response is not an array (got \`${typeof data}\`):\n\`\`\`json\n${JSON.stringify(data).slice(0, 400)}\n\`\`\``;
+      } else {
+        recordCount = data.length;
+        // Empty array is legitimate during off-peak windows — not a failure.
+        if (data.length > 0) {
+          const idxs = [...new Set([0, 1, 2, Math.floor(data.length / 2), data.length - 1])]
+            .filter(i => i < data.length);
+          const shapeIssues = [...new Set(idxs.flatMap(i => checkRecordShape(data[i], i)))];
+          if (shapeIssues.length > 0) {
+            failureType = 'contract';
+            const liveKeys = Object.keys(data[0]).join(', ');
+            failureDetail = [
+              `Shape mismatch (${data.length} records; sampled indices ${idxs.join(', ')}):`,
+              shapeIssues.map(s => `• ${s}`).join('\n'),
+              ``,
+              `Live record keys: \`${liveKeys}\``,
+            ].join('\n');
+          }
+        }
+      }
+    }
   }
 
-  console.log(`[canary] ✅ 200 OK, ${data.length} records, contract intact`);
+  // Determine current incident state (open issue = currently down).
+  const openIncident = await findOpenIncident();
+
+  // State transitions.
+  if (failureType) {
+    if (!openIncident) {
+      // healthy → down: open incident issue + Discord alert.
+      console.log(`[canary] ❌ ${failureType} failure — opening incident issue`);
+      const issue = await openIncidentIssue(failureType, failureDetail, now);
+      await sendDiscordAlert(
+        failureType === 'availability' ? 'API unavailable' : 'Contract drift',
+        `${failureDetail}\n\nIncident tracking: ${issue.html_url}`,
+        false,
+      );
+    } else {
+      // down → down: silent, incident already open.
+      console.log(`[canary] ❌ ${failureType} failure — incident #${openIncident.number} already open, no new alert`);
+    }
+    process.exit(1);
+  } else {
+    if (openIncident) {
+      // down → healthy: close incident + Discord recovery alert.
+      console.log(`[canary] ✅ Healthy — closing incident #${openIncident.number}`);
+      await closeIncidentIssue(openIncident, now);
+      await sendDiscordAlert(
+        'API recovered',
+        `Service restored. Incident: ${openIncident.html_url}`,
+        true,
+      );
+    } else {
+      // healthy → healthy: silent.
+      const label = recordCount === 0
+        ? '0 records (off-peak window)'
+        : `${recordCount} records, contract intact`;
+      console.log(`[canary] ✅ Healthy — ${label}`);
+    }
+  }
 }
 
 run().catch(async err => {
+  console.error('[canary] Fatal:', err.stack ?? err.message);
   await sendDiscordAlert('Canary crashed', `\`\`\`\n${(err.stack ?? err.message).slice(0, 500)}\n\`\`\``);
   process.exit(1);
 });
