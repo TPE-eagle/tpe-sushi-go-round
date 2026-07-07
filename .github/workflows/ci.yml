@@ -54,19 +54,35 @@ jobs:
         node-version: '22'
         cache: 'npm'
 
-    - name: "🛫 Boarding Playwright Browsers"
-      uses: actions/cache@v5
-      with:
-        path: ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-playwright-browsers-
-
     - name: "⛽ Refueling: Install Dependencies"
       run: npm ci
 
+    - name: "🔎 Get Playwright version"
+      id: pw-version
+      run: echo "VERSION=$(npx playwright --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+    - name: "🛫 Boarding Playwright Browsers"
+      id: cache-playwright
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
+
     - name: "🛫 Deploying Browser Engines"
-      run: npx playwright install --with-deps
+      # Cache hit → install only system deps (skip the hundreds-MB browser download → CI flies).
+      # nick-fields/retry (actively maintained; microsoft/playwright-actions is archived) rides
+      # out the flaky microsoft-packages apt mirror — no hand-rolled shell loop.
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 15
+        command: |
+          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps
+          else
+            npx playwright install --with-deps
+          fi
 
     - name: "✈️ Execute Local E2E Flight Plan"
       run: npm run test:e2e:local
@@ -155,6 +171,9 @@ jobs:
     # `deploy` dep is skipped on PRs. Caveat: a PR run tests the *current* deployment, so
     # it verifies test-harness changes; app-code regressions are gated by e2e-tests-local.
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) }}
+    permissions:
+      contents: read           # checkout
+      pull-requests: write     # "Comment PR with Test Results" (github-script) posts to the PR — fixes the "Resource not accessible by integration" 403 (default token is read-only)
     steps:
     - name: "🔄 Flight Plan: Checkout Code"
       uses: actions/checkout@v6
@@ -165,19 +184,35 @@ jobs:
         node-version: '22'
         cache: 'npm'
 
-    - name: "🛫 Boarding Playwright Browsers"
-      uses: actions/cache@v5
-      with:
-        path: ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-playwright-browsers-
-
     - name: "⛽ Refueling: Install Dependencies"
       run: npm ci
 
+    - name: "🔎 Get Playwright version"
+      id: pw-version
+      run: echo "VERSION=$(npx playwright --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+
+    - name: "🛫 Boarding Playwright Browsers"
+      id: cache-playwright
+      uses: actions/cache@v5
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
+
     - name: "🛫 Deploying Browser Engines"
-      run: npx playwright install --with-deps
+      # Cache hit → install only system deps (skip the hundreds-MB browser download → CI flies).
+      # nick-fields/retry (actively maintained; microsoft/playwright-actions is archived) rides
+      # out the flaky microsoft-packages apt mirror — no hand-rolled shell loop.
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 15
+        command: |
+          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps
+          else
+            npx playwright install --with-deps
+          fi
 
     - name: "🛫 Holding Pattern: Waiting for Deployment"
       if: github.event_name == 'push'   # only a fresh deploy needs propagation time; PR runs test the live site as-is
