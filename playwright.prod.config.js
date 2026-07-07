@@ -12,6 +12,7 @@ export default defineConfig({
     baseURL: 'https://tpe-eagle.github.io/tpe-sushi-go-round/',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    serviceWorkers: 'block',
     // Block Google Analytics and tracking scripts
     extraHTTPHeaders: {
       'DNT': '1' // Do Not Track header
