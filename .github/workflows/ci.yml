@@ -66,7 +66,14 @@ jobs:
       run: npm ci
 
     - name: "🛫 Deploying Browser Engines"
-      run: npx playwright install --with-deps
+      # Retry: `--with-deps` runs apt, which intermittently fails on the runner's
+      # microsoft-packages mirror ("Failed to fetch ... does the network require authentication?").
+      run: |
+        for i in 1 2 3; do
+          npx playwright install --with-deps && exit 0
+          echo "::warning::playwright install failed (attempt $i/3), retrying in 15s…"; sleep 15
+        done
+        exit 1
 
     - name: "✈️ Execute Local E2E Flight Plan"
       run: npm run test:e2e:local
@@ -155,6 +162,9 @@ jobs:
     # `deploy` dep is skipped on PRs. Caveat: a PR run tests the *current* deployment, so
     # it verifies test-harness changes; app-code regressions are gated by e2e-tests-local.
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) }}
+    permissions:
+      contents: read           # checkout
+      pull-requests: write     # "Comment PR with Test Results" (github-script) posts to the PR — fixes the "Resource not accessible by integration" 403 (default token is read-only)
     steps:
     - name: "🔄 Flight Plan: Checkout Code"
       uses: actions/checkout@v6
@@ -177,7 +187,14 @@ jobs:
       run: npm ci
 
     - name: "🛫 Deploying Browser Engines"
-      run: npx playwright install --with-deps
+      # Retry: `--with-deps` runs apt, which intermittently fails on the runner's
+      # microsoft-packages mirror ("Failed to fetch ... does the network require authentication?").
+      run: |
+        for i in 1 2 3; do
+          npx playwright install --with-deps && exit 0
+          echo "::warning::playwright install failed (attempt $i/3), retrying in 15s…"; sleep 15
+        done
+        exit 1
 
     - name: "🛫 Holding Pattern: Waiting for Deployment"
       if: github.event_name == 'push'   # only a fresh deploy needs propagation time; PR runs test the live site as-is
