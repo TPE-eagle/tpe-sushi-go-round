@@ -19,7 +19,7 @@
 
 import { execFileSync } from 'child_process';
 
-const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
+const API_URL = process.env.CANARY_API_URL ?? 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO = 'TPE-eagle/tpe-sushi-go-round';
@@ -187,11 +187,11 @@ function checkRecordShape(record, index) {
   const issues = [];
   for (const f of REQUIRED_STRING_FIELDS) {
     if (!(f in record)) { issues.push(`record[${index}] missing \`${f}\``); continue; }
-    if (typeof record[f] !== 'string') issues.push(`record[${index}].${f}: expected string, got ${typeof record[f]}`);
+    if (record[f] !== null && typeof record[f] !== 'string') issues.push(`record[${index}].${f}: expected string|null, got ${typeof record[f]}`);
   }
   for (const f of REQUIRED_NUMBER_FIELDS) {
     if (!(f in record)) { issues.push(`record[${index}] missing \`${f}\``); continue; }
-    if (typeof record[f] !== 'number') issues.push(`record[${index}].${f}: expected number, got ${typeof record[f]}`);
+    if (record[f] !== null && typeof record[f] !== 'number') issues.push(`record[${index}].${f}: expected number|null, got ${typeof record[f]}`);
   }
   for (const f of EXPECTED_PRESENT_FIELDS) {
     if (!(f in record)) issues.push(`record[${index}] missing \`${f}\``);
