@@ -10,7 +10,8 @@ test.describe('Deployment smoke', () => {
     const response = await page.goto('')
     expect(response.status()).toBeLessThan(400)
     await expect(page.locator('#title')).toBeVisible({ timeout: 10000 })
-    await expect(page.locator('#airlineButtons a').first()).toBeVisible({ timeout: 5000 })
+    // Airline links are generated after the API responds — give the real API time
+    await expect(page.locator('#airlineButtons a').first()).toBeVisible({ timeout: 15000 })
     await expect(page.locator('#output')).toBeAttached()
   })
 
@@ -25,6 +26,16 @@ test.describe('Deployment smoke', () => {
     await blockGoogleAnalytics(page)
     await page.goto('')
     await page.waitForLoadState('networkidle', { timeout: 15000 })
+
+    // Explicitly probe PWA-specific files — sw.js may not be fetched when
+    // serviceWorkers is blocked, so the response listener alone won't catch it
+    for (const file of ['manifest.webmanifest', 'sw.js']) {
+      const resp = await page.request.get(`${OWN_ORIGIN}/${file}`)
+      if (resp.status() >= 400) {
+        failures.push(`${resp.status()} ${file}`)
+      }
+    }
+
     expect(failures, `4xx own-origin assets:\n${failures.join('\n')}`).toHaveLength(0)
   })
 
