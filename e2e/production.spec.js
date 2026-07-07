@@ -27,8 +27,8 @@ test.describe('Deployment smoke', () => {
     await page.goto('')
     await page.waitForLoadState('networkidle', { timeout: 15000 })
 
-    // Explicitly probe PWA-specific files — sw.js may not be fetched when
-    // serviceWorkers is blocked, so the response listener alone won't catch it
+    // Explicitly probe PWA-specific files — they are not fetched during normal
+    // page navigation so the response listener alone won't catch them
     for (const file of ['manifest.webmanifest', 'sw.js']) {
       const resp = await page.request.get(`${OWN_ORIGIN}/${file}`)
       if (resp.status() >= 400) {
