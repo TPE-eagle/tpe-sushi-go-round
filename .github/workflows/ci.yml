@@ -198,6 +198,7 @@ jobs:
 
     - name: "📝 Flight Deck Report: Comment PR with Test Results"
       if: github.event_name == 'pull_request' && always()
+      continue-on-error: true   # reporting-only nicety; needs pull-requests:write the default token lacks ("Resource not accessible by integration") — must not fail the gate. The real gate is the Execute step.
       uses: actions/github-script@v9
       with:
         script: |
