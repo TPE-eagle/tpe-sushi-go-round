@@ -12,7 +12,8 @@
     "test:run": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:local": "playwright test --config=playwright.local.config.js",
-    "test:e2e:prod": "playwright test --config=playwright.prod.config.js"
+    "test:e2e:prod": "playwright test --config=playwright.prod.config.js",
+    "test:e2e:canary": "playwright test --config=playwright.canary.config.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

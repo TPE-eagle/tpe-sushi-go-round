@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
-import { blockGoogleAnalytics, setupMockApiRoute } from './test-helpers.js'
+import { blockGoogleAnalytics, setupMockApiRoute, getMockFlightData } from './test-helpers.js'
+
+const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight'
 
 const expectedTitles = {
   zh: { arrival: '台北迴轉壽司🍣', departure: '台北出發便🛫🌏' },
@@ -15,40 +17,39 @@ test.describe('Production Environment Tests', () => {
 
   test('should load production site successfully', async ({ page }) => {
     await page.goto('')
-    
-    // Check if basic elements are loaded
+
     await page.waitForSelector('#title', { timeout: 10000 })
     await expect(page.locator('#title')).toBeVisible()
-    
-    // Wait for either flight table or no-flights message to appear
-    await page.waitForSelector('table, #output', { timeout: 10000 })
-    
-    // Check if either table is loaded OR no flights message is shown
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasNoFlightsMessage = await page.locator('#output').textContent().then(text => 
-      text && (text.includes('沒有找到') || text.includes('No matching') || text.includes('一致する'))
-    ).catch(() => false)
-    
-    expect(hasTable || hasNoFlightsMessage).toBeTruthy()
+
+    // With fixture mock in place, the table must be populated — not just "something appeared".
+    // A pass on the no-flights message would be fake-green (means the mock didn't fire).
+    await page.waitForSelector('table', { timeout: 10000 })
+    await expect(page.locator('table')).toBeVisible()
   })
 
-test('should validate API request parameters', async ({ page }) => {
+  test('should validate API request parameters', async ({ page }) => {
     const apiRequests = []
-    
-    // Capture request details inside a route handler (page.route intercepts
-    // before page.on('request'), so we use route.fallback to chain handlers)
-    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+    const fixture = getMockFlightData()
+
+    // Capture request params AND fulfill with fixture in one handler.
+    // Registered after beforeEach's setupMockApiRoute so it runs first (LIFO);
+    // fulfilling here means no network fallthrough and no chaining needed.
+    await page.route(API_URL, async (route) => {
       try {
         apiRequests.push({
           method: route.request().method(),
           postData: route.request().postDataJSON()
         })
       } catch { /* ignore parse errors */ }
-      await route.fallback()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(fixture)
+      })
     })
 
     await page.goto('')
-    await page.waitForSelector('table, #output', { timeout: 10000 })
+    await page.waitForSelector('table', { timeout: 10000 })
 
     // Verify API request was captured with correct parameters
     expect(apiRequests.length).toBeGreaterThan(0)
@@ -70,49 +71,32 @@ test('should validate API request parameters', async ({ page }) => {
 
   test('should display flight data correctly', async ({ page }) => {
     await page.goto('')
-    
-    // Wait for table or no-flights message to appear
-    await page.waitForSelector('table, #output', { timeout: 10000 })
-    
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasNoFlightsMessage = await page.locator('#output').textContent().then(text => 
-      text && (text.includes('沒有找到') || text.includes('No matching') || text.includes('一致する'))
-    ).catch(() => false)
-    
-    if (hasTable) {
-      // If there is flight data, check table structure
-      await expect(page.locator('table thead')).toBeVisible()
-      await expect(page.locator('table tbody')).toBeVisible()
-      
-      // Check table headers
-      await expect(page.locator('table th').nth(0)).toHaveText(/航班|Flight|番号/)
-      await expect(page.locator('table th').nth(1)).toHaveText(/出發地|Departure|出発地/)
-      await expect(page.locator('table th').nth(2)).toHaveText(/航廈|Terminal/)
-      await expect(page.locator('table th').nth(3)).toHaveText(/登機門|Gate/)
 
-      // In arrival mode should have baggage carousel field
-      const isArrivalMode = await page.locator('#flight-mode-toggle').textContent() === '🛬'
-      if (isArrivalMode) {
-        await expect(page.locator('table th').nth(4)).toHaveText(/轉盤|Carousel/)
-      }
-      
-      // Check if there are flight data rows
-      const rowCount = await page.locator('table tbody tr').count()
-      expect(rowCount).toBeGreaterThan(0)
-      
-      // Check if each row has correct data format
-      const firstRow = page.locator('table tbody tr').first()
-      const cells = firstRow.locator('td')
-      
-      // First column should contain flight number and airline logo
-      await expect(cells.first()).toContainText(/[A-Z]{2}\d+/)
-      
-      // Check if there is logo image
-      await expect(cells.first().locator('img')).toBeVisible()
-    } else {
-      // If no flight data, should display appropriate message
-      await expect(page.locator('#output')).toContainText(/沒有找到|No matching|一致する/)
+    // Fixture mock is always set up in beforeEach — table must be present.
+    // Falling through to the no-flights branch would mean the mock didn't fire (fake-green).
+    await page.waitForSelector('table', { timeout: 10000 })
+    await expect(page.locator('table thead')).toBeVisible()
+    await expect(page.locator('table tbody')).toBeVisible()
+
+    // Header labels (any language)
+    await expect(page.locator('table th').nth(0)).toHaveText(/航班|Flight|番号/)
+    await expect(page.locator('table th').nth(1)).toHaveText(/出發地|Departure|出発地/)
+    await expect(page.locator('table th').nth(2)).toHaveText(/航廈|Terminal/)
+    await expect(page.locator('table th').nth(3)).toHaveText(/登機門|Gate/)
+
+    // In arrival mode the carousel column must be present
+    const isArrivalMode = (await page.locator('#flight-mode-toggle').textContent()) === '🛬'
+    if (isArrivalMode) {
+      await expect(page.locator('table th').nth(4)).toHaveText(/轉盤|Carousel/)
     }
+
+    const rowCount = await page.locator('table tbody tr').count()
+    expect(rowCount).toBeGreaterThan(0)
+
+    const firstRow = page.locator('table tbody tr').first()
+    const cells = firstRow.locator('td')
+    await expect(cells.first()).toContainText(/[A-Z]{2}\d+/)
+    await expect(cells.first().locator('img')).toBeVisible()
   })
 
   test('should have correct time range display', async ({ page }) => {
@@ -268,26 +252,21 @@ test('should validate API request parameters', async ({ page }) => {
   })
 
   test('should be responsive across different screen sizes', async ({ page }) => {
-    // Test different screen sizes and wait for layout to update
     await page.setViewportSize({ width: 1200, height: 800 })
     await page.goto('')
-    await page.waitForSelector('table, #output', { timeout: 10000 })
+    await page.waitForSelector('table', { timeout: 10000 })
 
     await page.setViewportSize({ width: 768, height: 1024 })
-    await page.waitForSelector('table, #output', { timeout: 5000 })
+    await page.waitForSelector('table', { timeout: 5000 })
 
     await page.setViewportSize({ width: 375, height: 667 })
-    await page.waitForSelector('table, #output', { timeout: 5000 })
+    await page.waitForSelector('table', { timeout: 5000 })
 
-    // Check if there is appropriate display on small screens
-    const hasTable = await page.locator('table').count() > 0
-    if (hasTable) {
-      // On mobile version should display simplified headers
-      const headers = await page.locator('table th').allTextContents()
-      const hasShortHeaders = headers.some(header => 
-        header.includes('航班') || header.includes('Flt')
-      )
-      expect(hasShortHeaders).toBeTruthy()
-    }
+    // On mobile width the app renders abbreviated headers
+    const headers = await page.locator('table th').allTextContents()
+    const hasShortHeaders = headers.some(header =>
+      header.includes('航班') || header.includes('Flt')
+    )
+    expect(hasShortHeaders).toBeTruthy()
   })
 })
