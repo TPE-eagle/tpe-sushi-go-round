@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { blockGoogleAnalytics, setupMockApiRoute } from './test-helpers.js'
+import { AIRLINE_GROUPS } from '../src/utils/flightUtils.js'
 
 const expectedTitles = {
   zh: { arrival: '台北迴轉壽司🍣', departure: '台北出發便🛫🌏' },
@@ -15,40 +16,37 @@ test.describe('Production Environment Tests', () => {
 
   test('should load production site successfully', async ({ page }) => {
     await page.goto('')
-    
-    // Check if basic elements are loaded
+
     await page.waitForSelector('#title', { timeout: 10000 })
     await expect(page.locator('#title')).toBeVisible()
-    
-    // Wait for either flight table or no-flights message to appear
-    await page.waitForSelector('table, #output', { timeout: 10000 })
-    
-    // Check if either table is loaded OR no flights message is shown
-    const hasTable = await page.locator('table').isVisible().catch(() => false)
-    const hasNoFlightsMessage = await page.locator('#output').textContent().then(text => 
-      text && (text.includes('沒有找到') || text.includes('No matching') || text.includes('一致する'))
-    ).catch(() => false)
-    
-    expect(hasTable || hasNoFlightsMessage).toBeTruthy()
+
+    // Mock data always provides 5 flights in the current time window, so the
+    // table must render with rows. An empty table here means the mock's
+    // time-window computation or the rendering logic has a bug — not a network
+    // issue (setupMockApiRoute in beforeEach is LIFO-prioritised and always fulfils).
+    await page.waitForSelector('table tbody tr', { timeout: 10000 })
+    const rowCount = await page.locator('table tbody tr').count()
+    expect(rowCount).toBeGreaterThan(0)
   })
 
-test('should validate API request parameters', async ({ page }) => {
+  test('should validate API request parameters', async ({ page }) => {
     const apiRequests = []
-    
-    // Capture request details inside a route handler (page.route intercepts
-    // before page.on('request'), so we use route.fallback to chain handlers)
-    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
-      try {
-        apiRequests.push({
-          method: route.request().method(),
-          postData: route.request().postDataJSON()
-        })
-      } catch { /* ignore parse errors */ }
-      await route.fallback()
+
+    // Passively observe requests — page.on('request') fires before routing, so
+    // it captures POST params without affecting the mock route set up in beforeEach.
+    page.on('request', (request) => {
+      if (request.url() === 'https://www.taoyuan-airport.com/api/api/flight/a_flight') {
+        try {
+          apiRequests.push({
+            method: request.method(),
+            postData: request.postDataJSON()
+          })
+        } catch { /* ignore parse errors */ }
+      }
     })
 
     await page.goto('')
-    await page.waitForSelector('table, #output', { timeout: 10000 })
+    await page.waitForSelector('table tbody tr', { timeout: 10000 })
 
     // Verify API request was captured with correct parameters
     expect(apiRequests.length).toBeGreaterThan(0)
@@ -166,12 +164,15 @@ test('should validate API request parameters', async ({ page }) => {
         // Wait for filtering to complete
         await expect(button).toHaveClass(/active/, { timeout: 5000 })
         
-        // If there is flight data, should only display flights from that airline
+        // If there is flight data, should only display flights from that airline group.
+        // CI includes AE (Mandarin), BR includes B7 (UNI Air) — check against group
+        // members, not a bare toContain(airline) which breaks for subsidiary codes.
         const hasTable = await page.locator('table').count() > 0
         if (hasTable) {
           const flightCodes = await page.locator('table tbody td:first-child').allTextContents()
+          const members = AIRLINE_GROUPS[airline] || [airline]
           for (const code of flightCodes) {
-            expect(code).toContain(airline)
+            expect(members.some(prefix => code.startsWith(prefix))).toBe(true)
           }
         }
         
@@ -268,7 +269,7 @@ test('should validate API request parameters', async ({ page }) => {
   })
 
   test('should be responsive across different screen sizes', async ({ page }) => {
-    // Test different screen sizes and wait for layout to update
+    // Verify the app loads at various widths.
     await page.setViewportSize({ width: 1200, height: 800 })
     await page.goto('')
     await page.waitForSelector('table, #output', { timeout: 10000 })
@@ -276,15 +277,19 @@ test('should validate API request parameters', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 })
     await page.waitForSelector('table, #output', { timeout: 5000 })
 
+    // Navigate fresh at 375px so the initial render picks up isSmallScreen()=true.
+    // The resize event handler only re-renders when an airline pin is active, so
+    // resizing an already-loaded desktop page does not switch to short headers.
     await page.setViewportSize({ width: 375, height: 667 })
-    await page.waitForSelector('table, #output', { timeout: 5000 })
+    await page.goto('')
+    await page.waitForSelector('table, #output', { timeout: 10000 })
 
     // Check if there is appropriate display on small screens
     const hasTable = await page.locator('table').count() > 0
     if (hasTable) {
       // On mobile version should display simplified headers
       const headers = await page.locator('table th').allTextContents()
-      const hasShortHeaders = headers.some(header => 
+      const hasShortHeaders = headers.some(header =>
         header.includes('航班') || header.includes('Flt')
       )
       expect(hasShortHeaders).toBeTruthy()
