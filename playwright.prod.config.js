@@ -1,19 +1,17 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Production environment test configuration - tests actual deployed website
+// Production environment test configuration — deployment smoke only, no data assertions
 export default defineConfig({
   testDir: './e2e',
   testMatch: 'production.spec.js',
-  timeout: 15000, // Reduced timeout for faster execution
-  retries: 1, // Reduced retries for faster execution
-  workers: 2, // Limit workers like local CI config
+  timeout: 15000,
+  retries: 1,
+  workers: 2,
   use: {
-    headless: true, // Always headless for production tests
+    headless: true,
     baseURL: 'https://tpe-eagle.github.io/tpe-sushi-go-round/',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    serviceWorkers: 'block',
-    // Block Google Analytics and tracking scripts
     extraHTTPHeaders: {
       'DNT': '1' // Do Not Track header
     }
@@ -50,5 +48,4 @@ export default defineConfig({
       },
     },
   ],
-  // Production tests don't need local server
 })
