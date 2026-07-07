@@ -22,6 +22,9 @@ import { execFileSync } from 'child_process';
 const API_URL = process.env.CANARY_API_URL ?? 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+// Set CANARY_DRY_RUN=1 to probe the API and log what would happen without opening/closing
+// issues or posting to Discord. Use for self-tests and CI smoke runs.
+const DRY_RUN = process.env.CANARY_DRY_RUN === '1';
 const REPO = 'TPE-eagle/tpe-sushi-go-round';
 const [REPO_OWNER, REPO_NAME] = REPO.split('/');
 const INCIDENT_LABEL = 'status:incident';
@@ -263,13 +266,18 @@ async function run() {
   if (failureType) {
     if (!openIncident) {
       // healthy → down: open incident issue + Discord alert.
-      console.log(`[canary] ❌ ${failureType} failure — opening incident issue`);
-      const issue = await openIncidentIssue(failureType, failureDetail, now);
-      await sendDiscordAlert(
-        failureType === 'availability' ? 'API unavailable' : 'Contract drift',
-        `${failureDetail}\n\nIncident tracking: ${issue.html_url}`,
-        false,
-      );
+      if (DRY_RUN) {
+        console.log(`[canary] [DRY RUN] ❌ ${failureType} failure — would open incident issue and alert Discord`);
+        console.log(`[canary] [DRY RUN] failure detail: ${failureDetail}`);
+      } else {
+        console.log(`[canary] ❌ ${failureType} failure — opening incident issue`);
+        const issue = await openIncidentIssue(failureType, failureDetail, now);
+        await sendDiscordAlert(
+          failureType === 'availability' ? 'API unavailable' : 'Contract drift',
+          `${failureDetail}\n\nIncident tracking: ${issue.html_url}`,
+          false,
+        );
+      }
     } else {
       // down → down: silent, incident already open.
       console.log(`[canary] ❌ ${failureType} failure — incident #${openIncident.number} already open, no new alert`);
@@ -278,13 +286,17 @@ async function run() {
   } else {
     if (openIncident) {
       // down → healthy: close incident + Discord recovery alert.
-      console.log(`[canary] ✅ Healthy — closing incident #${openIncident.number}`);
-      await closeIncidentIssue(openIncident, now);
-      await sendDiscordAlert(
-        'API recovered',
-        `Service restored. Incident: ${openIncident.html_url}`,
-        true,
-      );
+      if (DRY_RUN) {
+        console.log(`[canary] [DRY RUN] ✅ Healthy — would close incident #${openIncident.number} and alert Discord`);
+      } else {
+        console.log(`[canary] ✅ Healthy — closing incident #${openIncident.number}`);
+        await closeIncidentIssue(openIncident, now);
+        await sendDiscordAlert(
+          'API recovered',
+          `Service restored. Incident: ${openIncident.html_url}`,
+          true,
+        );
+      }
     } else {
       // healthy → healthy: silent.
       const label = recordCount === 0
