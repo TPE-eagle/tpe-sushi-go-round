@@ -9,6 +9,12 @@ on:
   schedule:
     - cron: '0 * * * *'          # hourly availability + contract check
   workflow_dispatch:              # manual run
+    inputs:
+      simulate:
+        description: 'Force a failure to test the alert path (leave "none" for a real check)'
+        type: choice
+        options: [none, availability, contract]
+        default: none
   pull_request:                   # PR: prove the stealth browser still clears Cloudflare
     paths:
       - 'canary/**'
@@ -95,3 +101,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CANARY_WEBHOOK }}
+          CANARY_SIMULATE: ${{ github.event.inputs.simulate }}

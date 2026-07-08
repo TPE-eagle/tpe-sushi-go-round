@@ -26,6 +26,9 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 // Set CANARY_DRY_RUN=1 to probe the API and log what would happen without opening/closing
 // issues or posting to Discord. Use for self-tests and CI smoke runs.
 const DRY_RUN = process.env.CANARY_DRY_RUN === '1';
+// Set CANARY_SIMULATE=availability|contract (workflow_dispatch input) to force a failure
+// and exercise the incident/Discord alert path end-to-end without a real outage.
+const SIMULATE = process.env.CANARY_SIMULATE;
 const REPO = 'TPE-eagle/tpe-sushi-go-round';
 const [REPO_OWNER, REPO_NAME] = REPO.split('/');
 const INCIDENT_LABEL = 'status:incident';
@@ -192,9 +195,16 @@ async function run() {
   let failureDetail = null;
   let recordCount = null;
 
-  const { status, body: rawBody, networkError } = await probeFlightApi(date);
+  const simulating = SIMULATE === 'availability' || SIMULATE === 'contract';
+  const { status, body: rawBody, networkError } = simulating
+    ? { status: -1, body: '', networkError: null } // skip the real probe when simulating
+    : await probeFlightApi(date);
 
-  if (networkError || status === 0) {
+  if (simulating) {
+    failureType = SIMULATE;
+    failureDetail = `**SIMULATED ${SIMULATE} failure** — manual alert-path test via workflow_dispatch. Not a real outage.`;
+    console.log(`[canary] ⚙️  SIMULATE=${SIMULATE} — exercising the incident/Discord state machine`);
+  } else if (networkError || status === 0) {
     failureType = 'availability';
     failureDetail = `Network / browser failure: \`${networkError ?? 'unknown'}\``;
   } else if (status === 403 && isChallengeHtml(rawBody)) {
