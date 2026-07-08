@@ -1,18 +1,21 @@
-// Probe: can a headless browser on THIS runner pass Taoyuan Airport's Cloudflare
-// JS challenge and reach the flight API?
+// Probe: can a STEALTH headless browser on this runner pass Taoyuan's Cloudflare
+// managed challenge and reach the flight API?
 //
-// Why this exists: the flight API sits behind a Cloudflare managed challenge.
-//   - curl always gets HTTP 403 "Just a moment" (it can't run the challenge JS).
-//   - the cf_clearance cookie the challenge grants is bound to the IP that solved it,
-//     so a cookie captured elsewhere can't be shipped in (verified: a Taiwan-browser
-//     cookie replayed from a Japan host → challenge again).
-// The only way to probe is a REAL browser that solves the challenge from its own IP.
-// This script proves whether that works on a GitHub-hosted (US datacenter) runner.
+// v1 (vanilla headless) result: the flight_arrival HTML page loaded fine, but the
+// same-origin fetch to the API returned 403 "Just a moment" — the browser never
+// earned a cf_clearance cookie (headless was detected; and the HTML page itself
+// isn't challenged, so nothing triggered a solve). Two changes here:
+//   1. playwright-extra + stealth plugin to evade headless detection.
+//   2. drive a TOP-LEVEL navigation to the API URL, which is what actually triggers
+//      the CF interstitial — solving it grants cf_clearance. A fetch() can't: it just
+//      receives the challenge HTML without running its JS.
 //
-// exit 0 = passed (got flight JSON) · exit 1 = blocked (challenge not cleared).
-import { chromium } from '@playwright/test';
+// exit 0 = passed (got flight JSON) · exit 1 = blocked.
+import { chromium } from 'playwright-extra';
+import stealth from 'puppeteer-extra-plugin-stealth';
 
-const PAGE_URL = 'https://www.taoyuan-airport.com/flight_arrival?lang=en';
+chromium.use(stealth());
+
 const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
 
@@ -30,16 +33,20 @@ const page = await context.newPage();
 
 let passed = false;
 try {
-  console.log(`[probe] goto ${PAGE_URL}`);
-  await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  // Let the CF managed challenge run its JS and clear (title stops being "Just a moment...").
-  await page
-    .waitForFunction(() => !/just a moment/i.test(document.title), { timeout: 25000 })
-    .catch(() => {});
-  await page.waitForTimeout(3000);
-  console.log(`[probe] page title after challenge window: "${await page.title()}"`);
+  // A top-level navigation to the API path triggers the CF interstitial; a real
+  // (stealth) browser runs its JS and is granted cf_clearance.
+  console.log(`[probe] top-level goto ${API_URL} to trigger + solve the challenge`);
+  await page.goto(API_URL, { waitUntil: 'domcontentloaded', timeout: 45000 })
+    .catch((e) => console.log(`[probe] goto note: ${String(e).slice(0, 90)}`));
+  await page.waitForFunction(() => !/just a moment/i.test(document.title), { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(4000);
 
-  // Ask the real browser (with whatever cf_clearance it just earned) to hit the API same-origin.
+  const cookies = await context.cookies();
+  const hasClearance = cookies.some((c) => c.name === 'cf_clearance');
+  console.log(`[probe] cookies: [${cookies.map((c) => c.name).join(', ')}]`);
+  console.log(`[probe] cf_clearance earned: ${hasClearance}; title now: "${await page.title()}"`);
+
+  // Now POST the API from inside the page (real browser fetch + earned cf_clearance).
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
   const res = await page.evaluate(async ({ url, today }) => {
     try {
@@ -62,15 +69,15 @@ try {
   if (res.status === 200 && head.startsWith('[') && (head.includes('FlightNo') || head.includes('"AState"'))) {
     passed = true;
   } else if ((res.head || '').includes('Just a moment')) {
-    console.log('[probe] verdict: still challenged — headless browser was detected/blocked.');
+    console.log('[probe] verdict: still challenged — stealth was not enough to earn cf_clearance.');
   }
 } finally {
   await browser.close();
 }
 
 if (passed) {
-  console.log('✅ PASS — headless browser cleared the CF challenge and got flight JSON. A Playwright canary is viable on GitHub Actions (no Tailscale / no infra needed).');
+  console.log('✅ PASS — stealth headless browser cleared the CF challenge and got flight JSON. Playwright canary is viable on GitHub Actions (no Tailscale / no infra).');
   process.exit(0);
 }
-console.log('❌ FAIL — did not get flight data (challenge not cleared). Needs stealth/headed browser, or another approach.');
+console.log('❌ FAIL — did not get flight data. Escalate: rebrowser-playwright → headed+xvfb → CF-solver.');
 process.exit(1);

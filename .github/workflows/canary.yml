@@ -28,6 +28,8 @@ jobs:
           node-version: '22'
       - name: "Install deps"
         run: npm ci
+      - name: "Install stealth deps (probe-only, not added to package.json)"
+        run: npm install --no-save playwright-extra puppeteer-extra-plugin-stealth
       - name: "Install Playwright chromium"
         run: npx playwright install --with-deps chromium
       - name: "Probe: headless browser vs Cloudflare challenge (from this US runner)"
