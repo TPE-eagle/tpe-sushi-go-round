@@ -1,0 +1,104 @@
+name: "🐤 API Canary"
+
+# The Taoyuan flight API sits behind a Cloudflare managed challenge (verified 2026-07-08):
+# curl / undici get 403 from any UA / IP, and the cf_clearance cookie is IP-bound. The
+# probe is therefore a stealth Playwright browser that passes Cloudflare's bot check from
+# its own runner IP — proven to work from a GitHub-hosted (US datacenter) runner. No
+# Tailscale, no infra. See canary/probe.mjs.
+on:
+  schedule:
+    - cron: '0 * * * *'          # hourly availability + contract check
+  workflow_dispatch:              # manual run
+    inputs:
+      simulate:
+        description: 'Force a failure to test the alert path (leave "none" for a real check)'
+        type: choice
+        options: [none, availability, contract]
+        default: none
+  pull_request:                   # PR: prove the stealth browser still clears Cloudflare
+    paths:
+      - 'canary/**'
+      - '.github/workflows/canary.yml'
+
+permissions:
+  issues: write                   # incident-issue state machine (open/close) — the audit log
+
+concurrency:
+  group: api-canary               # never overlap runs
+  cancel-in-progress: false
+
+jobs:
+  # PR only: reachability probe — no incident issues, no Discord. Catches a Cloudflare
+  # tightening that breaks the stealth approach before it merges.
+  challenge-probe:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'        # aligned with ci.yml
+          cache: 'npm'
+      - run: npm ci
+      - name: "Get Playwright version"
+        id: pw-version
+        run: echo "VERSION=$(npx playwright --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: "Cache Playwright browser"
+        id: cache-playwright
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
+      - name: "Install Playwright chromium"
+        uses: nick-fields/retry@v3   # rides out the flaky microsoft-packages apt mirror
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: |
+            if [ "${{ steps.cache-playwright.outputs.cache-hit }}" = "true" ]; then
+              npx playwright install-deps chromium
+            else
+              npx playwright install --with-deps chromium
+            fi
+      - name: "Probe: stealth browser vs Cloudflare (from this US runner)"
+        run: node canary/challenge-probe.mjs
+
+  # Schedule / manual dispatch: full availability + contract check + incident state machine.
+  canary:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: "Get Playwright version"
+        id: pw-version
+        run: echo "VERSION=$(npx playwright --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: "Cache Playwright browser"
+        id: cache-playwright
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
+      - name: "Install Playwright chromium"
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 5
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: |
+            if [ "${{ steps.cache-playwright.outputs.cache-hit }}" = "true" ]; then
+              npx playwright install-deps chromium
+            else
+              npx playwright install --with-deps chromium
+            fi
+      - name: "Run API canary"
+        run: node canary/api-canary.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CANARY_WEBHOOK }}
+          CANARY_SIMULATE: ${{ github.event.inputs.simulate }}
