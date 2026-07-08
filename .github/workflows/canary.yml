@@ -1,64 +1,34 @@
-name: "🐤 API Canary"
+name: "🐤 API Canary — challenge probe"
 
-# Runs canary/api-canary.mjs — Taoyuan Airport API availability + contract guard (#10).
-# The script probes via `curl` (Node's undici gets a Cloudflare JA3-fingerprint 403;
-# curl's TLS profile matches a browser) with a normal Chrome UA.
+# TEST ITERATION. Goal: prove whether a headless browser on a GitHub-hosted (US
+# datacenter) runner can pass Taoyuan Airport's Cloudflare JS challenge and reach the
+# flight API.
+#
+# Established so far (all verified today):
+#   - curl → 403 "Just a moment" from every UA / IP / curl build tried.
+#   - cf_clearance is IP-bound (a browser-earned cookie replayed from another IP → 403).
+#   - a real browser on the SAME IP that solved the challenge → 200 + flight JSON.
+# So the canary must solve the challenge with a real browser from its own IP. If this
+# probe passes, the real hourly canary is a Playwright job right here — no Tailscale,
+# no infra. If it fails, we escalate (stealth / headed browser).
 on:
-  schedule:
-    - cron: '0 * * * *'          # hourly (the real health check)
-  workflow_dispatch:              # manual run
-  pull_request:                   # PR: verify the GitHub-hosted (US) runner can reach the API
+  pull_request:
     paths:
       - 'canary/**'
       - '.github/workflows/canary.yml'
-
-permissions:
-  issues: write                   # canary opens/closes Upptime-style incident issues (the audit log)
-
-concurrency:
-  group: api-canary               # never overlap runs
-  cancel-in-progress: false
+  workflow_dispatch:
 
 jobs:
-  # On a PR we only prove the open question: does a GitHub-hosted (US datacenter) runner
-  # + normal UA get 200? (787 verified an AWS Tokyo IP; GitHub runs elsewhere.) No incident
-  # logic, no side effects — just a reachability assert. 200 → canary can live on Actions;
-  # 403 → the datacenter IP is CF-gated and this needs infra (a Lambda) instead.
-  verify-runner-can-reach-api:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: "curl the live API from the GitHub US runner (normal UA)"
-        run: |
-          BODY=$(printf '{"ODate":"%s","OTimeOpen":null,"OTimeClose":null,"BNO":null,"AState":"A","language":"ch","keyword":""}' "$(date -u +%F)")
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
-            'https://www.taoyuan-airport.com/api/api/flight/a_flight' \
-            -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/plain, */*' \
-            -H 'Origin: https://www.taoyuan-airport.com' \
-            -H 'Referer: https://www.taoyuan-airport.com/flight_arrival' \
-            --data "$BODY")
-          echo "GitHub US runner → HTTP $CODE"
-          if [ "$CODE" != "200" ]; then
-            echo "::error::GitHub US runner got HTTP $CODE — datacenter IP looks CF-gated. Canary needs infra (Lambda), not GitHub Actions."
-            exit 1
-          fi
-          echo "✅ GitHub US datacenter IP + normal UA → 200. Canary can run on GitHub Actions."
-
-  # The real hourly canary (schedule / manual dispatch). Needs DISCORD_CANARY_WEBHOOK
-  # secret (jonatw adds) for alerts; GITHUB_TOKEN (built-in, issues:write above) for the
-  # incident-issue state machine.
-  canary:
-    if: github.event_name != 'pull_request'
+  challenge-probe:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: "Run API canary"
-        run: node canary/api-canary.mjs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CANARY_WEBHOOK }}
+      - name: "Install deps"
+        run: npm ci
+      - name: "Install Playwright chromium"
+        run: npx playwright install --with-deps chromium
+      - name: "Probe: headless browser vs Cloudflare challenge (from this US runner)"
+        run: node canary/challenge-probe.mjs
