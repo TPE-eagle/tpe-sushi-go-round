@@ -27,8 +27,11 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 // issues or posting to Discord. Use for self-tests and CI smoke runs.
 const DRY_RUN = process.env.CANARY_DRY_RUN === '1';
 // Set CANARY_SIMULATE=availability|contract (workflow_dispatch input) to force a failure
-// and exercise the incident/Discord alert path end-to-end without a real outage.
+// and exercise the incident/Discord alert path end-to-end without a real outage. A drill
+// is marked 🧪 [DRILL] in the issue + Discord titles so it's never mistaken for a real
+// outage in the audit trail (or paged as one).
 const SIMULATE = process.env.CANARY_SIMULATE;
+const IS_DRILL = SIMULATE === 'availability' || SIMULATE === 'contract';
 const REPO = 'TPE-eagle/tpe-sushi-go-round';
 const [REPO_OWNER, REPO_NAME] = REPO.split('/');
 const INCIDENT_LABEL = 'status:incident';
@@ -98,7 +101,7 @@ const INCIDENT_TITLES = {
 async function openIncidentIssue(failureType, detail, startedAt) {
   await ensureLabel();
   return ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
-    title: `${INCIDENT_TITLES[failureType] ?? `API issue (${failureType})`} — started ${startedAt.slice(0, 16)}Z`,
+    title: `${IS_DRILL ? '🧪 [DRILL] ' : ''}${INCIDENT_TITLES[failureType] ?? `API issue (${failureType})`} — started ${startedAt.slice(0, 16)}Z`,
     body: [
       `## Taoyuan Airport API Outage`,
       ``,
@@ -186,6 +189,17 @@ function checkRecordShape(record, index) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+// One retry after 30s absorbs transient runner jitter (shared-IP reputation, network
+// noise, high runner load) so a single bad probe on a healthy API doesn't page. A 200
+// with wrong shape (contract drift) is deterministic, so it isn't retried here.
+async function probeWithRetry(date) {
+  const first = await probeFlightApi(date);
+  if (!first.networkError && first.status === 200) return first;
+  console.log(`[canary] first probe ${first.networkError ? 'errored' : `→ HTTP ${first.status}`} — retrying once in 30s to absorb runner jitter`);
+  await new Promise((r) => setTimeout(r, 30_000));
+  return probeFlightApi(date);
+}
+
 async function run() {
   const date = getTaiwanDate();
   const now = new Date().toISOString();
@@ -195,12 +209,11 @@ async function run() {
   let failureDetail = null;
   let recordCount = null;
 
-  const simulating = SIMULATE === 'availability' || SIMULATE === 'contract';
-  const { status, body: rawBody, networkError } = simulating
+  const { status, body: rawBody, networkError } = IS_DRILL
     ? { status: -1, body: '', networkError: null } // skip the real probe when simulating
-    : await probeFlightApi(date);
+    : await probeWithRetry(date);
 
-  if (simulating) {
+  if (IS_DRILL) {
     failureType = SIMULATE;
     failureDetail = `**SIMULATED ${SIMULATE} failure** — manual alert-path test via workflow_dispatch. Not a real outage.`;
     console.log(`[canary] ⚙️  SIMULATE=${SIMULATE} — exercising the incident/Discord state machine`);
@@ -265,11 +278,11 @@ async function run() {
       } else {
         console.log(`[canary] ❌ ${failureType} failure — opening incident issue`);
         const issue = await openIncidentIssue(failureType, failureDetail, now);
-        const alertTitle = {
+        const alertTitle = `${IS_DRILL ? '🧪 [DRILL] ' : ''}${{
           availability: 'API unavailable',
           contract: 'Contract drift',
           'canary-blocked': 'Canary blocked by Cloudflare (verify API manually)',
-        }[failureType] ?? failureType;
+        }[failureType] ?? failureType}`;
         await sendDiscordAlert(
           alertTitle,
           `${failureDetail}\n\nIncident tracking: ${issue.html_url}`,
