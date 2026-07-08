@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Hourly API availability + contract canary for the Taoyuan Airport flight API.
 //
-// State model: healthy / down-availability (non-200) / down-contract (shape drift).
+// State model: healthy / down-availability (non-200) / down-contract (shape drift) /
+// canary-blocked (Cloudflare served a challenge to the canary itself — a canary problem,
+// not necessarily an API outage).
 // State is stored in open GitHub issues (label: status:incident) — Upptime pattern.
 // Discord alerts fire only on state TRANSITIONS, not every run:
 //   healthy → down : open GitHub issue + Discord 🚨 alert
@@ -9,17 +11,16 @@
 //   down    → healthy : close issue with recovery comment + Discord ✅ alert
 //   healthy → healthy : silent
 //
-// Uses curl for API probing: Cloudflare's TLS/JA3 fingerprint checks block undici
-// (Node 22 native fetch) even with a browser UA, while curl's OpenSSL profile passes.
-// Discord + GitHub API calls use native fetch (no TLS gating on those services).
+// The API sits behind a Cloudflare managed challenge, so the probe is a stealth browser
+// (see canary/probe.mjs — curl/undici get 403, cf_clearance is IP-bound). Discord +
+// GitHub API calls use native fetch (those services aren't gated).
 //
 // Contract is derived from getMockFlightData() in e2e/test-helpers.js and the
 // "Response fields consumed" list in CLAUDE.md. Only shape is asserted — no flight
 // counts, no specific values (volatile; legitimately empty at night).
 
-import { execFileSync } from 'child_process';
+import { probeFlightApi, isChallengeHtml } from './probe.mjs';
 
-const API_URL = process.env.CANARY_API_URL ?? 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 // Set CANARY_DRY_RUN=1 to probe the API and log what would happen without opening/closing
@@ -85,10 +86,16 @@ async function ensureLabel() {
   }
 }
 
+const INCIDENT_TITLES = {
+  availability: '🚨 API down (availability)',
+  contract: '🚨 API contract drift',
+  'canary-blocked': '⚠️ Canary blocked by Cloudflare — verify API manually',
+};
+
 async function openIncidentIssue(failureType, detail, startedAt) {
   await ensureLabel();
   return ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
-    title: `🚨 API down (${failureType}) — started ${startedAt.slice(0, 16)}Z`,
+    title: `${INCIDENT_TITLES[failureType] ?? `API issue (${failureType})`} — started ${startedAt.slice(0, 16)}Z`,
     body: [
       `## Taoyuan Airport API Outage`,
       ``,
@@ -154,38 +161,6 @@ async function sendDiscordAlert(title, description, isOk = false) {
   }
 }
 
-// ── API probe ─────────────────────────────────────────────────────────────────
-
-function callApi(date) {
-  const body = JSON.stringify({
-    ODate: date, OTimeOpen: null, OTimeClose: null,
-    BNO: null, AState: 'A', language: 'ch', keyword: '',
-  });
-  const SEP = '\n__STATUS__';
-  try {
-    const raw = execFileSync('curl', [
-      '-s',
-      '-X', 'POST', API_URL,
-      '-H', 'Content-Type: application/json',
-      '-H', 'Accept: application/json',
-      '-H', 'Accept-Language: zh-TW,zh;q=0.9',
-      '-H', 'Origin: https://www.taoyuan-airport.com',
-      '-H', 'Referer: https://www.taoyuan-airport.com/flight_arrival',
-      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      '-w', `${SEP}%{http_code}`,
-      '--data-raw', body,
-    ], { encoding: 'utf8', timeout: 30_000 });
-    const sepIdx = raw.lastIndexOf(SEP);
-    return {
-      status: parseInt(raw.slice(sepIdx + SEP.length), 10),
-      body: raw.slice(0, sepIdx),
-    };
-  } catch (err) {
-    // curl exits non-zero only on network/protocol failure (not HTTP errors).
-    return { status: 0, body: '', networkError: err.message };
-  }
-}
-
 function checkRecordShape(record, index) {
   const issues = [];
   for (const f of REQUIRED_STRING_FIELDS) {
@@ -217,11 +192,19 @@ async function run() {
   let failureDetail = null;
   let recordCount = null;
 
-  const { status, body: rawBody, networkError } = callApi(date);
+  const { status, body: rawBody, networkError } = await probeFlightApi(date);
 
   if (networkError || status === 0) {
     failureType = 'availability';
-    failureDetail = `Network error: \`${networkError ?? 'unknown'}\``;
+    failureDetail = `Network / browser failure: \`${networkError ?? 'unknown'}\``;
+  } else if (status === 403 && isChallengeHtml(rawBody)) {
+    failureType = 'canary-blocked';
+    failureDetail = [
+      'Cloudflare served a challenge to the canary browser instead of API data.',
+      'This is a **canary** problem — Cloudflare likely tightened and the stealth browser',
+      'needs updating — **not** necessarily an API outage. Verify the API in a real browser',
+      'before treating this as downtime.',
+    ].join('\n');
   } else if (status !== 200) {
     failureType = 'availability';
     failureDetail = `HTTP \`${status}\` from Taoyuan Airport API\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``;
@@ -272,8 +255,13 @@ async function run() {
       } else {
         console.log(`[canary] ❌ ${failureType} failure — opening incident issue`);
         const issue = await openIncidentIssue(failureType, failureDetail, now);
+        const alertTitle = {
+          availability: 'API unavailable',
+          contract: 'Contract drift',
+          'canary-blocked': 'Canary blocked by Cloudflare (verify API manually)',
+        }[failureType] ?? failureType;
         await sendDiscordAlert(
-          failureType === 'availability' ? 'API unavailable' : 'Contract drift',
+          alertTitle,
           `${failureDetail}\n\nIncident tracking: ${issue.html_url}`,
           false,
         );
