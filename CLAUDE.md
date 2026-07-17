@@ -108,9 +108,9 @@ Mobile gesture implemented with three visual states, all driven by CSS transitio
 
 | Name | Scope | Expiry |
 |---|---|---|
-| `ACode` | Selected airline | 7 days |
-| `PlaneType` | Selected aircraft family | 7 days |
-| `theme` | `light` / `dark` (falls back to `prefers-color-scheme`) | 7 days |
+| `ACode` | Selected airline | 400 days (sliding, renewed each load) |
+| `PlaneType` | Selected aircraft family | 400 days (sliding, renewed each load) |
+| `theme` | `light` / `dark` (falls back to `prefers-color-scheme`) | 400 days (sliding, renewed each load) |
 
 Language is detected from `navigator.language` on each load; not persisted.
 

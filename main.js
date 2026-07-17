@@ -955,7 +955,7 @@ function displayFlights(flights, ACode) {
         : tableContent;
 }
 
-function setCookie(name, value, days = 7) {
+function setCookie(name, value, days = 400) {
     const d = new Date();
     d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
     const expires = "expires=" + d.toUTCString();
@@ -974,6 +974,13 @@ function deleteCookie(name) {
 
 function checkCookie(name) {
     return !!getCookie(name);
+}
+
+function renewPins() {
+    [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME].forEach(name => {
+        const value = getCookie(name);
+        if (value !== undefined) setCookie(name, value);
+    });
 }
 
 function setupEventListeners() {
@@ -1216,12 +1223,14 @@ function updateThemeToggleButton() {
 }
 
 function initApp() {
+    renewPins();
+    if (navigator.storage?.persist) navigator.storage.persist();
     renderApp();
     setupEventListeners();
     detectLanguage();
-    initTheme(); // Initialize theme
-    updateLanguageLinks(); // Ensure language links are updated on init
-    updateAirlineLinks(); // Ensure airline links are updated on init
+    initTheme();
+    updateLanguageLinks();
+    updateAirlineLinks();
 }
 
 // Run the app
