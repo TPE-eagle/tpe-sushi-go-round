@@ -92,9 +92,9 @@ All times are UTC+8.
 
 | State | Storage | Expiry |
 |-------|---------|--------|
-| Airline filter (`ACode`) | Cookie | 7 days |
-| Aircraft family (`PlaneType`) | Cookie | 7 days |
-| Theme (`theme`) | Cookie | 7 days |
+| Airline filter (`ACode`) | Cookie | 400 days (sliding, renewed each load) |
+| Aircraft family (`PlaneType`) | Cookie | 400 days (sliding, renewed each load) |
+| Theme (`theme`) | Cookie | 400 days (sliding, renewed each load) |
 | Language | Detected from `navigator.language` | Not persisted |
 | Flight data (offline fallback) | `localStorage` | Never served while online |
 
