@@ -19,6 +19,7 @@
 // "Response fields consumed" list in CLAUDE.md. Only shape is asserted — no flight
 // counts, no specific values (volatile; legitimately empty at night).
 
+import { fileURLToPath } from 'url';
 import { probeFlightApi, isChallengeHtml } from './probe.mjs';
 
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
@@ -26,6 +27,8 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 // Set CANARY_DRY_RUN=1 to probe the API and log what would happen without opening/closing
 // issues or posting to Discord. Use for self-tests and CI smoke runs.
 const DRY_RUN = process.env.CANARY_DRY_RUN === '1';
+// Delay between GitHub API read retries (ms). Set to 0 via env var in tests or dry runs.
+const GH_RETRY_DELAY_MS = parseInt(process.env.CANARY_GH_RETRY_DELAY_MS ?? '5000', 10);
 // Set CANARY_SIMULATE=availability|contract (workflow_dispatch input) to force a failure
 // and exercise the incident/Discord alert path end-to-end without a real outage. A drill
 // is marked 🧪 [DRILL] in the issue + Discord titles so it's never mistaken for a real
@@ -72,13 +75,46 @@ async function ghApi(method, path, body) {
   return r.json();
 }
 
-async function findOpenIncident() {
+// Sentinel returned by findOpenIncident() when GitHub's own API is unavailable.
+// Distinct from null ("no open incident") so run() can skip state management without crashing.
+export const GH_READ_FAILED = Symbol('GH_READ_FAILED');
+
+// Retry a GitHub API GET up to maxAttempts times on 5xx / 429 / network errors.
+// Write calls (POST / PATCH) are never auto-retried — use ghApi() directly for those.
+export async function ghApiRetry(path, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ghApi('GET', path);
+    } catch (err) {
+      const retriable =
+        /→ (429|5\d{2}):/.test(err.message) ||
+        /fetch failed|failed to fetch|network error/i.test(err.message);
+      if (retriable && attempt < maxAttempts) {
+        const delay = attempt * GH_RETRY_DELAY_MS;
+        console.log(
+          `[canary] GitHub API GET attempt ${attempt}/${maxAttempts} failed — retrying in ${delay / 1000}s: ${err.message.slice(0, 80)}`,
+        );
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+export async function findOpenIncident() {
   if (!GITHUB_TOKEN) return null; // local/no-token run: skip state management, probe only
-  const issues = await ghApi(
-    'GET',
-    `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=1`,
-  );
-  return Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
+  try {
+    const issues = await ghApiRetry(
+      `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=1`,
+    );
+    return Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
+  } catch (err) {
+    console.warn(
+      `[canary] ⚠️  GitHub API read failed after retries — skipping state management this run: ${err.message.slice(0, 150)}`,
+    );
+    return GH_READ_FAILED;
+  }
 }
 
 async function ensureLabel() {
@@ -268,6 +304,28 @@ async function run() {
   // Determine current incident state (open issue = currently down).
   const openIncident = await findOpenIncident();
 
+  // GitHub's own API was unavailable (even after retries) — skip state management for
+  // this run so a GitHub control-plane blip never causes a false-red canary exit.
+  if (openIncident === GH_READ_FAILED) {
+    if (failureType) {
+      console.error(
+        `[canary] ⚠️  GitHub API unavailable — state management skipped. Flight probe: ❌ ${failureType}. Manual follow-up required.`,
+      );
+      // Best-effort Discord alert so the flight failure isn't completely silent.
+      await sendDiscordAlert(
+        `GitHub API unavailable + flight probe: ${failureType}`,
+        `GitHub API was unreachable — no incident issue was opened.\n\nFlight probe result:\n${failureDetail ?? '(no detail)'}`,
+        false,
+      );
+      process.exit(1);
+    }
+    const ghLabel = recordCount === null
+      ? 'drill (probe skipped)'
+      : recordCount === 0 ? '0 records (off-peak window)' : `${recordCount} records, contract intact`;
+    console.log(`[canary] ⚠️  GitHub API unavailable — state management skipped. Flight probe: ✅ ${ghLabel}`);
+    return; // exit 0: flight API is healthy; don't turn a GitHub blip into a false red
+  }
+
   // State transitions.
   if (failureType) {
     if (!openIncident) {
@@ -318,8 +376,13 @@ async function run() {
   }
 }
 
-run().catch(async err => {
-  console.error('[canary] Fatal:', err.stack ?? err.message);
-  await sendDiscordAlert('Canary crashed', `\`\`\`\n${(err.stack ?? err.message).slice(0, 500)}\n\`\`\``);
-  process.exit(1);
-});
+// Only execute when invoked as the entry script, not when imported (e.g. for testing).
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  run().catch(async err => {
+    console.error('[canary] Fatal:', err.stack ?? err.message);
+    await sendDiscordAlert('Canary crashed', `\`\`\`\n${(err.stack ?? err.message).slice(0, 500)}\n\`\`\``);
+    process.exit(1);
+  });
+}
+
+export { run };
