@@ -7,6 +7,13 @@ A mobile-first web app for Taoyuan International Airport flight information. Bui
 
 **Live site:** https://tpe-eagle.github.io/tpe-sushi-go-round/
 
+<p align="center">
+  <img src="docs/screenshots/arrivals.png" alt="Arrivals — gate, baggage carousel & aircraft" width="270" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/departures.png" alt="Departures — gate & aircraft" width="270" />
+</p>
+<p align="center"><sub>Arrivals &amp; departures at a glance — pin your airline, then filter by aircraft family. Traditional Chinese / English / 日本語, dark &amp; light.</sub></p>
+
 ## Features
 
 - Real-time arrival / departure data from the Taoyuan Airport API
