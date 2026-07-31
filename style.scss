@@ -15,6 +15,12 @@
 @import "bootstrap/scss/grid";
 @import "bootstrap/scss/tables";
 @import "bootstrap/scss/buttons";
+// transitions.scss's `.fade` rule is what animates the offcanvas backdrop's
+// opacity (offcanvas.scss's own `overlay-backdrop` mixin sets the 0/1
+// opacity values for `.fade`/`.show` but not the transition itself — without
+// this import the backdrop snaps instead of fading).
+@import "bootstrap/scss/transitions";
+@import "bootstrap/scss/offcanvas";
 
 // Utilities API
 @import "bootstrap/scss/utilities/api";
@@ -409,7 +415,11 @@ body {
  *   70%   |    5.74     |    5.14       |    6.23    |    5.43
  * 70% text-color / 30% backdrop clears the 4.5:1 floor on all four; 65%
  * missed the light striped row (nth-child(5) on an odd tbody row). */
-#output table tbody td:nth-child(5) .return-gate-cell {
+/* Also targets the drawer's worked-example table (.drawer-example-table),
+ * which lives outside #output — same rule, not a separate copy, so the two
+ * can't drift out of sync. */
+#output table tbody td:nth-child(5) .return-gate-cell,
+.drawer-example-table .return-gate-cell {
   font-size: 1rem;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -916,4 +926,120 @@ body {
   .fs-sm-7 {
     font-size: 0.875rem !important;
   }
+}
+
+/* About drawer (issue #46) — additive only, inherits existing tokens/fonts.
+ * No new colours: every rule below uses --text-color / --background-color /
+ * --border-color, the same tokens the rest of the app already themes with. */
+
+/* Bootstrap's offcanvas CSS vars default to its own light-only $body-bg /
+ * $body-color (we never opted into Bootstrap's color-mode system) — repoint
+ * them at our runtime light/dark tokens so the drawer follows the app theme. */
+#about-drawer {
+  --bs-offcanvas-bg: var(--background-color);
+  --bs-offcanvas-color: var(--text-color);
+  --bs-offcanvas-border-color: var(--border-color);
+
+  /* iOS Safari's dynamic toolbar makes 100vh taller than the visible area,
+   * cutting off the bottom of the panel. -webkit-fill-available is the
+   * pre-15.4 iOS Safari workaround; 100dvh is the modern equivalent. Later
+   * declarations only take effect where the browser understands the unit,
+   * so this is safe layering, not an override fight. */
+  height: 100vh;
+  height: -webkit-fill-available;
+  height: 100dvh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #about-drawer,
+  .offcanvas-backdrop.fade {
+    transition: none !important;
+  }
+}
+
+.offcanvas-header {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.offcanvas-title {
+  color: var(--text-color);
+}
+
+/* Deliberately not Bootstrap's .btn-close (that needs its own SCSS import
+ * and ships a new icon asset) — styled like the existing circular
+ * theme/flight toggle buttons instead, just smaller and text-based. */
+.drawer-close-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+}
+
+.drawer-close-btn:hover,
+.drawer-close-btn:focus {
+  background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+  outline: none;
+}
+
+.drawer-section {
+  margin-bottom: 1.5rem;
+}
+
+.drawer-section-title {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--text-color);
+}
+
+.drawer-section-body {
+  margin-bottom: 0.5rem;
+  color: var(--text-color);
+}
+
+.drawer-section-body:last-child {
+  margin-bottom: 0;
+}
+
+/* De-emphasized via size/style only, never colour dilution — keeps the
+ * 4.5:1 contrast floor trivially satisfied instead of having to prove it. */
+.drawer-fallback-note {
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.drawer-example-table {
+  margin: 0.75rem 0;
+}
+
+.drawer-share-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.drawer-inline-confirmation {
+  font-size: 0.85rem;
+  color: var(--text-color);
+}
+
+.drawer-disclaimer {
+  font-size: 0.8rem;
+  font-style: italic;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-color);
 }

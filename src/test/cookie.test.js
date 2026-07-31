@@ -61,12 +61,23 @@ describe('Cookie sliding renew', () => {
         proto.set.call(document, 'theme=dark;path=/')
         writtenCookies = []
 
-        renewPins(['ACode', 'PlaneType', 'theme'])
+        renewPins(['ACode', 'PlaneType', 'theme', 'lang'])
 
         const rewritten = writtenCookies.map(s => s.split('=')[0])
         expect(rewritten).toContain('ACode')
         expect(rewritten).toContain('theme')
         expect(rewritten).not.toContain('PlaneType')
+        expect(rewritten).not.toContain('lang')
+    })
+
+    test('renewPins renews an explicitly-set language cookie', () => {
+        proto.set.call(document, 'lang=en;path=/')
+        writtenCookies = []
+
+        renewPins(['ACode', 'PlaneType', 'theme', 'lang'])
+
+        const rewritten = writtenCookies.map(s => s.split('=')[0])
+        expect(rewritten).toEqual(['lang'])
     })
 
     test('renewPins refreshes Expires to ≥ 399 days out', () => {
