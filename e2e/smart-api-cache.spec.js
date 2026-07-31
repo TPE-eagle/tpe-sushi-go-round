@@ -124,13 +124,24 @@ test.describe('setupSmartApiRoute — issue #38: cache is keyed on AState, not U
     await page.waitForSelector('#flight-mode-toggle', { timeout: 5000 })
     await page.click('#flight-mode-toggle') // -> D, unrelated state, resolves immediately
     await expect.poll(() => callsByState.D).toBe(1)
+
+    // Entering departures mode also kicks off the non-blocking return-leg
+    // AState=A pairing fetch (issue #33, PR #35) alongside the D fetch. Its
+    // postData is indistinguishable from the primary A fetch's (both are
+    // full-day, per this repo's "never set a time range" rule), so the
+    // route double — keyed only on AState — treats it as the same in-flight
+    // A request: callsByState.A correctly stays at 1, but a second real
+    // *request* has now landed. Pin that here with its own sharp assertion
+    // so the poll below measures only the request the next click issues,
+    // not this one.
+    await expect.poll(() => requestsByState.A).toBe(2)
     await page.click('#flight-mode-toggle') // -> A again, second A request while the first is still gated
 
     // Prove the second A request was actually issued (not just that no
     // second upstream call happened, which a request that never arrived
     // would also satisfy) before checking it was deduped.
-    await expect.poll(() => requestsByState.A).toBe(2)
-    expect(callsByState.A).toBe(1) // ...and it did not start a second upstream fetch — shared the in-flight promise
+    await expect.poll(() => requestsByState.A).toBe(3)
+    expect(callsByState.A).toBe(1) // ...and neither the return-leg fetch nor this click's request started a second upstream fetch — both shared the one in-flight promise
 
     releaseA()
     await navigation
