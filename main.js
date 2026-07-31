@@ -549,12 +549,30 @@ function fetchReturnLegArrivals(token) {
         }
     };
 
+    // Item 1 (#40) keeps the previous returnLegArrivals array across a
+    // *successful* refresh, so a path where nothing else is coming for this
+    // token has to blank it explicitly — otherwise a stale gate outlives the
+    // fetch that was meant to replace it. Only acts if this token is still
+    // current: if a newer fetchData() call already superseded it, that call
+    // owns the cleanup (blanking here would reintroduce item 1's flicker).
+    const blankResult = (staleToken) => {
+        if (staleToken !== returnLegFetchToken) return;
+        returnLegArrivals = null;
+        if (currentFlightMode === 'D' && mainDataReadyForToken === staleToken) {
+            renderFilteredView();
+        }
+    };
+
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
     const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
     if (!isTestEnvironment && !isOnline()) {
         const cachedData = getCachedFlightData(cacheKey);
-        if (cachedData) applyResult(cachedData.data);
+        if (cachedData) {
+            applyResult(cachedData.data);
+        } else {
+            blankResult(token);
+        }
         return;
     }
 
@@ -581,7 +599,9 @@ function fetchReturnLegArrivals(token) {
         applyResult(data);
     })
     .catch(() => {
-        // Silent — the column just stays blank, same as "no confident match".
+        // No fresh data is coming for this token — blank rather than leave
+        // item 1's previous-cycle array showing indefinitely (see blankResult).
+        blankResult(token);
     });
 }
 

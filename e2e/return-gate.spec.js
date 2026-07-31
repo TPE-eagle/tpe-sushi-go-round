@@ -125,6 +125,92 @@ test.describe('Departures return-gate column (issue #33)', () => {
     await expect(ci122Row.locator('.return-gate-cell')).toContainText('D5')
 
     const br205Row = page.locator('tbody tr', { hasText: 'BR205' })
+    await expect(br205Row).toBeVisible()
     await expect(br205Row.locator('.return-gate-cell')).toHaveCount(0)
+  })
+
+  // Issue #40 PR #56 review F1: fetchData() keeps the previous cycle's
+  // returnLegArrivals across a refresh (item 1) to avoid flicker, but a
+  // refresh whose pairing fetch fails must still blank the column rather
+  // than let the stale gate from a successful cycle outlive it indefinitely.
+  test('a failed pairing refetch blanks a previously-shown return gate rather than leaving it stale', async ({ page }) => {
+    const date = getCurrentUTC8Date()
+
+    const departures = [
+      {
+        id: `${date.replace(/\//g, '')}_D_CI122`,
+        BNO: 1,
+        ACode: 'CI',
+        AName: '中華航空',
+        FlightNo: '122',
+        Gate: 'D1',
+        ODate: date,
+        OTime: '08:00:00',
+        RDate: date,
+        RTime: '08:00:00',
+        CityCode: 'NRT',
+        CityEname: 'Tokyo',
+        CityName: '東京',
+        Memo: '已登機',
+        PlaneNo: 'A321-200',
+        StopCode: '02',
+        flightCode: 'CI122',
+      },
+    ]
+
+    const arrivals = [
+      {
+        id: `${date.replace(/\//g, '')}_A_CI123`,
+        BNO: 1,
+        ACode: 'CI',
+        AName: '中華航空',
+        FlightNo: '123',
+        Gate: 'D5',
+        ODate: date,
+        OTime: '16:00:00',
+        RDate: date,
+        RTime: '16:00:00',
+        CityCode: 'NRT',
+        CityEname: 'Tokyo',
+        CityName: '東京',
+        Memo: '已到',
+        PlaneNo: 'A321-271N',
+        StopCode: '02',
+        flightCode: 'CI123',
+      },
+    ]
+
+    await setupMockApiRoute(page, departures, arrivals)
+    await page.goto('/')
+    await waitForApiAndTable(page)
+
+    await page.click('#flight-mode-toggle')
+    await waitForApiAndTable(page)
+
+    const ci122Row = page.locator('tbody tr', { hasText: 'CI122' })
+    await expect(ci122Row.locator('.return-gate-cell')).toBeVisible({ timeout: 5000 })
+    await expect(ci122Row.locator('.return-gate-cell')).toContainText('CI123')
+
+    // Registered after setupMockApiRoute's handler, so it runs first: abort
+    // only the AState=A (pairing) request on the next cycle, and fall back
+    // to the existing mock handler for AState=D so the departures list still
+    // renders normally.
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+      let body = {}
+      try { body = route.request().postDataJSON() || {} } catch (_) { /* empty body is fine */ }
+      if (body.AState === 'D') {
+        await route.fallback()
+      } else {
+        await route.abort()
+      }
+    })
+
+    // Any [data-lang] click calls changeLanguage() -> fetchData() unconditionally,
+    // even for the already-active language — a same-mode refresh without reload
+    // (reload would lose the departures mode, which isn't cookie-persisted).
+    await page.click('[data-lang="en"]')
+    await waitForApiAndTable(page)
+
+    await expect(ci122Row.locator('.return-gate-cell')).toHaveCount(0)
   })
 })
