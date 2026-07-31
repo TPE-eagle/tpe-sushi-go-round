@@ -593,10 +593,10 @@ function buildDrawerExampleTable(lang) {
         </table>`;
 }
 
-// Builds the full offcanvas body for the given language. Re-run on every
-// language change (drawer content is destroyed and rebuilt, same as the
-// rest of the app's i18n approach) — updateInstallSection() must be called
-// again afterwards since it targets elements this just recreated.
+// Builds the full offcanvas body for the given language. Called by
+// renderDrawerBody() (drawer opening, or a language change while it's
+// already open) — content is destroyed and rebuilt each time, same as the
+// rest of the app's i18n approach.
 function buildDrawerContent(lang) {
     const d = translations[lang]["drawer"];
     const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -731,6 +731,19 @@ function updateDrawerText() {
     const closeBtn = document.getElementById('about-drawer-close');
     if (closeBtn) closeBtn.setAttribute('aria-label', d.closeLabel);
 
+    // The body itself (including the example <table>) is only (re)rendered
+    // while the drawer is open — see the show.bs.offcanvas listener in
+    // setupEventListeners(). Rendering it unconditionally on every page
+    // load / language change put a second, always-in-DOM <table> on the
+    // page, which broke every existing e2e test doing a bare
+    // page.locator('table') for the flight list.
+    const drawerEl = document.getElementById('about-drawer');
+    if (drawerEl && drawerEl.classList.contains('show')) {
+        renderDrawerBody();
+    }
+}
+
+function renderDrawerBody() {
     const bodyEl = document.getElementById('about-drawer-body');
     if (bodyEl) bodyEl.innerHTML = buildDrawerContent(currentLanguage);
 
@@ -1693,6 +1706,12 @@ function renewPins() {
 }
 
 function setupEventListeners() {
+    // Render the drawer body lazily, right as Bootstrap starts opening it,
+    // rather than eagerly on every page load / language change — see the
+    // comment on updateDrawerText() for why (a second <table> in the DOM
+    // at all times broke unrelated e2e tests).
+    document.getElementById('about-drawer')?.addEventListener('show.bs.offcanvas', renderDrawerBody);
+
     window.addEventListener('resize', () => {
         if (currentFilteredFlights.length > 0 && currentACode) {
             displayFlights(currentFilteredFlights, currentACode);
