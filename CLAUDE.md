@@ -181,12 +181,19 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 Workflow: `.github/workflows/ci.yml`.
 
-| Job | Trigger | Blocking |
-|-----|---------|----------|
-| `unit-tests` | push/PR to main | Yes |
-| `e2e-tests-local` | after unit-tests | No (`continue-on-error`) |
-| `deploy` | push to main | Yes |
-| `e2e-tests-production` | after deploy | No (`continue-on-error`) |
+| Job | Trigger | Fails the run if red? | Depends on |
+|-----|---------|------------------------|------------|
+| `unit-tests` | push/PR to main | Yes | — |
+| `e2e-tests-local` | after `unit-tests` | Yes | `unit-tests` |
+| `build-check` | PR to main only | Yes | `unit-tests` |
+| `deploy` | push to main | Yes | `unit-tests` |
+| `e2e-tests-production` | after `deploy` (push) / also on PR | Yes | `deploy` |
+
+`deploy` depends only on `unit-tests`, **not** `e2e-tests-local` — a red local E2E does not stop a push to main from deploying to GitHub Pages. The only `continue-on-error: true` in the workflow is on the PR-comment reporting step inside `e2e-tests-production`, not the step that actually executes the tests, so neither E2E job is a soft gate.
+
+On PRs, `e2e-tests-production` runs even though `deploy` is skipped — `!cancelled()` (`ci.yml:173`) is what allows that. **A PR run of that job exercises the current deployment, not the PR's build**: it's deployment smoke against the already-deployed live site (`playwright.prod.config.js`'s own header: "deployment smoke only, no data assertions"), so it has nothing to do with the PR's build either way. `production.spec.js` does **not** mock the flight API — it hits the real `www.taoyuan-airport.com` endpoint and asserts a real POST goes out to it. (It does route-block Google Analytics via `blockGoogleAnalytics`, but that's unrelated tracker suppression, not mocking of app data.) It verifies changes to the test harness (`production.spec.js`, the prod config) pre-merge; app-code regressions in a PR are gated solely by `e2e-tests-local`.
+
+Because it reaches a live third-party API, `e2e-tests-production` puts an external dependency in every PR's path: an upstream outage or rate-limit on `www.taoyuan-airport.com` can redden a PR that changed nothing relevant. It's the only CI job that touches the public internet, so it's the first thing to suspect when a PR goes red without touching anything obviously related.
 
 ## AI Development Workflow
 
