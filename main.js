@@ -13,6 +13,7 @@ const COOKIE_NAME = 'ACode';
 const PLANE_TYPE_COOKIE_NAME = 'PlaneType';
 const REFRESH_DELAY = 1500;
 const THEME_COOKIE_NAME = 'theme';
+const LANGUAGE_COOKIE_NAME = 'lang';
 const LIGHT_THEME_COLOR = '#ffffff';
 const DARK_THEME_COLOR = '#212529';
 
@@ -252,13 +253,20 @@ function resetAnimation(element) {
 }
 
 function detectLanguage() {
-    const browserLang = navigator.language || navigator.userLanguage;
-    if (browserLang.startsWith("zh")) {
-        currentLanguage = 'zh';
-    } else if (browserLang.startsWith("ja")) {
-        currentLanguage = 'jp';
+    // An explicit prior choice always wins; auto-detection only applies when
+    // no cookie is present (never persisted, so a phone/system-language
+    // change is picked up again the next time the cookie is absent/cleared).
+    if (checkCookie(LANGUAGE_COOKIE_NAME)) {
+        currentLanguage = getCookie(LANGUAGE_COOKIE_NAME);
     } else {
-        currentLanguage = 'en';
+        const browserLang = navigator.language || navigator.userLanguage;
+        if (browserLang.startsWith("zh")) {
+            currentLanguage = 'zh';
+        } else if (browserLang.startsWith("ja")) {
+            currentLanguage = 'jp';
+        } else {
+            currentLanguage = 'en';
+        }
     }
     changeLanguageFont();
     updateLanguageText();
@@ -305,6 +313,10 @@ function updateLanguageLinks() {
 
 function changeLanguage(lang) {
     currentLanguage = lang;
+    // Only an explicit tap persists the choice — never the auto-detected
+    // value, otherwise whatever navigator.language resolved to on the first
+    // ever visit would be frozen forever (see detectLanguage()).
+    setCookie(LANGUAGE_COOKIE_NAME, lang);
     changeLanguageFont();
     updateLanguageText();
     fetchData();
@@ -1224,7 +1236,7 @@ function checkCookie(name) {
 }
 
 function renewPins() {
-    [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME].forEach(name => {
+    [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME, LANGUAGE_COOKIE_NAME].forEach(name => {
         const value = getCookie(name);
         if (value !== undefined) setCookie(name, value);
     });
