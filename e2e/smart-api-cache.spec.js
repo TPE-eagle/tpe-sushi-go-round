@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { setupSmartApiRoute, waitForApiAndTable, blockGoogleAnalytics, getMockFlightData, __resetSmartApiCache } from './test-helpers.js'
+import { setupSmartApiRoute, waitForApiAndTable, blockGoogleAnalytics, getMockFlightData, __resetSmartApiCache, requestAState } from './test-helpers.js'
 
 const FLIGHT_API = 'https://www.taoyuan-airport.com/api/api/flight/a_flight'
 
@@ -16,8 +16,9 @@ const FLIGHT_API = 'https://www.taoyuan-airport.com/api/api/flight/a_flight'
 // the merge gate (`e2e-tests-local`), and a required check must not depend
 // on a third party's availability, nor on an unverified assumption about
 // its response shape. `setupSmartApiRoute`'s default `fetchUpstream` (a
-// real `route.fetch()`) is exercised by production usage of the function,
-// not by this spec.
+// real `route.fetch()`) is deliberately left uncovered by this spec —
+// the function has zero callers outside this file, so nothing exercises
+// that path today.
 test.describe('setupSmartApiRoute — issue #38: cache is keyed on AState, not URL alone', () => {
   test.beforeEach(() => {
     // Module-level cache survives across tests in one worker; a cold cache
@@ -97,6 +98,19 @@ test.describe('setupSmartApiRoute — issue #38: cache is keyed on AState, not U
       }
     }
 
+    // Tracks requests reaching the route handler, independent of
+    // callsByState (issue #38 review R6): callsByState only increments on
+    // an upstream call, and a correctly-deduped second request never makes
+    // one, so it alone can't distinguish "arrived and shared the promise"
+    // from "hadn't arrived yet". requestsByState proves the second request
+    // was actually issued; callsByState.A staying at 1 then proves it was
+    // deduped rather than firing its own upstream call.
+    const requestsByState = { A: 0, D: 0 }
+    page.on('request', (request) => {
+      if (request.url() !== FLIGHT_API) return
+      requestsByState[requestAState(request)]++
+    })
+
     const bodies = []
     page.on('response', async (response) => {
       if (response.url() !== FLIGHT_API) return
@@ -112,12 +126,11 @@ test.describe('setupSmartApiRoute — issue #38: cache is keyed on AState, not U
     await expect.poll(() => callsByState.D).toBe(1)
     await page.click('#flight-mode-toggle') // -> A again, second A request while the first is still gated
 
-    // Give the second click's fetch a moment to reach the route handler.
-    // This is not what makes the test deterministic (the gate promise is) —
-    // it only lets the in-process call register before asserting it didn't
-    // start a second upstream fetch.
-    await page.waitForTimeout(100)
-    expect(callsByState.A).toBe(1) // second A request awaited the shared in-flight promise, not a fetch of its own
+    // Prove the second A request was actually issued (not just that no
+    // second upstream call happened, which a request that never arrived
+    // would also satisfy) before checking it was deduped.
+    await expect.poll(() => requestsByState.A).toBe(2)
+    expect(callsByState.A).toBe(1) // ...and it did not start a second upstream fetch — shared the in-flight promise
 
     releaseA()
     await navigation

@@ -21,7 +21,7 @@ let inFlightFetch = {} // { A: Promise<{status, contentType, body}>, D: ... } â€
 let forcedStatesDone = {} // { A: true, D: true } â€” which states have already had their one forced live call (see forceReal below)
 const CACHE_DURATION = 30 * 60 * 1000 // 30 minutes
 
-function requestAState(request) {
+export function requestAState(request) {
   try {
     const body = request.postDataJSON()
     return body?.AState === 'D' ? 'D' : 'A'
@@ -54,6 +54,11 @@ async function defaultFetchUpstream(route) {
 // the real airport API (issue #38 review R3: a merge-gate spec must not
 // depend on a third party's availability or undocumented response shape).
 // Defaults to the real network call, which is what non-test callers get.
+// Second argument is an options object, not a positional forceReal (issue
+// #38 review N5): a stale positional call like `setupSmartApiRoute(page,
+// true)` destructures a boxed Boolean and silently yields `forceReal ===
+// false` instead of throwing. No callers pass a positional today, but if
+// one shows up, that's why it stopped forcing a live call.
 export async function setupSmartApiRoute(page, { forceReal = false, fetchUpstream = defaultFetchUpstream } = {}) {
   await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
     const state = requestAState(route.request())
@@ -138,12 +143,6 @@ export async function setupSmartApiRoute(page, { forceReal = false, fetchUpstrea
     const result = await inFlightFetch[state]
     await route.fulfill(result)
   })
-
-  // No caller reads this return value today. Returning the per-state map
-  // (rather than picking one of A/D/mock, as before) is the only version of
-  // this that answers a well-formed question once the cache itself is
-  // per-state (issue #38 review N3).
-  return { ...realApiCache }
 }
 
 export function getCurrentUTC8Date() {
