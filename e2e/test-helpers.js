@@ -9,74 +9,39 @@ export async function blockGoogleAnalytics(page) {
   await page.route('**/*analytics*', route => route.abort())
 }
 
-// Cache for real API responses
-let realApiCache = null
-let cacheTimestamp = null
+// Cache for real API responses, keyed by AState ('A' or 'D') — issue #38:
+// the request body's AState determines which day-mode is being asked for,
+// and a departures request must never be fulfilled with a cached arrivals
+// blob (or vice versa). Each state gets its own cache slot, timestamp, and
+// in-flight promise so a real fetch for one state never blocks or corrupts
+// the other.
+let realApiCache = {} // { A: [...], D: [...] }
+let cacheTimestamp = {} // { A: ms, D: ms }
+let inFlightFetch = {} // { A: Promise<{status, headers, body}>, D: ... } — only set while a real fetch for that state is outstanding
 const CACHE_DURATION = 30 * 60 * 1000 // 30 minutes
 
+function requestAState(request) {
+  try {
+    const body = request.postDataJSON()
+    return body?.AState === 'D' ? 'D' : 'A'
+  } catch (_) {
+    return 'A'
+  }
+}
+
 export async function setupSmartApiRoute(page, forceReal = false) {
-  const now = Date.now()
-  const cacheExpired = !cacheTimestamp || (now - cacheTimestamp) > CACHE_DURATION
-  
-  if (forceReal || !realApiCache || cacheExpired) {
-    // First time or cache expired - make real API call and cache the response
-    let realResponseCaptured = false
-    
-    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
-      if (!realResponseCaptured) {
-        console.log('🌐 Making real API call to cache fresh data...')
-        realResponseCaptured = true
-        
-        try {
-          // Make real request
-          const response = await route.fetch()
-          const responseBody = await response.text()
-          
-          // Cache the real response
-          realApiCache = JSON.parse(responseBody)
-          cacheTimestamp = now
-          console.log(`✅ Cached ${realApiCache.length} flights from real API`)
-          
-          // Return the real response
-          await route.fulfill({
-            status: response.status(),
-            headers: response.headers(),
-            body: responseBody,
-          })
-        } catch (error) {
-          console.log('❌ Real API call failed, falling back to mock data')
-          // Fall back to mock data if real API fails
-          realApiCache = getMockFlightData()
-          cacheTimestamp = now
-          
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(realApiCache)
-          })
-        }
-      } else {
-        // Use cached data for subsequent requests in same test
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify(realApiCache)
-        })
-      }
-    })
-  } else {
-    // Use cached real data
-    console.log(`📋 Using cached API data (${realApiCache.length} flights, cached ${Math.round((now - cacheTimestamp) / 60000)} min ago)`)
-    
-    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+  await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+    const state = requestAState(route.request())
+    const now = Date.now()
+    const cacheExpired = !cacheTimestamp[state] || (now - cacheTimestamp[state]) > CACHE_DURATION
+
+    if (!forceReal && realApiCache[state] && !cacheExpired) {
+      // Use cached real data for this state, with language-specific adjustments
+      // (the cached blob is frozen at whichever language first populated it).
+      console.log(`📋 Using cached API data (${realApiCache[state].length} flights, ${state}, cached ${Math.round((now - cacheTimestamp[state]) / 60000)} min ago)`)
       const langHeader = route.request().headers()['accept-language'] || ''
-      
-      // Apply language-specific transformations to cached data
-      const languageAdjustedData = realApiCache.map((flight) => {
-        // Keep original data but adjust language-specific fields if needed
+      const languageAdjustedData = realApiCache[state].map((flight) => {
         let adjustedFlight = { ...flight }
-        
-        // Apply language-specific airline name translations for supported airlines
         if (flight.ACode && ['BR', 'CI', 'JX', 'B7', 'AE'].includes(flight.ACode)) {
           if (langHeader.startsWith('zh')) {
             const zhNames = { BR: '長榮航空', CI: '中華航空', JX: '星宇航空', B7: '立榮航空', AE: '華信航空' }
@@ -89,19 +54,53 @@ export async function setupSmartApiRoute(page, forceReal = false) {
             adjustedFlight.AName = enNames[flight.ACode] || flight.AName
           }
         }
-        
         return adjustedFlight
       })
-      
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(languageAdjustedData)
       })
-    })
-  }
-  
-  return realApiCache || getMockFlightData()
+      return
+    }
+
+    // Cold or expired cache for this state. If a real fetch for this exact
+    // state is already in flight (concurrent requests, e.g. the departures
+    // primary fetch and the return-leg pairing fetch landing together),
+    // await that single shared promise instead of racing a second real call
+    // or falling through to a not-yet-populated cache (issue #38: the old
+    // code set its "captured" flag before the cache was assigned, so a
+    // concurrent request could be fulfilled with the string "null").
+    if (!inFlightFetch[state]) {
+      console.log(`🌐 Making real API call to cache fresh ${state} data...`)
+      inFlightFetch[state] = (async () => {
+        try {
+          const response = await route.fetch()
+          const responseBody = await response.text()
+          realApiCache[state] = JSON.parse(responseBody)
+          cacheTimestamp[state] = now
+          console.log(`✅ Cached ${realApiCache[state].length} flights (${state}) from real API`)
+          return { status: response.status(), headers: response.headers(), body: responseBody }
+        } catch (error) {
+          console.log(`❌ Real API call failed for ${state}, falling back to mock data`)
+          realApiCache[state] = getMockFlightData().map(flight => ({ ...flight, AState: state }))
+          cacheTimestamp[state] = now
+          return {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(realApiCache[state]),
+          }
+        } finally {
+          delete inFlightFetch[state]
+        }
+      })()
+    }
+
+    const result = await inFlightFetch[state]
+    await route.fulfill(result)
+  })
+
+  return realApiCache.A || realApiCache.D || getMockFlightData()
 }
 
 export function getCurrentUTC8Date() {

@@ -133,7 +133,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 **Localhost skips client-side time filtering.** `filterFlightsByTime()` is intentionally bypassed when `window.location.hostname` is `localhost` or `127.0.0.1` (see `processFetchedData` in `main.js`). This keeps mock E2E data visible regardless of wall-clock drift during the test run. `npm run dev` therefore shows the full day; production respects the window. If you change the mock's time generation, revisit whether this skip is still needed.
 
-**E2E smart API caching.** First E2E run makes a real API call and caches the response for 30 minutes; subsequent tests reuse it with language-specific `AName` rewrites. Falls back to generated mock data if the real call fails.
+**E2E smart API caching (`setupSmartApiRoute`, `e2e/smart-api-cache.spec.js` only).** First real request per `AState` makes a real API call and caches that state's response for 30 minutes; subsequent requests for the same state reuse it with language-specific `AName` rewrites. Falls back to generated mock data if the real call fails. Cache is keyed per-state (issue #38) — an arrival and a departure request in the same window each get their own cached blob, never each other's. Every other E2E spec uses `setupMockApiRoute` instead (fully synthetic, no live network dependency), which is why this pattern only has one dedicated spec exercising it.
 
 **Block Google Analytics in E2E.** All setups call `blockGoogleAnalytics()` to avoid tracking noise and CSP flakiness.
 
@@ -156,6 +156,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 - `user-interaction.spec.js` — airline filter, theme toggle, cookie persistence, responsive layout.
 - `plane-type.spec.js` — plane type row visibility, dynamic family list, pin / clear, airline switch reset, TBD flights always visible, pin survives cold load and flight mode toggle even when the family has no matches, orphan cookie cleanup.
 - `offline.spec.js` — offline banner visibility on `offline` / `online` events. (Dev server has no active SW, so the SW cache path itself is not exercised here.)
+- `smart-api-cache.spec.js` — `setupSmartApiRoute()`'s per-`AState` cache keying and the payload each mode actually receives (issue #38).
 - `production.spec.js` — live site smoke tests against GitHub Pages.
 
 ### Playwright configs
