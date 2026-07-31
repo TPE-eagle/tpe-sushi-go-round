@@ -97,7 +97,16 @@ test.describe('About drawer', () => {
     // Flight Logs" step already uploads on failure; a raw path write to
     // test-results/ would not otherwise leave the runner.
     await testInfo.attach('drawer-375-light', { body: await page.screenshot(), contentType: 'image/png' })
-    await page.click('#theme-toggle')
+
+    // At 375px the offcanvas panel (400px wide) covers the whole viewport,
+    // so #theme-toggle (top-right of the page, behind the drawer) is in the
+    // DOM but not reachable by a real pointer — the offcanvas subtree
+    // intercepts the click, same as it would for an actual user. Seed the
+    // theme cookie directly instead of clicking through the drawer.
+    await page.context().addCookies([{ name: 'theme', value: 'dark', url: page.url() }])
+    await page.goto('/')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
     await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
     await testInfo.attach('drawer-375-dark', { body: await page.screenshot(), contentType: 'image/png' })
   })
