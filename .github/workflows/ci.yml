@@ -114,9 +114,7 @@ jobs:
       if: failure()
       with:
         name: playwright-report-local
-        path: |
-          playwright-report/
-          test-results/
+        path: playwright-report/
         retention-days: 7
 
   build-check:
