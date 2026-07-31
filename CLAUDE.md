@@ -191,6 +191,8 @@ Workflow: `.github/workflows/ci.yml`.
 
 `deploy` depends only on `unit-tests`, **not** `e2e-tests-local` — a red local E2E does not stop a push to main from deploying to GitHub Pages. The only `continue-on-error: true` in the workflow is on the PR-comment reporting step inside `e2e-tests-production`, not the step that actually executes the tests, so neither E2E job is a soft gate.
 
+On PRs, `e2e-tests-production` runs even though `deploy` is skipped — `!cancelled()` (`ci.yml:173`) is what allows that. **A PR run of that job exercises the current deployment, not the PR's build**: `playwright.prod.config.js` points `baseURL` at the already-deployed live site and mocks the API via `page.route`, so it needs no fresh deploy. It verifies changes to the test harness (`production.spec.js`, the prod config) pre-merge; app-code regressions in a PR are gated solely by `e2e-tests-local`.
+
 ## AI Development Workflow
 
 Before changes:
