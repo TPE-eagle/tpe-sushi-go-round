@@ -1,4 +1,9 @@
 import './style.scss'
+// Standalone component import (no Popper dependency for offcanvas) — its
+// side effect wires up `[data-bs-toggle="offcanvas"]` / `[data-bs-dismiss="offcanvas"]`
+// click handling on `document` automatically; nothing else in this file
+// depends on Bootstrap's JS today.
+import 'bootstrap/js/dist/offcanvas'
 
 // Constants
 const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
@@ -67,6 +72,26 @@ let returnLegFetchToken = 0;
 // the new mode's headers/columns against stale flightData.
 let mainDataReadyForToken = -1;
 
+// About drawer — install prompt capture (issue #46). Non-null only between
+// a captured `beforeinstallprompt` and either a resolved `.userChoice` or an
+// `appinstalled` event; the drawer only ever shows a real Install button
+// when this is set, never a button that does nothing on the current device.
+let deferredInstallPrompt = null;
+
+// Registered at module scope (not inside setupEventListeners(), which only
+// runs after renderApp()) so a `beforeinstallprompt` firing before the app
+// has rendered is still captured — updateInstallSection() itself guards
+// against the drawer DOM not existing yet.
+window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallSection();
+});
+window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    updateInstallSection();
+});
+
 // Translations
 const translations = {
     "zh": {
@@ -103,6 +128,70 @@ const translations = {
             "CarouselShort": "轉盤",
             "ReturnGate": "回程登機門",
             "ReturnGateShort": "回程門"
+        },
+        "drawer": {
+            "aboutDrawerTitle": "關於",
+            "closeLabel": "關閉",
+            "whatItDoes": {
+                "heading": "這個 App 可以幫你什麼",
+                "body": [
+                    "給長榮、華航、星宇（含立榮、華信）組員的桃園機場航班板。出發看登機門，到達看行李轉盤。",
+                    "可以裝到手機主畫面當 App 用，不必經過 App Store。"
+                ]
+            },
+            "opensOnArrival": {
+                "heading": "打開就是到達",
+                "body": [
+                    "預設顯示到達（行李轉盤）—— 回來已經很累了，打開就看得到。",
+                    "要看出發按右上角 🛫。出發時還有力氣，多按一顆沒關係。",
+                    "這是唯一我們刻意不記住的選擇。"
+                ]
+            },
+            "whichFlights": {
+                "heading": "你會看到哪些班機",
+                "body": [
+                    "現在前後大約兩小時：出發往後兩小時，到達從 40 分鐘前算起。",
+                    "最下面那行會寫出實際的日期和時間範圍。",
+                    "每次載入都重抓最新資料。出發過了移民官，建議再開一次確認登機門。"
+                ]
+            },
+            "install": {
+                "heading": "裝成 App",
+                "iosSteps": "iPhone／iPad（Safari）：分享 → 加入主畫面 → 新增",
+                "iosFallback": "找不到「分享」就先點網址列旁的 ⋯；面板裡沒有「加入主畫面」，滑到底點「編輯動作」打開。",
+                "installButtonLabel": "安裝",
+                "offlineNote": "裝好之後沒網路也開得起來，會顯示上次的資料和時間。"
+            },
+            "share": {
+                "heading": "分享給同事",
+                "body": "按「分享」，會跳出你手機原本的分享面板。",
+                "shareButtonLabel": "分享",
+                "copyLinkLabel": "複製連結",
+                "copiedConfirmation": "已複製連結"
+            },
+            "remembers": {
+                "heading": "它記得你的選擇",
+                "body": [
+                    "航空公司、機型、主題、語言 —— 選過就記住，每開一次重新計時。",
+                    "語言沒選過時跟著系統走。"
+                ]
+            },
+            "returnGateColumn": {
+                "heading": "出發板最右邊那一欄",
+                "bodyBefore": "同一天回程班機回到桃園的到達登機門。",
+                "bodyAfter": [
+                    "只在符合條件時顯示，留白不代表沒有回程。以下不顯示：過夜班或長程、回程換機型（就不是同一組人）、班號或時間對不上。",
+                    "當日來回是程式依我們設定的規則判斷，各家班型安排不同。",
+                    "你對顯示邏輯有想法，非常歡迎告訴我。"
+                ]
+            },
+            "feedback": {
+                "heading": "覺得哪裡怪怪的",
+                "body": [
+                    "看到本人直接跟我說最快，想留紀錄就開 GitHub issue。",
+                    "別貼班表細節或個資 —— 那邊是公開的。"
+                ]
+            }
         }
     },
     "en": {
@@ -139,6 +228,70 @@ const translations = {
             "CarouselShort": "Carousel",
             "ReturnGate": "Return Gate",
             "ReturnGateShort": "Return"
+        },
+        "drawer": {
+            "aboutDrawerTitle": "About",
+            "closeLabel": "Close",
+            "whatItDoes": {
+                "heading": "What this app does for you",
+                "body": [
+                    "A Taoyuan Airport flight board for crew on EVA Air, China Airlines and STARLUX (including UNI Air and Mandarin). Departures show your gate, arrivals show your carousel.",
+                    "You can install it to your home screen and use it like any other app — no App Store needed."
+                ]
+            },
+            "opensOnArrival": {
+                "heading": "It opens on arrivals",
+                "body": [
+                    "Arrivals — your baggage carousel — is what you see first. You're tired coming home; it should just be there.",
+                    "For departures, tap 🛫 top right. You've got energy on the way out, one more tap is fine.",
+                    "It's the one choice we deliberately don't remember."
+                ]
+            },
+            "whichFlights": {
+                "heading": "Which flights you'll see",
+                "body": [
+                    "Roughly two hours around now: departures two hours ahead, arrivals from 40 minutes ago.",
+                    "The line under the table tells you the exact date and range.",
+                    "Every load pulls fresh data. Once you're through immigration outbound, open it again and check your gate hasn't moved."
+                ]
+            },
+            "install": {
+                "heading": "Install it",
+                "iosSteps": "iPhone / iPad (Safari): Share → Add to Home Screen → Add",
+                "iosFallback": "Can't find Share? Tap ⋯ next to the address bar. No \"Add to Home Screen\" in the sheet? Scroll to the bottom and tap Edit Actions to switch it on.",
+                "installButtonLabel": "Install",
+                "offlineNote": "Once installed it opens without a connection, showing the last data it pulled and when."
+            },
+            "share": {
+                "heading": "Share it with your colleagues",
+                "body": "Tap Share — your phone's own share sheet opens.",
+                "shareButtonLabel": "Share",
+                "copyLinkLabel": "Copy link",
+                "copiedConfirmation": "Link copied"
+            },
+            "remembers": {
+                "heading": "It remembers what you picked",
+                "body": [
+                    "Airline, aircraft type, theme, language — picked once, kept, and the clock resets every time you open it.",
+                    "Language follows your system until you choose one yourself."
+                ]
+            },
+            "returnGateColumn": {
+                "heading": "That last column on the departures board",
+                "bodyBefore": "The arrival gate of the return leg, back at Taoyuan the same day.",
+                "bodyAfter": [
+                    "It only appears when the conditions are met, and blank doesn't mean there's no return. We don't show it when: it's a night stop or long haul, the return is a different aircraft type (so not the same crew), or the flight numbers or timings don't line up.",
+                    "Same-day returns are worked out by rules we set, and every airline schedules differently.",
+                    "If you've got a better idea about the logic, I'd really like to hear it."
+                ]
+            },
+            "feedback": {
+                "heading": "If something looks off",
+                "body": [
+                    "Easiest is to tell me in person; open a GitHub issue if you'd rather it were written down.",
+                    "Please don't post roster details or personal information — that side is public."
+                ]
+            }
         }
     },
     "jp": {
@@ -175,6 +328,71 @@ const translations = {
             "CarouselShort": "回転台",
             "ReturnGate": "復路ゲート",
             "ReturnGateShort": "復路"
+        },
+        "drawer": {
+            "aboutDrawerTitle": "このアプリについて",
+            "closeLabel": "閉じる",
+            "whatItDoes": {
+                "heading": "このアプリでできること",
+                "body": [
+                    "エバー航空・チャイナエアライン・スターラックス航空（ユニー航空、マンダリン航空を含む）の乗務員向け、桃園空港のフライトボードです。出発は搭乗ゲート、到着は荷物回転台。",
+                    "App Store を通さずに、ホーム画面に追加してアプリのように使えます。"
+                ]
+            },
+            "opensOnArrival": {
+                "heading": "開くと到着が出ます",
+                "body": [
+                    "最初に出るのは到着 ＝ 荷物回転台です。帰りは疲れています。開いてすぐ見えるべきだと思っています。",
+                    "出発を見るときは右上の 🛫 を。行きはまだ元気なので、ひとつ多く押しても大丈夫です。",
+                    "これだけは、あえて覚えないようにしています。"
+                ]
+            },
+            "whichFlights": {
+                "heading": "表示される便",
+                "body": [
+                    "現在の前後およそ2時間。出発は2時間先まで、到着は40分前から。",
+                    "表の下の行に、実際の日付と時間帯が出ます。",
+                    "開くたびに最新のデータを取り直します。出発時は出国審査を通ったあと、もう一度開いてゲートの変更をご確認ください。"
+                ]
+            },
+            "install": {
+                "heading": "インストール",
+                "iosSteps": "iPhone / iPad（Safari）：共有 → ホーム画面に追加 → 追加",
+                "iosFallback": "「共有」が見つからないときは、アドレスバー横の ⋯ をタップ。共有シートに「ホーム画面に追加」がないときは、一番下の「アクションを編集」から有効にしてください。",
+                "installButtonLabel": "インストール",
+                "offlineNote": "インストール後は通信がなくても開けます。最後に取得したデータと、その時刻を表示します。"
+            },
+            "share": {
+                "heading": "同僚に教える",
+                "body": "「共有」をタップすると、お使いのスマートフォンの共有画面が開きます。",
+                "shareButtonLabel": "共有",
+                "copyLinkLabel": "リンクをコピー",
+                "copiedConfirmation": "リンクをコピーしました"
+            },
+            "remembers": {
+                "heading": "選んだ設定は覚えています",
+                "body": [
+                    "航空会社・機材・テーマ・言語 — 一度選べばそのまま。開くたびに期限がリセットされます。",
+                    "言語は、ご自身で選ぶまではシステム設定に従います。"
+                ]
+            },
+            "returnGateColumn": {
+                "heading": "出発ボードの一番右の列",
+                "bodyBefore": "同じ日に桃園へ戻ってくる、帰り便の到着ゲートです。",
+                "bodyAfter": [
+                    "条件を満たしたときだけ表示されます。空欄は「帰り便がない」という意味ではありません。次の場合は表示しません：ステイや長距離線、帰り便の機材が違う（＝同じ乗務員ではない）、便名や時刻が合わない。",
+                    "日帰りかどうかは私たちが決めた規則で判定しています。航空会社ごとにスケジュールの組み方は異なります。",
+                    "表示の考え方について何かお気づきの点があれば、ぜひ教えてください。"
+                ]
+            },
+            "feedback": {
+                "heading": "おかしいと思ったら",
+                "body": [
+                    "本人に直接言っていただくのが一番早いです。記録に残したい場合は GitHub の issue をどうぞ。",
+                    "乗務スケジュールの詳細や個人情報は書かないでください。公開されている場所です。"
+                ]
+            },
+            "disclaimer": "※ この日本語は AI による自動翻訳です。作者は日本語が読めないため、不自然な表現が残っているかもしれません。おかしいと感じた箇所は英語版をご参照いただけますと幸いです。ご不便をおかけして、大変申し訳ございません。"
         }
     }
 };
@@ -188,6 +406,7 @@ function renderApp() {
             <div class="theme-buttons-container">
                 <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
                 <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
+                <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">☰</div>
             </div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
@@ -212,6 +431,13 @@ function renderApp() {
                     </div>
                 </div>
             </div>
+        </div>
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="about-drawer" aria-labelledby="about-drawer-title">
+            <div class="offcanvas-header">
+                <h5 class="offcanvas-title" id="about-drawer-title"></h5>
+                <button type="button" id="about-drawer-close" class="drawer-close-btn" data-bs-dismiss="offcanvas" aria-label="Close">✕</button>
+            </div>
+            <div class="offcanvas-body" id="about-drawer-body"></div>
         </div>
     `;
 }
@@ -273,6 +499,7 @@ function detectLanguage() {
     fetchData();
     updateApiParams();
     updateLanguageLinks();
+    updateDrawerText();
 }
 
 function changeLanguageFont() {
@@ -324,6 +551,190 @@ function changeLanguage(lang) {
     document.getElementById("flightButtons").innerHTML = "";
     document.getElementById('planeTypeButtons').innerHTML = "";
     updateLanguageLinks();
+    updateDrawerText();
+}
+
+// ---------------------------------------------------------------------------
+// About drawer (issue #46)
+// ---------------------------------------------------------------------------
+
+// Wraps each paragraph in the current language's <p>, so a multi-line copy
+// block from `translations` renders as real paragraphs rather than raw \n.
+function drawerParagraphs(lines) {
+    return lines.map(line => `<p class="drawer-section-body">${line}</p>`).join('');
+}
+
+// Issue #33's return-gate column, reproduced as a real table row (not plain
+// text) so the drawer's worked example is visually identical to the live
+// feature. Values are the flight the issue itself specifies and are
+// language-independent (flight/gate codes), only the headers are localized.
+function buildDrawerExampleTable(lang) {
+    const headers = translations[lang]["tableHeaders"];
+    return `
+        <table class="table table-sm table-striped table-borderless drawer-example-table">
+            <thead class="table-br">
+                <tr>
+                    <th>${headers["FlightNumber"]}</th>
+                    <th class="text-center">${headers["Destination"]}</th>
+                    <th class="text-center">${headers["Terminal"]}</th>
+                    <th class="text-center">${headers["Gate"]}</th>
+                    <th class="text-center">${headers["ReturnGate"]}</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><img alt="" width="28" height="20" src="https://www.taoyuan-airport.com/uploads/airlogo/BR.gif">BR178</td>
+                    <td class="text-center">KIX</td>
+                    <td class="text-center">T2</td>
+                    <td class="text-center">C5</td>
+                    <td class="text-center"><span class="return-gate-cell">←&nbsp;BR177&nbsp;C7</span></td>
+                </tr>
+            </tbody>
+        </table>`;
+}
+
+// Builds the full offcanvas body for the given language. Re-run on every
+// language change (drawer content is destroyed and rebuilt, same as the
+// rest of the app's i18n approach) — updateInstallSection() must be called
+// again afterwards since it targets elements this just recreated.
+function buildDrawerContent(lang) {
+    const d = translations[lang]["drawer"];
+    const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+    const shareButtonLabel = canShare ? d.share.shareButtonLabel : d.share.copyLinkLabel;
+
+    let html = '';
+
+    html += `<section class="drawer-section"><h6 class="drawer-section-title">${d.whatItDoes.heading}</h6>${drawerParagraphs(d.whatItDoes.body)}</section>`;
+    html += `<section class="drawer-section"><h6 class="drawer-section-title">${d.opensOnArrival.heading}</h6>${drawerParagraphs(d.opensOnArrival.body)}</section>`;
+    html += `<section class="drawer-section"><h6 class="drawer-section-title">${d.whichFlights.heading}</h6>${drawerParagraphs(d.whichFlights.body)}</section>`;
+
+    html += `
+        <section class="drawer-section" id="drawer-install-section">
+            <h6 class="drawer-section-title">${d.install.heading}</h6>
+            <div id="drawer-install-ios">
+                <p class="drawer-section-body">${d.install.iosSteps}</p>
+                <p class="drawer-section-body drawer-fallback-note">${d.install.iosFallback}</p>
+            </div>
+            <div id="drawer-install-button-wrap">
+                <button type="button" id="drawer-install-btn" class="btn btn-sm btn-outline-secondary">${d.install.installButtonLabel}</button>
+            </div>
+            <p class="drawer-section-body">${d.install.offlineNote}</p>
+        </section>`;
+
+    html += `
+        <section class="drawer-section">
+            <h6 class="drawer-section-title">${d.share.heading}</h6>
+            <p class="drawer-section-body">${d.share.body}</p>
+            <div class="drawer-share-row">
+                <button type="button" id="drawer-share-btn" class="btn btn-sm btn-outline-secondary">${shareButtonLabel}</button>
+                <span id="drawer-share-confirmation" class="drawer-inline-confirmation" hidden>${d.share.copiedConfirmation}</span>
+            </div>
+        </section>`;
+
+    html += `<section class="drawer-section"><h6 class="drawer-section-title">${d.remembers.heading}</h6>${drawerParagraphs(d.remembers.body)}</section>`;
+
+    html += `
+        <section class="drawer-section">
+            <h6 class="drawer-section-title">${d.returnGateColumn.heading}</h6>
+            <p class="drawer-section-body">${d.returnGateColumn.bodyBefore}</p>
+            ${buildDrawerExampleTable(lang)}
+            ${drawerParagraphs(d.returnGateColumn.bodyAfter)}
+        </section>`;
+
+    html += `<section class="drawer-section"><h6 class="drawer-section-title">${d.feedback.heading}</h6>${drawerParagraphs(d.feedback.body)}</section>`;
+
+    if (d.disclaimer) {
+        html += `<p class="drawer-disclaimer">${d.disclaimer}</p>`;
+    }
+
+    return html;
+}
+
+// display-mode: standalone covers Android/desktop PWA installs;
+// navigator.standalone is the legacy iOS Safari signal (never gets a
+// display-mode media match). Checking both is what lets the install section
+// hide itself once the app is already installed, on every platform that can
+// install it.
+function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+// Three states, checked in order: already installed (hide the section
+// entirely) > beforeinstallprompt captured (show the real Install button,
+// hide the iOS text) > neither (assume iOS Safari or a browser that will
+// never fire the event; show the text steps, no button). Re-run after every
+// drawer rebuild (language change) and every install-state transition
+// (prompt captured, prompt resolved, appinstalled).
+function updateInstallSection() {
+    const section = document.getElementById('drawer-install-section');
+    if (!section) return;
+
+    if (isStandalone()) {
+        section.hidden = true;
+        return;
+    }
+    section.hidden = false;
+
+    const iosBlock = document.getElementById('drawer-install-ios');
+    const buttonWrap = document.getElementById('drawer-install-button-wrap');
+    const showButton = Boolean(deferredInstallPrompt);
+    if (iosBlock) iosBlock.hidden = showButton;
+    if (buttonWrap) buttonWrap.hidden = !showButton;
+}
+
+function handleInstallButtonClick() {
+    if (!deferredInstallPrompt) return;
+    const promptEvent = deferredInstallPrompt;
+    promptEvent.prompt();
+    promptEvent.userChoice.finally(() => {
+        deferredInstallPrompt = null;
+        updateInstallSection();
+    });
+}
+
+// navigator.share opens the OS share sheet (no per-locale copy to write or
+// maintain); where it's unavailable the same button falls back to writing
+// the URL to the clipboard and showing an inline confirmation — never
+// alert().
+function handleShareButtonClick() {
+    const shareData = { title: document.title, url: window.location.href };
+    if (typeof navigator.share === 'function') {
+        // AbortError on user cancellation is expected and silent; the OS
+        // share sheet itself already communicated the outcome.
+        navigator.share(shareData).catch(() => {});
+        return;
+    }
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(shareData.url).then(showShareConfirmation).catch(() => {});
+    }
+}
+
+function showShareConfirmation() {
+    const el = document.getElementById('drawer-share-confirmation');
+    if (!el) return;
+    el.hidden = false;
+    clearTimeout(showShareConfirmation.timer);
+    showShareConfirmation.timer = setTimeout(() => {
+        el.hidden = true;
+    }, 2000);
+}
+
+function updateDrawerText() {
+    const d = translations[currentLanguage]["drawer"];
+
+    const toggleBtn = document.getElementById('about-drawer-toggle');
+    if (toggleBtn) toggleBtn.setAttribute('aria-label', d.aboutDrawerTitle);
+
+    const titleEl = document.getElementById('about-drawer-title');
+    if (titleEl) titleEl.innerText = d.aboutDrawerTitle;
+
+    const closeBtn = document.getElementById('about-drawer-close');
+    if (closeBtn) closeBtn.setAttribute('aria-label', d.closeLabel);
+
+    const bodyEl = document.getElementById('about-drawer-body');
+    if (bodyEl) bodyEl.innerHTML = buildDrawerContent(currentLanguage);
+
+    updateInstallSection();
 }
 
 function getUTC8Date() {
@@ -1353,6 +1764,18 @@ function setupEventListeners() {
         if (themeToggle) {
             event.preventDefault();
             toggleTheme();
+        }
+
+        const installBtn = event.target.closest('#drawer-install-btn');
+        if (installBtn) {
+            event.preventDefault();
+            handleInstallButtonClick();
+        }
+
+        const shareBtn = event.target.closest('#drawer-share-btn');
+        if (shareBtn) {
+            event.preventDefault();
+            handleShareButtonClick();
         }
     });
 
