@@ -377,6 +377,15 @@ test.describe('Browser Language Detection Tests', () => {
         await page.waitForSelector('#airlineButtons a[data-airline=""] .airline-full', { timeout: 8000 })
         await expect(page.locator('#airlineButtons a[data-airline=""] .airline-full')).toBeVisible()
 
+        // Guard against the seeded cookie silently not taking (e.g. a baseURL
+        // host change breaking `domain: 'localhost'`): if it never landed,
+        // every assertion below would pass for the wrong reason, since a
+        // clean auto-detected load looks identical. renewPins() re-writes
+        // whatever `lang` it read without validating it, so a value that was
+        // adopted (not ignored) survives the load unchanged.
+        const langCookie = (await page.context().cookies()).find(c => c.name === 'lang')
+        expect(langCookie?.value).toBe(badValue)
+
         // Fell through to auto-detection rather than adopting the bad value as-is.
         const activeLang = await page.locator('.lang-links a.active').getAttribute('data-lang')
         expect(['zh', 'en', 'jp']).toContain(activeLang)
