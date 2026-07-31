@@ -109,6 +109,20 @@ describe('findReturnLeg — F1 (issue #33 amendment): PlaneNo (aircraft type) mu
     })
 })
 
+describe('findReturnLeg — R1 (PR #35 review): aircraft FAMILY equality, not exact PlaneNo string', () => {
+    it('same family, different variant (B787-9 -> B787-10) still matches — type ratings are family-level', () => {
+        const d = dep('CI', '110', 'FUK', '2026/07/31', '07:00:00', 'C3', 'B787-9')
+        const a = arr('CI', '111', 'FUK', '2026/07/31', '13:40:00', 'C4', 'B787-10')
+        expect(findReturnLeg(d, [a])).toBe(a)
+    })
+
+    it('unresolvable family on either leg is no match, even when the raw PlaneNo strings are identical (E190 does not parse as [AB]\\d{3})', () => {
+        const d = dep('CI', '110', 'FUK', '2026/07/31', '07:00:00', 'C3', 'E190')
+        const a = arr('CI', '111', 'FUK', '2026/07/31', '13:40:00', 'C4', 'E190')
+        expect(findReturnLeg(d, [a])).toBeNull()
+    })
+})
+
 describe('findReturnLeg — F2 (issue #33 amendment): implied-ground upper bound (2*block + 4h)', () => {
     it('BR67 BKK 08:20 -> BR68 arr 21:35 (~13.2h gap, ~6.0h implied ground): no match — implied ground exceeds the 4h ceiling', () => {
         const d = dep('BR', '67', 'BKK', '2026/07/31', '08:20:00', 'C2')
@@ -312,11 +326,11 @@ describe('getUncoveredCityCodes — N1 (issue #33): fail loudly when a CityCode 
     })
 })
 
-describe('flight-number parity invariant (issue #33)', () => {
-    it('abs(ΔFlightNo) == 1 always implies opposite parity — a mathematical invariant of consecutive integers, not something derived from data', () => {
-        for (let n = 1; n < 200; n++) {
-            expect(n % 2 === (n + 1) % 2).toBe(false)
-        }
+describe('findReturnLeg — R2 (PR #35 review): the adjacency rule rejects non-adjacent flight numbers', () => {
+    it('a ΔFlightNo == 2 candidate that is otherwise perfectly plausible (same carrier/city/date/family, gap inside the band) is not matched', () => {
+        const d = dep('CI', '110', 'FUK', '2026/07/31', '07:00:00', 'C3')
+        const notAdjacent = arr('CI', '112', 'FUK', '2026/07/31', '13:40:00', 'C4')
+        expect(findReturnLeg(d, [notAdjacent])).toBeNull()
     })
 })
 

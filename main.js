@@ -1014,24 +1014,27 @@ function dayReturn(aCode, cityCode) {
     return true;
 }
 
-// The Taoyuan Airport API represents "no aircraft type assigned yet" as
-// either an empty string or the literal string "-". Two rows both carrying
-// "-" must NOT be treated as an equal PlaneNo match (issue #33: "do not
-// assume two unknowns are equal"). Kept identical to blockTimes.js.
-function isMissingPlaneNo(planeNo) {
-    return !planeNo || planeNo === '-';
-}
+// Aircraft type equality is checked at the family level (extractPlaneFamily,
+// e.g. A321-271N -> A321), not exact PlaneNo string equality — type ratings
+// are family-level, so a -9/-10 or -200/-271N swap on the return leg is
+// still the same crew's aircraft (issue #33 amendment). An unresolvable
+// family (empty, "-", or no [AB]\d{3} prefix) on either leg is never treated
+// as a match — this is deliberately the opposite of filterByPlaneType(),
+// which lets unresolvable families pass so a pilot doesn't miss their own
+// assignment. Here a wrong gate is worse than a blank cell, so unknown must
+// fail. Kept identical to blockTimes.js.
 
 // Find the same-day return leg for a departure among a full-day arrivals
 // list. See src/utils/blockTimes.js for the full rule writeup + rationale
-// (PlaneNo equality, gap upper bound, multi-candidate tie-break, city gate,
-// etc.) — kept identical here. dayReturn() is NOT applied here; it's a
-// separate render-time override (see buildReturnGateCell).
+// (aircraft-family equality, gap upper bound, multi-candidate tie-break,
+// city gate, etc.) — kept identical here. dayReturn() is NOT applied here;
+// it's a separate render-time override (see buildReturnGateCell).
 function findReturnLeg(departure, arrivals) {
     const dFlightNo = parseInt(departure.FlightNo, 10);
     if (!Number.isFinite(dFlightNo)) return null;
 
-    if (isMissingPlaneNo(departure.PlaneNo)) return null;
+    const dFamily = extractPlaneFamily(departure.PlaneNo);
+    if (dFamily === null) return null;
 
     const block = BLOCK_TIME_MINUTES[departure.CityCode];
     if (block == null) return null;
@@ -1046,7 +1049,7 @@ function findReturnLeg(departure, arrivals) {
         if (arrival.ACode !== departure.ACode) continue;
         if (arrival.CityCode !== departure.CityCode) continue;
         if (arrival.ODate !== departure.ODate) continue;
-        if (isMissingPlaneNo(arrival.PlaneNo) || arrival.PlaneNo !== departure.PlaneNo) continue;
+        if (extractPlaneFamily(arrival.PlaneNo) !== dFamily) continue;
         const aFlightNo = parseInt(arrival.FlightNo, 10);
         if (!Number.isFinite(aFlightNo)) continue;
         if (Math.abs(aFlightNo - dFlightNo) !== 1) continue;

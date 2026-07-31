@@ -1,3 +1,5 @@
+import { extractPlaneFamily } from './flightUtils.js';
+
 // Hand-maintained TPE block-time table (issue #33).
 //
 // block_minutes(city) = great_circle_km(TPE, city) / 800 km/h + 30 min,
@@ -107,14 +109,6 @@ function parseODateTime(record) {
     return new Date(`${record.ODate.replace(/\//g, '-')}T${record.OTime}+08:00`);
 }
 
-// The Taoyuan Airport API represents "no aircraft type assigned yet" as
-// either an empty string or the literal string "-", not just falsy/absent.
-// Two rows both carrying "-" must NOT be treated as an equal PlaneNo match
-// (issue #33: "do not assume two unknowns are equal").
-function isMissingPlaneNo(planeNo) {
-    return !planeNo || planeNo === '-';
-}
-
 /**
  * dayReturn(ACode, CityCode) — crew-pattern knowledge, not computable from
  * block time (issue #33: CTS at 3.9h block is a night stop while BKK at 3.6h
@@ -147,9 +141,15 @@ export function dayReturn(aCode, cityCode) {
  *   - same ACode
  *   - same CityCode (arrival's origin == departure's destination)
  *   - same ODate as the departure's own record (not "today")
- *   - same PlaneNo (aircraft TYPE) on both legs — a crew flying a same-day
- *     return does not change equipment (type rating). Missing PlaneNo
- *     (`-`/empty) on EITHER leg is treated as no match, never as equal.
+ *   - same aircraft FAMILY (extractPlaneFamily(PlaneNo), e.g. A321-271N ->
+ *     A321) on both legs — a crew flying a same-day return does not change
+ *     equipment, and type ratings are family-level (a -9/-10 or -200/-271N
+ *     swap on the return leg is still the same rating). An unresolvable
+ *     family (empty, "-", or no [AB]\d{3} prefix) on EITHER leg is treated
+ *     as no match, never as equal — deliberately the opposite of
+ *     filterByPlaneType() in flightUtils.js, which lets unresolvable
+ *     families pass so a pilot doesn't miss their own assignment. Here a
+ *     wrong gate is worse than a blank cell, so unknown must fail.
  *   - arrival's scheduled time later than the departure's
  *   - |FlightNo(arrival) - FlightNo(departure)| == 1
  *   - 2*block(city) + TURNAROUND_MINUTES <= gap <= 2*block(city) + 4h
@@ -169,6 +169,10 @@ export function dayReturn(aCode, cityCode) {
  * departures — on rare dense routes the same arrival can be the best match
  * for two different departures.
  *
+ * extractPlaneFamily() splits A320 from A321 even though they share one type
+ * rating; no A320 operates these routes today, and the failure direction is
+ * a blank cell, so this is left as-is rather than special-cased.
+ *
  * abs(ΔFlightNo) == 1 had zero exceptions in one day of live data, but a
  * codeshare-numbered or seasonal return leg could break it in the future;
  * the failure mode is a blank cell (the safe failure), so this deliberately
@@ -182,7 +186,8 @@ export function findReturnLeg(departure, arrivals) {
     const dFlightNo = parseInt(departure.FlightNo, 10);
     if (!Number.isFinite(dFlightNo)) return null;
 
-    if (isMissingPlaneNo(departure.PlaneNo)) return null;
+    const dFamily = extractPlaneFamily(departure.PlaneNo);
+    if (dFamily === null) return null;
 
     const block = BLOCK_TIME_MINUTES[departure.CityCode];
     if (block == null) return null;
@@ -197,7 +202,7 @@ export function findReturnLeg(departure, arrivals) {
         if (arrival.ACode !== departure.ACode) continue;
         if (arrival.CityCode !== departure.CityCode) continue;
         if (arrival.ODate !== departure.ODate) continue;
-        if (isMissingPlaneNo(arrival.PlaneNo) || arrival.PlaneNo !== departure.PlaneNo) continue;
+        if (extractPlaneFamily(arrival.PlaneNo) !== dFamily) continue;
         const aFlightNo = parseInt(arrival.FlightNo, 10);
         if (!Number.isFinite(aFlightNo)) continue;
         if (Math.abs(aFlightNo - dFlightNo) !== 1) continue;
