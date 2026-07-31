@@ -191,7 +191,10 @@ export function findReturnLeg(departure, arrivals) {
 
     const block = BLOCK_TIME_MINUTES[departure.CityCode];
     if (block == null) return null;
-    const minGapMinutes = 2 * block + TURNAROUND_MINUTES;
+    // #40 item 3: route the lower bound through getMinPlausibleRoundTripMinutes()
+    // instead of re-deriving it inline, so returnleg.test.js's direct test of
+    // that helper actually covers the value findReturnLeg() uses.
+    const minGapMinutes = getMinPlausibleRoundTripMinutes(departure.CityCode);
     const maxGapMinutes = 2 * block + MAX_IMPLIED_GROUND_MINUTES;
 
     const dTime = parseODateTime(departure);

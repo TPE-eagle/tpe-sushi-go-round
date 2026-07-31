@@ -302,8 +302,17 @@ export async function waitForApiAndTable(page, timeout = 8000) {
   }
 }
 
-export async function setupMockApiRoute(page, mockData = null) {
+// arrivalsMockData (issue #40 item 5): when set, AState='A' requests are
+// served this list instead of `mockData`/baseData. Every other spec relies
+// on both AState requests being served the same re-tagged list, so this
+// defaults to baseData to leave that behavior unchanged. It exists because
+// departures mode's non-blocking return-leg pairing fetch (#33) also sends
+// AState='A' — without a distinct payload, that fetch sees the exact same
+// records as the departures list (just relabeled), so a departure can never
+// pair with a return leg that is, by construction, itself.
+export async function setupMockApiRoute(page, mockData = null, arrivalsMockData = null) {
   const baseData = mockData || getMockFlightData()
+  const returnLegBaseData = arrivalsMockData || baseData
 
   await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
     const request = route.request()
@@ -317,8 +326,9 @@ export async function setupMockApiRoute(page, mockData = null) {
     let body = {}
     try { body = request.postDataJSON() || {} } catch (_) { /* empty body is fine */ }
     const mode = body.AState === 'D' ? 'D' : 'A'
+    const sourceData = mode === 'D' ? baseData : returnLegBaseData
 
-    const flightData = baseData.map((flight) => {
+    const flightData = sourceData.map((flight) => {
       let name
       if (langHeader.startsWith('zh')) {
         name = flight.AName

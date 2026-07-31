@@ -399,12 +399,28 @@ function fetchData() {
 
     // Issue #33 — kick off the return-leg arrivals fetch in parallel,
     // non-blocking. The departures table renders immediately with the 5th
-    // column blank; fetchReturnLegArrivals() back-fills it when it resolves.
-    // The token guards against a slow fetch applying stale results after the
-    // user has toggled mode, changed language, or refreshed again.
+    // column blank (or, if a previous cycle already populated it, the
+    // previous value — see #40 item 1 below) until fetchReturnLegArrivals()
+    // back-fills it. The token guards against a slow fetch applying stale
+    // results after the user has toggled mode, changed language, or
+    // refreshed again.
+    //
+    // #40 item 1: deliberately NOT resetting returnLegArrivals to null here.
+    // Every fetchData() call used to blank it unconditionally, which
+    // flickered the 5th column empty-then-full on every refresh, language
+    // switch, and mode toggle. returnLegFetchToken already guarantees a
+    // stale resolve can't apply, so keeping the previous array until the
+    // next fetch resolves gives the same staleness guarantee without the
+    // flicker — worst case it briefly shows the prior cycle's pairing.
     returnLegFetchToken += 1;
     const requestToken = returnLegFetchToken;
-    returnLegArrivals = null;
+    // #40 item 2: mainDataReadyForToken was only ever assigned forward
+    // (never reset), so a value left over from a previous token could
+    // spuriously equal a later token and let a still-pending primary
+    // fetch's render-gate check pass early. Resetting to -1 for every new
+    // token means the render-gate at fetchReturnLegArrivals() can only
+    // pass once THIS token's own primary fetch has actually resolved.
+    mainDataReadyForToken = -1;
     if (currentFlightMode === 'D') {
         fetchReturnLegArrivals(requestToken);
     }
@@ -533,12 +549,30 @@ function fetchReturnLegArrivals(token) {
         }
     };
 
+    // Item 1 (#40) keeps the previous returnLegArrivals array across a
+    // *successful* refresh, so a path where nothing else is coming for this
+    // token has to blank it explicitly — otherwise a stale gate outlives the
+    // fetch that was meant to replace it. Only acts if this token is still
+    // current: if a newer fetchData() call already superseded it, that call
+    // owns the cleanup (blanking here would reintroduce item 1's flicker).
+    const blankResult = (staleToken) => {
+        if (staleToken !== returnLegFetchToken) return;
+        returnLegArrivals = null;
+        if (currentFlightMode === 'D' && mainDataReadyForToken === staleToken) {
+            renderFilteredView();
+        }
+    };
+
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
     const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
     if (!isTestEnvironment && !isOnline()) {
         const cachedData = getCachedFlightData(cacheKey);
-        if (cachedData) applyResult(cachedData.data);
+        if (cachedData) {
+            applyResult(cachedData.data);
+        } else {
+            blankResult(token);
+        }
         return;
     }
 
@@ -565,7 +599,9 @@ function fetchReturnLegArrivals(token) {
         applyResult(data);
     })
     .catch(() => {
-        // Silent — the column just stays blank, same as "no confident match".
+        // No fresh data is coming for this token — blank rather than leave
+        // item 1's previous-cycle array showing indefinitely (see blankResult).
+        blankResult(token);
     });
 }
 
@@ -1038,7 +1074,10 @@ function findReturnLeg(departure, arrivals) {
 
     const block = BLOCK_TIME_MINUTES[departure.CityCode];
     if (block == null) return null;
-    const minGapMinutes = 2 * block + TURNAROUND_MINUTES;
+    // #40 item 3: route the lower bound through getMinPlausibleRoundTripMinutes()
+    // instead of re-deriving it inline, so returnleg.test.js's direct test of
+    // that helper actually covers the value findReturnLeg() uses.
+    const minGapMinutes = getMinPlausibleRoundTripMinutes(departure.CityCode);
     const maxGapMinutes = 2 * block + MAX_IMPLIED_GROUND_MINUTES;
 
     const dTime = parseODateTime(departure);
