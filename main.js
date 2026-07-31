@@ -482,8 +482,12 @@ function detectLanguage() {
     // An explicit prior choice always wins; auto-detection only applies when
     // no cookie is present (never persisted, so a phone/system-language
     // change is picked up again the next time the cookie is absent/cleared).
-    if (checkCookie(LANGUAGE_COOKIE_NAME)) {
-        currentLanguage = getCookie(LANGUAGE_COOKIE_NAME);
+    // An unrecognised cookie value (corrupted, or a future sibling app on the
+    // same Pages host writing a generic `lang` cookie) must not brick the
+    // page — fall through to auto-detection instead of trusting it verbatim.
+    const cookieLang = checkCookie(LANGUAGE_COOKIE_NAME) ? getCookie(LANGUAGE_COOKIE_NAME) : null;
+    if (cookieLang && Object.prototype.hasOwnProperty.call(translations, cookieLang)) {
+        currentLanguage = cookieLang;
     } else {
         const browserLang = navigator.language || navigator.userLanguage;
         if (browserLang.startsWith("zh")) {
@@ -583,7 +587,7 @@ function buildDrawerExampleTable(lang) {
             </thead>
             <tbody>
                 <tr>
-                    <td><img alt="" width="28" height="20" src="https://www.taoyuan-airport.com/uploads/airlogo/BR.gif">BR178</td>
+                    <td>BR178</td>
                     <td class="text-center">KIX</td>
                     <td class="text-center">T2</td>
                     <td class="text-center">C5</td>
@@ -600,6 +604,7 @@ function buildDrawerExampleTable(lang) {
 function buildDrawerContent(lang) {
     const d = translations[lang]["drawer"];
     const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+    const canCopy = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.writeText);
     const shareButtonLabel = canShare ? d.share.shareButtonLabel : d.share.copyLinkLabel;
 
     let html = '';
@@ -626,7 +631,7 @@ function buildDrawerContent(lang) {
             <h6 class="drawer-section-title">${d.share.heading}</h6>
             <p class="drawer-section-body">${d.share.body}</p>
             <div class="drawer-share-row">
-                <button type="button" id="drawer-share-btn" class="btn btn-sm btn-outline-secondary">${shareButtonLabel}</button>
+                ${(canShare || canCopy) ? `<button type="button" id="drawer-share-btn" class="btn btn-sm btn-outline-secondary">${shareButtonLabel}</button>` : ''}
                 <span id="drawer-share-confirmation" class="drawer-inline-confirmation" hidden>${d.share.copiedConfirmation}</span>
             </div>
         </section>`;

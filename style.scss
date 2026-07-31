@@ -415,7 +415,11 @@ body {
  *   70%   |    5.74     |    5.14       |    6.23    |    5.43
  * 70% text-color / 30% backdrop clears the 4.5:1 floor on all four; 65%
  * missed the light striped row (nth-child(5) on an odd tbody row). */
-#output table tbody td:nth-child(5) .return-gate-cell {
+/* Also targets the drawer's worked-example table (.drawer-example-table),
+ * which lives outside #output — same rule, not a separate copy, so the two
+ * can't drift out of sync. */
+#output table tbody td:nth-child(5) .return-gate-cell,
+.drawer-example-table .return-gate-cell {
   font-size: 1rem;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -947,7 +951,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #about-drawer {
+  #about-drawer,
+  .offcanvas-backdrop.fade {
     transition: none !important;
   }
 }
@@ -1037,15 +1042,4 @@ body {
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
   color: var(--text-color);
-}
-
-/* Unscoped duplicate of `#output table tbody td:nth-child(5) .return-gate-cell`
- * (same properties) — the drawer's worked example table lives outside
- * #output, so the #output-scoped selector doesn't reach it. */
-.return-gate-cell {
-  font-size: 1rem;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  color: color-mix(in srgb, var(--text-color) 70%, var(--background-color));
 }

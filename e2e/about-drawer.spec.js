@@ -15,22 +15,22 @@ test.describe('About drawer', () => {
     await page.waitForSelector('#about-drawer-toggle', { timeout: 8000 })
 
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
     await expect(page.locator('#about-drawer-body')).toContainText('What this app does for you')
 
     await page.click('#about-drawer-close')
-    await expect(page.locator('#about-drawer')).not.toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).not.toHaveClass(/\bshow\b/)
 
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
     await page.keyboard.press('Escape')
-    await expect(page.locator('#about-drawer')).not.toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).not.toHaveClass(/\bshow\b/)
 
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
     // Click the backdrop (outside the drawer panel itself) to dismiss.
     await page.mouse.click(10, 10)
-    await expect(page.locator('#about-drawer')).not.toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).not.toHaveClass(/\bshow\b/)
   })
 
   test('the existing UI is unchanged apart from the new ☰ button and drawer markup', async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe('About drawer', () => {
   test('the worked return-gate example renders as a real table row', async ({ page }) => {
     await page.goto('/')
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     const exampleTable = page.locator('.drawer-example-table')
     await expect(exampleTable).toBeVisible()
@@ -60,7 +60,7 @@ test.describe('About drawer', () => {
   test('install section shows the iOS text steps (no button) when beforeinstallprompt never fires', async ({ page }) => {
     await page.goto('/')
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await expect(page.locator('#drawer-install-ios')).toBeVisible()
     await expect(page.locator('#drawer-install-button-wrap')).toBeHidden()
@@ -79,7 +79,7 @@ test.describe('About drawer', () => {
 
     await page.goto('/')
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await expect(page.locator('#drawer-install-button-wrap')).toBeVisible()
     await expect(page.locator('#drawer-install-ios')).toBeHidden()
@@ -98,7 +98,7 @@ test.describe('About drawer', () => {
 
     await page.goto('/')
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await expect(page.locator('#drawer-install-section')).toBeHidden()
   })
@@ -113,7 +113,7 @@ test.describe('About drawer', () => {
 
     await page.goto('/')
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await expect(page.locator('#drawer-share-btn')).toHaveText('Share')
     await page.click('#drawer-share-btn')
@@ -132,7 +132,7 @@ test.describe('About drawer', () => {
 
     await page.goto('/')
     await page.click('#about-drawer-toggle')
-    await expect(page.locator('#about-drawer')).toHaveClass(/show/)
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await expect(page.locator('#drawer-share-btn')).toHaveText('Copy link')
     await expect(page.locator('#drawer-share-confirmation')).toBeHidden()
