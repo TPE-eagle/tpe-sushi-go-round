@@ -181,12 +181,15 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 Workflow: `.github/workflows/ci.yml`.
 
-| Job | Trigger | Blocking |
-|-----|---------|----------|
-| `unit-tests` | push/PR to main | Yes |
-| `e2e-tests-local` | after unit-tests | No (`continue-on-error`) |
-| `deploy` | push to main | Yes |
-| `e2e-tests-production` | after deploy | No (`continue-on-error`) |
+| Job | Trigger | Fails the run if red? | Depends on |
+|-----|---------|------------------------|------------|
+| `unit-tests` | push/PR to main | Yes | — |
+| `e2e-tests-local` | after `unit-tests` | Yes | `unit-tests` |
+| `build-check` | PR to main only | Yes | `unit-tests` |
+| `deploy` | push to main | Yes | `unit-tests` |
+| `e2e-tests-production` | after `deploy` (push) / also on PR | Yes | `deploy` |
+
+`deploy` depends only on `unit-tests`, **not** `e2e-tests-local` — a red local E2E does not stop a push to main from deploying to GitHub Pages. The only `continue-on-error: true` in the workflow is on the PR-comment reporting step inside `e2e-tests-production`, not the step that actually executes the tests, so neither E2E job is a soft gate.
 
 ## AI Development Workflow
 
