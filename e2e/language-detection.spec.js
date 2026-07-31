@@ -319,41 +319,41 @@ test.describe('Browser Language Detection Tests', () => {
     await expect(page.locator('[data-lang="zh"]')).not.toHaveClass(/active/)
   })
 
-  test('explicit language choice persists across reload, overriding browser auto-detection (issue #46)', async ({ page }) => {
-    // Browser is zh-TW; explicit English pick must win on reload anyway.
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'zh-TW,zh;q=0.9'
+  // navigator.language (what detectLanguage() reads) is set via Playwright's
+  // context `locale` option, not the Accept-Language header — setExtraHTTPHeaders
+  // only affects the HTTP request, so it never moves auto-detection.
+  // https://playwright.dev/docs/emulation#locale--timezone
+  test.describe('language cookie persistence (issue #46)', () => {
+    test.use({ locale: 'zh-TW' })
+
+    test('explicit language choice persists across reload, overriding browser auto-detection', async ({ page }) => {
+      // Browser locale is zh-TW; explicit English pick must win on reload anyway.
+      await page.goto('/')
+      await page.waitForSelector('.lang-links a', { timeout: 8000 })
+      await page.click('[data-lang="en"]')
+      await page.waitForSelector('[data-lang="en"].active', { timeout: 5000 })
+
+      const cookies = await page.context().cookies()
+      const langCookie = cookies.find(c => c.name === 'lang')
+      expect(langCookie?.value).toBe('en')
+
+      await page.reload()
+      await page.waitForSelector('[data-lang="en"].active', { timeout: 8000 })
+      await expect(page.locator('[data-lang="zh"]')).not.toHaveClass(/active/)
+
+      // Clearing the cookie restores browser auto-detection (zh-TW -> Chinese).
+      await page.context().clearCookies({ name: 'lang' })
+      await page.reload()
+      await page.waitForSelector('[data-lang="zh"].active', { timeout: 8000 })
+      await expect(page.locator('[data-lang="en"]')).not.toHaveClass(/active/)
     })
 
-    await page.goto('/')
-    await page.waitForSelector('.lang-links a', { timeout: 8000 })
-    await page.click('[data-lang="en"]')
-    await page.waitForSelector('[data-lang="en"].active', { timeout: 5000 })
+    test('auto-detected language is never written to the cookie', async ({ page }) => {
+      await page.goto('/')
+      await page.waitForSelector('[data-lang="zh"].active', { timeout: 8000 })
 
-    const cookies = await page.context().cookies()
-    const langCookie = cookies.find(c => c.name === 'lang')
-    expect(langCookie?.value).toBe('en')
-
-    await page.reload()
-    await page.waitForSelector('[data-lang="en"].active', { timeout: 8000 })
-    await expect(page.locator('[data-lang="zh"]')).not.toHaveClass(/active/)
-
-    // Clearing the cookie restores browser auto-detection (zh-TW -> Chinese).
-    await page.context().clearCookies({ name: 'lang' })
-    await page.reload()
-    await page.waitForSelector('[data-lang="zh"].active', { timeout: 8000 })
-    await expect(page.locator('[data-lang="en"]')).not.toHaveClass(/active/)
-  })
-
-  test('auto-detected language is never written to the cookie (issue #46)', async ({ page }) => {
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9'
+      const cookies = await page.context().cookies()
+      expect(cookies.find(c => c.name === 'lang')).toBeUndefined()
     })
-
-    await page.goto('/')
-    await page.waitForSelector('[data-lang="en"].active', { timeout: 8000 })
-
-    const cookies = await page.context().cookies()
-    expect(cookies.find(c => c.name === 'lang')).toBeUndefined()
   })
 })
