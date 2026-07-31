@@ -11,11 +11,13 @@ export default defineConfig({
   // merge-gate, not skipped. (Was grepInvert'd out; see PR #12 review.)
   // Use all CPU cores locally for maximum parallelism; use 2 workers in CI for stable runs
   workers: process.env.CI ? 2 : os.cpus().length,
+  reporter: [['html', { open: 'never' }], ['list']], // html reporter is what actually produces playwright-report/ — the CI upload step already targets that path, but with no reporter configured here it was never created
   use: {
     headless: process.env.CI ? true : false, // Headless in CI, headed locally
     baseURL: 'http://localhost:8080/tpe-sushi-go-round/',  // trailing slash: production.spec.js uses page.goto('') which resolves to baseURL — vite dev only serves the app at the base *with* the slash (prod config already has it)
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    trace: 'on-first-retry', // retries are already configured, so this is free on green runs — gives a DOM/a11y snapshot at the failing assertion instead of console output alone
   },
   projects: [
     {

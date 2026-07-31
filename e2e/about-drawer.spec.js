@@ -85,6 +85,43 @@ test.describe('About drawer', () => {
     await expect(page.locator('#drawer-install-ios')).toBeHidden()
   })
 
+  // Install/share both bind through document-level delegation in
+  // setupEventListeners() rather than a direct element listener, since the
+  // drawer body no longer exists at bind time (it's lazily rendered on
+  // show.bs.offcanvas). This is the click-through proof for the install
+  // button — share already has one above ("share button calls
+  // navigator.share..."). Asserting effect (prompt() called, section
+  // re-rendered), not just that the button is visible, is what would catch
+  // the delegation ever being replaced with a direct .addEventListener on
+  // an element that isn't there yet.
+  test('clicking the install button calls prompt() and the section re-renders once userChoice resolves', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__installPromptCalled = false
+      window.addEventListener('DOMContentLoaded', () => {
+        const event = new Event('beforeinstallprompt', { cancelable: true })
+        event.prompt = () => { window.__installPromptCalled = true }
+        event.userChoice = Promise.resolve({ outcome: 'accepted' })
+        window.dispatchEvent(event)
+      })
+    })
+
+    await page.goto('/')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+    await expect(page.locator('#drawer-install-button-wrap')).toBeVisible()
+
+    await page.click('#drawer-install-btn')
+
+    await expect.poll(() => page.evaluate(() => window.__installPromptCalled)).toBe(true)
+
+    // handleInstallButtonClick() clears deferredInstallPrompt once
+    // userChoice resolves and re-runs updateInstallSection() — the button
+    // disappears and the iOS text steps return, proving the delegated
+    // handler ran the real re-render, not just prompt().
+    await expect(page.locator('#drawer-install-button-wrap')).toBeHidden()
+    await expect(page.locator('#drawer-install-ios')).toBeVisible()
+  })
+
   test('install section is hidden entirely when already installed (standalone)', async ({ page }) => {
     await page.addInitScript(() => {
       const originalMatchMedia = window.matchMedia.bind(window)
