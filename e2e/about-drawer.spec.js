@@ -101,9 +101,12 @@ test.describe('About drawer', () => {
     // At 375px the offcanvas panel (400px wide) covers the whole viewport,
     // so #theme-toggle (top-right of the page, behind the drawer) is in the
     // DOM but not reachable by a real pointer — the offcanvas subtree
-    // intercepts the click, same as it would for an actual user. Seed the
-    // theme cookie directly instead of clicking through the drawer.
-    await page.context().addCookies([{ name: 'theme', value: 'dark', url: page.url() }])
+    // intercepts the click, same as it would for an actual user. `initTheme()`
+    // (main.js) only falls back to `prefers-color-scheme` when no `theme`
+    // cookie is set, and a fresh context has none — so emulate a dark-mode
+    // device instead of seeding a cookie that never took effect for the
+    // in-app theme state.
+    await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto('/')
     await page.click('#about-drawer-toggle')
     await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
