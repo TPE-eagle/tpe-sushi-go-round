@@ -83,6 +83,15 @@ export const BLOCK_TIME_MINUTES = {
 // again. Flat constant per issue #33 — not varied by aircraft type or route.
 export const TURNAROUND_MINUTES = 40;
 
+// Upper bound on implied ground time before a same-flight-number-adjacent
+// pairing stops being "the same rotation" and starts being a coincidence
+// (issue #33 amendment). impliedGround = gap - 2*block; this constant is the
+// 4h band ceiling folded directly into the gap upper bound below. The band's
+// stated 0.5h *lower* bound is NOT implemented separately — TURNAROUND_MINUTES
+// (40min = 0.67h) is already stricter, so it can never be the binding
+// constraint.
+const MAX_IMPLIED_GROUND_MINUTES = 4 * 60;
+
 /**
  * Minimum plausible same-day round-trip time (minutes) for a city, or null
  * when the city isn't in the table (unknown block time -> abstain, don't
@@ -98,19 +107,59 @@ function parseODateTime(record) {
     return new Date(`${record.ODate.replace(/\//g, '-')}T${record.OTime}+08:00`);
 }
 
+// The Taoyuan Airport API represents "no aircraft type assigned yet" as
+// either an empty string or the literal string "-", not just falsy/absent.
+// Two rows both carrying "-" must NOT be treated as an equal PlaneNo match
+// (issue #33: "do not assume two unknowns are equal").
+function isMissingPlaneNo(planeNo) {
+    return !planeNo || planeNo === '-';
+}
+
+/**
+ * dayReturn(ACode, CityCode) — crew-pattern knowledge, not computable from
+ * block time (issue #33: CTS at 3.9h block is a night stop while BKK at 3.6h
+ * is a day return — no threshold on block time separates them). Defaults
+ * `true`; only the 7 pilot-ruled pairs below are `false`. Keyed on
+ * (airline, city) because scheduling is per-airline — BKK is a day return
+ * for CI/JX but not for BR.
+ *
+ * This is intentionally a short, hand-maintained list, not a derived rule.
+ * Do not widen it or compute it from block time without a new pilot ruling
+ * (see issue #33 "Stop and ask").
+ */
+const DAY_RETURN_FALSE_ANY_AIRLINE = new Set(['CTS', 'SIN', 'KUL', 'PEN', 'CGK', 'DPS']);
+const DAY_RETURN_FALSE_BY_AIRLINE = {
+    BR: new Set(['BKK']), // EVA's BKK is a night stop; CI's and JX's are not (pilot's best recollection — flagged for confirmation).
+};
+
+export function dayReturn(aCode, cityCode) {
+    if (DAY_RETURN_FALSE_ANY_AIRLINE.has(cityCode)) return false;
+    if (DAY_RETURN_FALSE_BY_AIRLINE[aCode]?.has(cityCode)) return false;
+    return true;
+}
+
 /**
  * Find the same-day return leg for a departure, among a full-day list of
  * arrivals (not time-window-filtered — the return leg's gate may already be
  * published well before the display window reaches it).
  *
- * Matching rule (issue #33):
+ * Matching rule (issue #33, amended):
  *   - same ACode
  *   - same CityCode (arrival's origin == departure's destination)
  *   - same ODate as the departure's own record (not "today")
+ *   - same PlaneNo (aircraft TYPE) on both legs — a crew flying a same-day
+ *     return does not change equipment (type rating). Missing PlaneNo
+ *     (`-`/empty) on EITHER leg is treated as no match, never as equal.
  *   - arrival's scheduled time later than the departure's
  *   - |FlightNo(arrival) - FlightNo(departure)| == 1
- *   - gap >= 2 * blockTime(city) + TURNAROUND_MINUTES (rejects adjacency
- *     coincidences that are not physically plausible as the same rotation)
+ *   - 2*block(city) + TURNAROUND_MINUTES <= gap <= 2*block(city) + 4h
+ *     (lower bound rejects adjacency coincidences that aren't physically
+ *     the same rotation; upper bound rejects implausibly long implied
+ *     ground time — see MAX_IMPLIED_GROUND_MINUTES above)
+ *
+ * dayReturn() is NOT applied here — it is a render-time override on top of
+ * this function's result (issue #33: "blank regardless of what the pairing
+ * finds"), so callers must check it separately.
  *
  * A departure can have more than one flight-number-adjacent candidate on
  * dense same-city routes (both FlightNo-1 and FlightNo+1 exist). Every
@@ -120,15 +169,25 @@ function parseODateTime(record) {
  * departures — on rare dense routes the same arrival can be the best match
  * for two different departures.
  *
+ * abs(ΔFlightNo) == 1 had zero exceptions in one day of live data, but a
+ * codeshare-numbered or seasonal return leg could break it in the future;
+ * the failure mode is a blank cell (the safe failure), so this deliberately
+ * adds no speculative handling for that case.
+ *
  * Returns the matched arrival record, or null when there is no confident
- * match (long-haul, one-way, unknown city, or nothing survives the gate).
+ * match (long-haul, one-way, unknown city, equipment swap, implied ground
+ * too long, or nothing survives the gate).
  */
 export function findReturnLeg(departure, arrivals) {
     const dFlightNo = parseInt(departure.FlightNo, 10);
     if (!Number.isFinite(dFlightNo)) return null;
 
-    const minGapMinutes = getMinPlausibleRoundTripMinutes(departure.CityCode);
-    if (minGapMinutes == null) return null;
+    if (isMissingPlaneNo(departure.PlaneNo)) return null;
+
+    const block = BLOCK_TIME_MINUTES[departure.CityCode];
+    if (block == null) return null;
+    const minGapMinutes = 2 * block + TURNAROUND_MINUTES;
+    const maxGapMinutes = 2 * block + MAX_IMPLIED_GROUND_MINUTES;
 
     const dTime = parseODateTime(departure);
 
@@ -138,6 +197,7 @@ export function findReturnLeg(departure, arrivals) {
         if (arrival.ACode !== departure.ACode) continue;
         if (arrival.CityCode !== departure.CityCode) continue;
         if (arrival.ODate !== departure.ODate) continue;
+        if (isMissingPlaneNo(arrival.PlaneNo) || arrival.PlaneNo !== departure.PlaneNo) continue;
         const aFlightNo = parseInt(arrival.FlightNo, 10);
         if (!Number.isFinite(aFlightNo)) continue;
         if (Math.abs(aFlightNo - dFlightNo) !== 1) continue;
@@ -146,7 +206,7 @@ export function findReturnLeg(departure, arrivals) {
         if (!(aTime > dTime)) continue;
 
         const gapMinutes = (aTime - dTime) / 60000;
-        if (gapMinutes < minGapMinutes) continue;
+        if (gapMinutes < minGapMinutes || gapMinutes > maxGapMinutes) continue;
 
         if (gapMinutes < bestGap) {
             best = arrival;
@@ -154,4 +214,21 @@ export function findReturnLeg(departure, arrivals) {
         }
     }
     return best;
+}
+
+/**
+ * Returns the distinct CityCodes present in `records` that have no
+ * BLOCK_TIME_MINUTES entry. Empty array means full coverage. Intended for a
+ * build/test-time assertion (issue #33 N1) — a missing table entry makes
+ * findReturnLeg() silently abstain for that city with no other signal, so
+ * this exists to fail loudly instead. Not part of the render path.
+ */
+export function getUncoveredCityCodes(records) {
+    const missing = new Set();
+    for (const record of records) {
+        if (record.CityCode && !(record.CityCode in BLOCK_TIME_MINUTES)) {
+            missing.add(record.CityCode);
+        }
+    }
+    return [...missing];
 }

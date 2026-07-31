@@ -172,8 +172,8 @@ const translations = {
             "Gate": "ゲート",
             "Carousel": "荷物回転台",
             "CarouselShort": "回転台",
-            "ReturnGate": "帰り便ゲート",
-            "ReturnGateShort": "帰り"
+            "ReturnGate": "復路ゲート",
+            "ReturnGateShort": "復路"
         }
     }
 };
@@ -983,6 +983,12 @@ const BLOCK_TIME_MINUTES = {
 };
 const TURNAROUND_MINUTES = 40;
 
+// Upper bound on implied ground time (issue #33 amendment) — see
+// src/utils/blockTimes.js's MAX_IMPLIED_GROUND_MINUTES for the full
+// rationale. The 0.5h band lower bound is not implemented separately;
+// TURNAROUND_MINUTES (40min) is already stricter.
+const MAX_IMPLIED_GROUND_MINUTES = 4 * 60;
+
 function getMinPlausibleRoundTripMinutes(cityCode) {
     const block = BLOCK_TIME_MINUTES[cityCode];
     if (block == null) return null;
@@ -993,15 +999,44 @@ function parseODateTime(record) {
     return new Date(`${record.ODate.replace(/\//g, '-')}T${record.OTime}+08:00`);
 }
 
+// dayReturn(ACode, CityCode) — crew-pattern knowledge, not computable from
+// block time. See src/utils/blockTimes.js::dayReturn for the full rationale
+// (CTS vs BKK block-time counterexample). Applied at render time, on top of
+// findReturnLeg()'s result — kept identical here.
+const DAY_RETURN_FALSE_ANY_AIRLINE = new Set(['CTS', 'SIN', 'KUL', 'PEN', 'CGK', 'DPS']);
+const DAY_RETURN_FALSE_BY_AIRLINE = {
+    BR: new Set(['BKK']), // EVA's BKK is a night stop; CI's and JX's are not.
+};
+
+function dayReturn(aCode, cityCode) {
+    if (DAY_RETURN_FALSE_ANY_AIRLINE.has(cityCode)) return false;
+    if (DAY_RETURN_FALSE_BY_AIRLINE[aCode]?.has(cityCode)) return false;
+    return true;
+}
+
+// The Taoyuan Airport API represents "no aircraft type assigned yet" as
+// either an empty string or the literal string "-". Two rows both carrying
+// "-" must NOT be treated as an equal PlaneNo match (issue #33: "do not
+// assume two unknowns are equal"). Kept identical to blockTimes.js.
+function isMissingPlaneNo(planeNo) {
+    return !planeNo || planeNo === '-';
+}
+
 // Find the same-day return leg for a departure among a full-day arrivals
 // list. See src/utils/blockTimes.js for the full rule writeup + rationale
-// (multi-candidate tie-break, city gate, etc.) — kept identical here.
+// (PlaneNo equality, gap upper bound, multi-candidate tie-break, city gate,
+// etc.) — kept identical here. dayReturn() is NOT applied here; it's a
+// separate render-time override (see buildReturnGateCell).
 function findReturnLeg(departure, arrivals) {
     const dFlightNo = parseInt(departure.FlightNo, 10);
     if (!Number.isFinite(dFlightNo)) return null;
 
-    const minGapMinutes = getMinPlausibleRoundTripMinutes(departure.CityCode);
-    if (minGapMinutes == null) return null;
+    if (isMissingPlaneNo(departure.PlaneNo)) return null;
+
+    const block = BLOCK_TIME_MINUTES[departure.CityCode];
+    if (block == null) return null;
+    const minGapMinutes = 2 * block + TURNAROUND_MINUTES;
+    const maxGapMinutes = 2 * block + MAX_IMPLIED_GROUND_MINUTES;
 
     const dTime = parseODateTime(departure);
 
@@ -1011,6 +1046,7 @@ function findReturnLeg(departure, arrivals) {
         if (arrival.ACode !== departure.ACode) continue;
         if (arrival.CityCode !== departure.CityCode) continue;
         if (arrival.ODate !== departure.ODate) continue;
+        if (isMissingPlaneNo(arrival.PlaneNo) || arrival.PlaneNo !== departure.PlaneNo) continue;
         const aFlightNo = parseInt(arrival.FlightNo, 10);
         if (!Number.isFinite(aFlightNo)) continue;
         if (Math.abs(aFlightNo - dFlightNo) !== 1) continue;
@@ -1019,7 +1055,7 @@ function findReturnLeg(departure, arrivals) {
         if (!(aTime > dTime)) continue;
 
         const gapMinutes = (aTime - dTime) / 60000;
-        if (gapMinutes < minGapMinutes) continue;
+        if (gapMinutes < minGapMinutes || gapMinutes > maxGapMinutes) continue;
 
         if (gapMinutes < bestGap) {
             best = arrival;
@@ -1085,21 +1121,30 @@ function isSmallScreen() {
 }
 
 // Issue #33 — departures-only 5th column content. Blank when there is no
-// confident return-leg match (not yet fetched, long-haul, one-way, or no
-// candidate survives the plausibility gate) or when the return leg has no
-// gate assigned yet. Gate always wins the visible space (issue #33
-// requirement); the flight number is a secondary line on desktop and a
-// title tooltip on mobile so it never pushes the table into overflow.
+// confident return-leg match (not yet fetched, long-haul, one-way, no
+// candidate survives the plausibility gate, or dayReturn() overrides it to
+// a known night stop) or when the return leg has no gate assigned yet.
+//
+// Display design (issue #33 amendment): a direction glyph (← U+2190, never
+// ↩ — that one renders as a coloured emoji on several platforms) is always
+// present, in every viewport — it must not depend on a hover/title (touch
+// devices have no hover) or on comparing against a neighbouring cell (the
+// single-flight filtered view has no neighbour). One line only, both
+// breakpoints: `← C5` on mobile, `← BR178 C5` above 768px once there's room
+// for the flight number to confirm which return. Styling (bold departure
+// gate / regular-weight secondary-colour return gate) lives in style.scss.
 function buildReturnGateCell(departureFlight, isSmall) {
     if (!returnLegArrivals) return '';
+    if (!dayReturn(departureFlight.ACode, departureFlight.CityCode)) return '';
     const returnLeg = findReturnLeg(departureFlight, returnLegArrivals);
     if (!returnLeg || !returnLeg.Gate) return '';
 
     const returnFlightNo = `${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, '');
+    const gate = escapeHtml(returnLeg.Gate);
     if (isSmall) {
-        return `<span title="${escapeHtml(returnFlightNo)}">${escapeHtml(returnLeg.Gate)}</span>`;
+        return `<span class="return-gate-cell">←&nbsp;${gate}</span>`;
     }
-    return `${escapeHtml(returnLeg.Gate)}<br><span class="return-flight-no">${escapeHtml(returnFlightNo)}</span>`;
+    return `<span class="return-gate-cell">←&nbsp;${escapeHtml(returnFlightNo)}&nbsp;${gate}</span>`;
 }
 
 function displayFlights(flights, ACode) {

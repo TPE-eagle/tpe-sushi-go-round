@@ -386,15 +386,26 @@ body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-/* Issue #33 — departures return-leg gate column. The gate itself inherits
- * the nth-child(5) bump above; the flight number underneath it is
- * secondary info and stays small/muted so the gate value is still the
- * thing the eye lands on first. */
-#output table tbody .return-flight-no {
-  display: block;
-  font-size: 0.75rem;
+/* Issue #33 amendment — the display design flips the emphasis vs the
+ * original implementation: the DEPARTURE gate (column 4, already bold via
+ * the nth-child bump above) stays primary; the RETURN gate (column 5, in
+ * departures mode only) is deliberately de-emphasized to regular weight in
+ * a secondary colour, so a crew member glancing at the row doesn't read it
+ * as their own departure gate. One line in every viewport — no stacked
+ * flight-number-on-a-second-line, that grows row height and turns
+ * horizontal scanning into card reading.
+ *
+ * Contrast: color-mix toward the actual --background-color (not
+ * `transparent`, which is alpha and reads identically to opacity — ruled
+ * out because this is read outdoors in daylight). 65% text-color / 35%
+ * background-color measures ~4.88:1 in light and ~5.13:1 in dark, both
+ * above the 4.5:1 floor (relative-luminance contrast, WCAG formula). */
+#output table tbody td:nth-child(5) .return-gate-cell {
+  font-size: 1rem;
   font-weight: 400;
-  color: color-mix(in srgb, var(--text-color) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--text-color) 65%, var(--background-color));
 }
 /* Pull flight-button-to-table only when there actually are flight buttons,
  * so the gap does not appear in the "ALL airline" no-pin case. */
