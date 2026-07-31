@@ -1653,11 +1653,15 @@ function isSmallScreen() {
 // Shared by the real board (`buildReturnGateCell`, dynamic data) and the
 // About drawer's worked example (`buildDrawerExampleTable`, static example
 // values) so the two markup shapes can't drift apart — see issue #62.
+// Takes raw (unescaped) `returnFlightNo` / `gate` and escapes them itself —
+// callers must not pre-escape, or the output double-escapes.
 function formatReturnGateCell(returnFlightNo, gate, isSmall) {
+    const safeGate = escapeHtml(gate);
     if (isSmall) {
-        return `<span class="return-gate-cell">←&nbsp;${gate}</span>`;
+        return `<span class="return-gate-cell">←&nbsp;${safeGate}</span>`;
     }
-    return `<span class="return-gate-cell">←&nbsp;${returnFlightNo}&nbsp;${gate}</span>`;
+    const safeFlightNo = escapeHtml(returnFlightNo);
+    return `<span class="return-gate-cell">←&nbsp;${safeFlightNo}&nbsp;${safeGate}</span>`;
 }
 
 function buildReturnGateCell(departureFlight, isSmall) {
@@ -1666,9 +1670,8 @@ function buildReturnGateCell(departureFlight, isSmall) {
     const returnLeg = findReturnLeg(departureFlight, returnLegArrivals);
     if (!returnLeg || !returnLeg.Gate) return '';
 
-    const returnFlightNo = escapeHtml(`${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, ''));
-    const gate = escapeHtml(returnLeg.Gate);
-    return formatReturnGateCell(returnFlightNo, gate, isSmall);
+    const returnFlightNo = `${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, '');
+    return formatReturnGateCell(returnFlightNo, returnLeg.Gate, isSmall);
 }
 
 function displayFlights(flights, ACode) {
@@ -1751,6 +1754,23 @@ function renewPins() {
     });
 }
 
+// Issue #62 review: the drawer's worked example is built once, at open
+// time, from isSmallScreen() — so it goes stale (wrong column count, stale
+// header variant) if the viewport crosses the 768px breakpoint while the
+// drawer is already open (device rotation, desktop window resize). Guarded
+// on the breakpoint actually flipping, not on every resize tick, because
+// renderDrawerBody() replaces #about-drawer-body's innerHTML wholesale —
+// firing it on every pixel of a resize would wipe live drawer state
+// (the "copied" share confirmation, install-button focus) mid-interaction.
+let lastIsSmall = isSmallScreen();
+function handleViewportChange() {
+    const nowSmall = isSmallScreen();
+    if (nowSmall === lastIsSmall) return;
+    lastIsSmall = nowSmall;
+    const drawerEl = document.getElementById('about-drawer');
+    if (drawerEl?.classList.contains('show')) renderDrawerBody();
+}
+
 function setupEventListeners() {
     // Render the drawer body lazily, right as Bootstrap starts opening it,
     // rather than eagerly on every page load / language change — see the
@@ -1762,12 +1782,14 @@ function setupEventListeners() {
         if (currentFilteredFlights.length > 0 && currentACode) {
             displayFlights(currentFilteredFlights, currentACode);
         }
+        handleViewportChange();
     });
 
     window.addEventListener('orientationchange', () => {
         if (currentFilteredFlights.length > 0 && currentACode) {
             displayFlights(currentFilteredFlights, currentACode);
         }
+        handleViewportChange();
     });
 
     document.addEventListener('visibilitychange', () => {

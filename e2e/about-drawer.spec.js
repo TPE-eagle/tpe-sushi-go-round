@@ -63,7 +63,7 @@ test.describe('About drawer', () => {
   // fragment (flight number, gate, return gate) built through the same
   // header/return-gate-cell logic as the real board, so it never disagrees
   // with what the real board shows at the same width.
-  test('the worked example fits at 375px: no overflow, 3-column fragment, matches the real board\'s mobile format', async ({ page }) => {
+  test('the worked example fits at 375px: no overflow, 3-column fragment, matches the real board\'s mobile format', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 375, height: 667 })
     await page.goto('/')
     await page.click('#about-drawer-toggle')
@@ -72,8 +72,12 @@ test.describe('About drawer', () => {
     const exampleTable = page.locator('.drawer-example-table')
     await expect(exampleTable).toBeVisible()
 
-    const overflow = await exampleTable.evaluate(el => el.scrollWidth - el.clientWidth)
-    expect(overflow).toBeLessThanOrEqual(0)
+    // A <table> that doesn't fit grows its own box rather than scrolling
+    // internally — scrollWidth/clientWidth on the table itself can't catch
+    // that (they stay equal while the table visibly runs off the drawer
+    // edge). The panel is the element that actually needs to not overflow.
+    const panelOverflow = await page.locator('#about-drawer-body').evaluate(el => el.scrollWidth - el.clientWidth)
+    expect(panelOverflow).toBeLessThanOrEqual(0)
 
     // Real board's mobile format drops the return flight number and shows
     // gate only (`buildReturnGateCell` / `displayFlights` with isSmall
@@ -84,6 +88,42 @@ test.describe('About drawer', () => {
     await expect(exampleTable.locator('.return-gate-cell')).not.toContainText('BR177')
 
     // Destination/Terminal columns are dropped on mobile, not scrolled to.
+    await expect(exampleTable).not.toContainText('KIX')
+
+    // Acceptance criterion (#62): a screenshot at 375px showing the example
+    // fully visible with no horizontal scroll, in both themes. Attached via
+    // testInfo (not a bare page.screenshot path) so it's embedded in
+    // playwright-report/ — the artifact the CI workflow's "Upload Local
+    // Flight Logs" step already uploads on failure; a raw path write to
+    // test-results/ would not otherwise leave the runner.
+    await testInfo.attach('drawer-375-light', { body: await page.screenshot(), contentType: 'image/png' })
+    await page.click('#theme-toggle')
+    await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
+    await testInfo.attach('drawer-375-dark', { body: await page.screenshot(), contentType: 'image/png' })
+  })
+
+  // Issue #62 review: the example is built once, at open time, from
+  // isSmallScreen() — so crossing the 768px breakpoint while the drawer
+  // stays open (device rotation, desktop window resize) used to leave it
+  // showing the wrong column count / header variant for the new width,
+  // reproducing the original overflow a different way.
+  test('the worked example re-renders when the viewport crosses 768px while the drawer stays open', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await page.goto('/')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+
+    const exampleTable = page.locator('.drawer-example-table')
+    await expect(exampleTable.locator('thead th')).toHaveCount(3)
+
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.waitForFunction(() => window.innerWidth > 768)
+    await expect(exampleTable.locator('thead th')).toHaveCount(5)
+    await expect(exampleTable).toContainText('KIX')
+
+    await page.setViewportSize({ width: 375, height: 667 })
+    await page.waitForFunction(() => window.innerWidth <= 768)
+    await expect(exampleTable.locator('thead th')).toHaveCount(3)
     await expect(exampleTable).not.toContainText('KIX')
   })
 
