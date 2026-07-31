@@ -112,7 +112,7 @@ test.describe('About drawer', () => {
 
     await page.click('#drawer-install-btn')
 
-    expect(await page.evaluate(() => window.__installPromptCalled)).toBe(true)
+    await expect.poll(() => page.evaluate(() => window.__installPromptCalled)).toBe(true)
 
     // handleInstallButtonClick() clears deferredInstallPrompt once
     // userChoice resolves and re-runs updateInstallSection() — the button
