@@ -49,6 +49,23 @@ let initialPinsRestored = false; // Guards the one-shot cookie restore in proces
 let currentTheme = 'light'; // Default to light mode
 let currentFlightMode = 'A'; // 'A' for Arrival, 'D' for Departure
 
+// Issue #33 — same-day return-leg pairing (Departures mode only).
+// null = not fetched yet for the current fetchData() cycle (5th column
+// renders blank while pending); array (possibly empty) = fetch resolved.
+let returnLegArrivals = null;
+// Incremented on every fetchData() call; the async return-leg fetch only
+// applies its result if its captured token still matches, so a slow
+// AState=A fetch can't clobber the UI after the user has moved on (mode
+// toggle, language change, another refresh).
+let returnLegFetchToken = 0;
+// Set to the token value once the PRIMARY (departures/arrivals) fetch has
+// rendered at least once for that token. Guards fetchReturnLegArrivals()'s
+// applyResult() from calling renderFilteredView() while flightData still
+// holds the previous mode's records — without this, a return-leg fetch that
+// resolves before the primary fetch (same fetchData() cycle) would render
+// the new mode's headers/columns against stale flightData.
+let mainDataReadyForToken = -1;
+
 // Translations
 const translations = {
     "zh": {
@@ -82,7 +99,9 @@ const translations = {
             "TerminalShort": "航廈",
             "Gate": "登機門",
             "Carousel": "行李轉盤",
-            "CarouselShort": "轉盤"
+            "CarouselShort": "轉盤",
+            "ReturnGate": "回程登機門",
+            "ReturnGateShort": "回程門"
         }
     },
     "en": {
@@ -116,7 +135,9 @@ const translations = {
             "TerminalShort": "Term.",
             "Gate": "Gate",
             "Carousel": "Carousel",
-            "CarouselShort": "Carousel"
+            "CarouselShort": "Carousel",
+            "ReturnGate": "Return Gate",
+            "ReturnGateShort": "Return"
         }
     },
     "jp": {
@@ -150,7 +171,9 @@ const translations = {
             "TerminalShort": "ターミナル",
             "Gate": "ゲート",
             "Carousel": "荷物回転台",
-            "CarouselShort": "回転台"
+            "CarouselShort": "回転台",
+            "ReturnGate": "帰り便ゲート",
+            "ReturnGateShort": "帰り"
         }
     }
 };
@@ -374,6 +397,18 @@ function fetchData() {
         </div>
     `;
 
+    // Issue #33 — kick off the return-leg arrivals fetch in parallel,
+    // non-blocking. The departures table renders immediately with the 5th
+    // column blank; fetchReturnLegArrivals() back-fills it when it resolves.
+    // The token guards against a slow fetch applying stale results after the
+    // user has toggled mode, changed language, or refreshed again.
+    returnLegFetchToken += 1;
+    const requestToken = returnLegFetchToken;
+    returnLegArrivals = null;
+    if (currentFlightMode === 'D') {
+        fetchReturnLegArrivals(requestToken);
+    }
+
     const postData = {
         "ODate": getUTC8Date(),
         "OTimeOpen": null,
@@ -410,6 +445,7 @@ function fetchData() {
         const cachedData = getCachedFlightData(cacheKey);
         if (cachedData) {
             processFetchedData(cachedData.data);
+            mainDataReadyForToken = requestToken;
             updateOfflineBanner(cachedData.timestamp);
             return;
         }
@@ -444,6 +480,7 @@ function fetchData() {
 
         hideOfflineBanner();
         processFetchedData(data);
+        mainDataReadyForToken = requestToken;
     })
     .catch(error => {
         // Offline without any cached data -> dedicated message.
@@ -458,6 +495,77 @@ function fetchData() {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["error"]}</div>`;
         }
+    });
+}
+
+// Issue #33 — full-day AState=A fetch used only to feed the departures
+// return-leg-gate column. Deliberately silent on failure (no loading/error
+// UI of its own): the 5th column simply stays blank, same as "no confident
+// match". Reuses the same cache/offline policy as fetchData(); the cache key
+// is naturally distinct from the departures entry because AState is part of
+// the cached postData.
+function fetchReturnLegArrivals(token) {
+    const postData = {
+        "ODate": getUTC8Date(),
+        "OTimeOpen": null,
+        "OTimeClose": null,
+        "BNO": null,
+        "AState": "A",
+        "language": currentLanguage === "zh" ? "ch" : currentLanguage,
+        "keyword": ""
+    };
+
+    const applyResult = (data) => {
+        if (token !== returnLegFetchToken) return; // superseded — drop silently
+        const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+        returnLegArrivals = data.filter(flight =>
+            allGroupCodes.includes(flight.ACode) &&
+            (!flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
+        );
+        // Only re-render here if the primary fetch for this same token has
+        // already rendered — otherwise flightData still holds the previous
+        // mode's records and a render now would paint the new mode's
+        // headers/columns against stale data. If the primary fetch hasn't
+        // rendered yet, its own processFetchedData() -> renderFilteredView()
+        // will pick up the now-populated returnLegArrivals when it runs.
+        if (currentFlightMode === 'D' && mainDataReadyForToken === token) {
+            renderFilteredView();
+        }
+    };
+
+    const cacheKey = `flight_data_${JSON.stringify(postData)}`;
+    const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    if (!isTestEnvironment && !isOnline()) {
+        const cachedData = getCachedFlightData(cacheKey);
+        if (cachedData) applyResult(cachedData.data);
+        return;
+    }
+
+    const acceptLanguageHeader = currentLanguage === 'zh'
+        ? 'zh-TW,zh;q=0.9'
+        : currentLanguage === 'jp'
+            ? 'ja-JP,ja;q=0.9'
+            : 'en-US,en;q=0.9';
+    fetch(API_URL, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": acceptLanguageHeader,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(postData),
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!isTestEnvironment) {
+            setCachedFlightData(cacheKey, { data: data, timestamp: Date.now() });
+        }
+        applyResult(data);
+    })
+    .catch(() => {
+        // Silent — the column just stays blank, same as "no confident match".
     });
 }
 
@@ -851,6 +959,76 @@ function filterByPlaneType(flights, family) {
     });
 }
 
+// Issue #33 — hand-maintained TPE block-time table. Must stay in sync with
+// src/utils/blockTimes.js (see CLAUDE.md's "Shared utility module with
+// inline duplication" convention — main.js re-implements shared logic
+// inline instead of importing, so it stays a self-contained bundle).
+//
+// block_minutes(city) = great_circle_km(TPE, city) / 800 km/h + 30 min,
+// rounded to the nearest 5 minutes. Distances computed from public airport
+// coordinates (ourairports.com) on 2026-07-31, covering every city BR / B7 /
+// CI / AE / JX served that day. Deliberately rough (one speed for every
+// aircraft type, no wind/routing correction) — it only needs to separate
+// "physically impossible same-day return" from "plausible round trip".
+const BLOCK_TIME_MINUTES = {
+    AMS: 740, AOJ: 220, BKK: 215, BNE: 535, CAN: 90, CDG: 765, CEB: 155,
+    CGK: 315, CNX: 210, CRK: 115, CTS: 235, CTU: 165, DAD: 155, DFW: 960,
+    DPS: 315, FRA: 730, FUK: 130, HAN: 150, HGH: 75, HIJ: 145, HKD: 225,
+    HKG: 90, IAD: 980, IAH: 985, ICN: 140, JFK: 970, KIX: 160, KMJ: 125,
+    KMQ: 175, KTI: 200, KUL: 275, LAX: 850, LHR: 765, MEL: 585, MFM: 95,
+    MNL: 120, MUC: 725, MXP: 750, NGO: 170, NRT: 195, OKA: 80, ONT: 855,
+    ORD: 930, PEK: 160, PEN: 265, PHX: 885, PQC: 215, PRG: 705, PUS: 130,
+    PVG: 80, SDJ: 205, SEA: 760, SFO: 810, SGN: 195, SIN: 270, SYD: 575,
+    SZX: 90, TAK: 150, UKB: 160, VIE: 705, XMN: 55, YVR: 750, YYZ: 935,
+};
+const TURNAROUND_MINUTES = 40;
+
+function getMinPlausibleRoundTripMinutes(cityCode) {
+    const block = BLOCK_TIME_MINUTES[cityCode];
+    if (block == null) return null;
+    return 2 * block + TURNAROUND_MINUTES;
+}
+
+function parseODateTime(record) {
+    return new Date(`${record.ODate.replace(/\//g, '-')}T${record.OTime}+08:00`);
+}
+
+// Find the same-day return leg for a departure among a full-day arrivals
+// list. See src/utils/blockTimes.js for the full rule writeup + rationale
+// (multi-candidate tie-break, city gate, etc.) — kept identical here.
+function findReturnLeg(departure, arrivals) {
+    const dFlightNo = parseInt(departure.FlightNo, 10);
+    if (!Number.isFinite(dFlightNo)) return null;
+
+    const minGapMinutes = getMinPlausibleRoundTripMinutes(departure.CityCode);
+    if (minGapMinutes == null) return null;
+
+    const dTime = parseODateTime(departure);
+
+    let best = null;
+    let bestGap = Infinity;
+    for (const arrival of arrivals) {
+        if (arrival.ACode !== departure.ACode) continue;
+        if (arrival.CityCode !== departure.CityCode) continue;
+        if (arrival.ODate !== departure.ODate) continue;
+        const aFlightNo = parseInt(arrival.FlightNo, 10);
+        if (!Number.isFinite(aFlightNo)) continue;
+        if (Math.abs(aFlightNo - dFlightNo) !== 1) continue;
+
+        const aTime = parseODateTime(arrival);
+        if (!(aTime > dTime)) continue;
+
+        const gapMinutes = (aTime - dTime) / 60000;
+        if (gapMinutes < minGapMinutes) continue;
+
+        if (gapMinutes < bestGap) {
+            best = arrival;
+            bestGap = gapMinutes;
+        }
+    }
+    return best;
+}
+
 /**
  * Filters flights based on a dynamic time window.
  * @param {Array} flights - The array of flight objects to filter.
@@ -906,6 +1084,24 @@ function isSmallScreen() {
     return window.innerWidth <= 768;
 }
 
+// Issue #33 — departures-only 5th column content. Blank when there is no
+// confident return-leg match (not yet fetched, long-haul, one-way, or no
+// candidate survives the plausibility gate) or when the return leg has no
+// gate assigned yet. Gate always wins the visible space (issue #33
+// requirement); the flight number is a secondary line on desktop and a
+// title tooltip on mobile so it never pushes the table into overflow.
+function buildReturnGateCell(departureFlight, isSmall) {
+    if (!returnLegArrivals) return '';
+    const returnLeg = findReturnLeg(departureFlight, returnLegArrivals);
+    if (!returnLeg || !returnLeg.Gate) return '';
+
+    const returnFlightNo = `${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, '');
+    if (isSmall) {
+        return `<span title="${escapeHtml(returnFlightNo)}">${escapeHtml(returnLeg.Gate)}</span>`;
+    }
+    return `${escapeHtml(returnLeg.Gate)}<br><span class="return-flight-no">${escapeHtml(returnFlightNo)}</span>`;
+}
+
 function displayFlights(flights, ACode) {
     hideRefreshIndicator();
     currentACode = ACode;
@@ -918,6 +1114,7 @@ function displayFlights(flights, ACode) {
     ? (isSmall ? headers["DepartureShort"] : headers["Departure"])
     : (isSmall ? headers["DestinationShort"] : headers["Destination"]);
     const terminalHeader = isSmall ? headers["TerminalShort"] : headers["Terminal"];
+    const returnGateHeader = isSmall ? headers["ReturnGateShort"] : headers["ReturnGate"];
 
     let tableContent = `
     <table class="table table-sm table-striped table-borderless">
@@ -928,6 +1125,7 @@ function displayFlights(flights, ACode) {
                 <th class="text-center">${terminalHeader}</th>
                 <th class="text-center">${headers["Gate"]}</th>
                 ${currentFlightMode === 'A' ? `<th class="text-center">${headers["Carousel"]}</th>` : ''}
+                ${currentFlightMode === 'D' ? `<th class="text-center">${returnGateHeader}</th>` : ''}
             </tr>
         </thead>
         <tbody>`;
@@ -945,6 +1143,7 @@ function displayFlights(flights, ACode) {
                 <td class="text-center">${terminalDisplay}</td>
                 <td class="text-center">${flight.Gate}</td>
                 ${currentFlightMode === 'A' ? `<td class="text-center">${flight.StopCode}</td>` : ''}
+                ${currentFlightMode === 'D' ? `<td class="text-center">${buildReturnGateCell(flight, isSmall)}</td>` : ''}
             </tr>`;
     });
 

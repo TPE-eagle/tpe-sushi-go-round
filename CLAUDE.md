@@ -33,6 +33,7 @@ npm run test:e2e:prod      # Production E2E against the live site
 | `index.html` | SPA entry point (meta tags, CSP, preloads, deferred GTM) |
 | `vite.config.js` | Vite build + Vitest config + `vite-plugin-pwa` (Workbox generateSW) + manifest |
 | `src/utils/flightUtils.js` | Shared utilities (imported by unit tests; mirrored inline in `main.js`) |
+| `src/utils/blockTimes.js` | Hand-maintained TPE block-time table + `findReturnLeg()` return-leg pairing (issue #33; mirrored inline in `main.js`) |
 | `e2e/test-helpers.js` | Smart API caching, GA blocking, mock flight generation |
 
 ## Data Flow
@@ -53,6 +54,8 @@ let currentACode = null;          // null = all airlines
 let currentPlaneType = null;      // null = all families; family strings like 'A330', 'B777'
 let currentTheme = 'light';       // 'light' | 'dark'
 let currentFlightMode = 'A';      // 'A' (Arrival) | 'D' (Departure)
+let returnLegArrivals = null;     // Departures-only (issue #33): null = pairing fetch pending, array = resolved
+let returnLegFetchToken = 0;      // Bumped every fetchData() call; guards returnLegArrivals against a stale resolve
 ```
 
 ## API Contract
@@ -69,6 +72,16 @@ let currentFlightMode = 'A';      // 'A' (Arrival) | 'D' (Departure)
 - **Departure (D):** round down to 10-min interval, offset 0, 120-min duration.
 - A flight is shown when **either** `ODateTime` or `RDateTime` falls in the window.
 - All times are UTC+8.
+
+## Departures Return-Leg Gate (issue #33)
+
+Departures mode shows a 5th column: the same-day return leg's TPE arrival gate, for crew on a day-return duty.
+
+- **Pairing rule** (`findReturnLeg()` in `src/utils/blockTimes.js`, mirrored inline in `main.js`): same `ACode`, same `CityCode` (arrival's origin == departure's destination), same `ODate` as the departure's own record, arrival scheduled later than the departure, `|FlightNo(arrival) − FlightNo(departure)| == 1`, and the gap must clear `2 × blockTime(city) + 40 min turnaround` (rejects adjacency coincidences that aren't physically the same rotation — e.g. a same-numbered-neighbor flight to a different destination that day). Unknown city (not in `BLOCK_TIME_MINUTES`) → abstain, don't guess.
+- **Multi-candidate tie-break**: a departure can have adjacency candidates at both `FlightNo−1` and `FlightNo+1` on dense same-city routes. Every candidate is gated independently; if more than one passes, the smallest gap wins. There is **no** global one-to-one exclusivity across different departures — on rare dense routes the same arrival can be the best match for two different departure rows.
+- **Extra fetch**: departures mode triggers a second, non-blocking full-day `AState=A` fetch (`fetchReturnLegArrivals()`) — NOT time-window-filtered, since a return leg's gate may already be published well before the display window reaches it. Cache key is naturally distinct from the departures entry (AState is part of the cached postData). `returnLegFetchToken` guards against a slow resolve clobbering the UI after the user has moved on (mode toggle, language change, another refresh). First paint never blocks on this fetch — the table renders immediately with the 5th column blank, then back-fills via `renderFilteredView()` once the fetch resolves.
+- **Layout**: gate always wins the visible space. Desktop (≥769px) shows the return flight number as a smaller/muted second line (`.return-flight-no` in `style.scss`); mobile (≤768px) shows gate only, with the flight number in the cell's `title` tooltip. Column only renders in `AState=D` mode.
+- **Known pre-existing gap (found while building this, not fixed here — out of scope)**: `fetchData()`'s main fetch has no staleness token of its own, unlike the new `returnLegFetchToken`-guarded pairing fetch. A slow-resolving fetch from *before* a rapid mode/language toggle can still clobber `flightData` if it resolves after a newer `fetchData()` call. Pre-existing behavior, not introduced by this feature.
 
 ## PWA and Offline UX
 
@@ -124,7 +137,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 - Languages: `zh` (Traditional Chinese), `en`, `jp`.
 - Dynamic Google Font loading: Noto Sans / Noto Sans TC / Noto Sans JP.
-- `translations` object in `main.js` is the single source of truth for UI strings, including plane type filter copy (`flightsInWindow`, `currentFilter`, `noMatch`, `clearAircraftType`, `airlineNoFlights`), offline UX copy (`offlineBanner`, `offlineFresh`, `offlineNoCache`), and pull-to-refresh state copy (`releaseToRefresh`, plus the existing `refreshing`).
+- `translations` object in `main.js` is the single source of truth for UI strings, including plane type filter copy (`flightsInWindow`, `currentFilter`, `noMatch`, `clearAircraftType`, `airlineNoFlights`), offline UX copy (`offlineBanner`, `offlineFresh`, `offlineNoCache`), pull-to-refresh state copy (`releaseToRefresh`, plus the existing `refreshing`), and the departures return-leg gate header (`tableHeaders.ReturnGate` / `ReturnGateShort`).
 - Airline and city names come from the API (localized by the `language` field); do not hardcode.
 
 ## Key Design Decisions
@@ -137,7 +150,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 **Block Google Analytics in E2E.** All setups call `blockGoogleAnalytics()` to avoid tracking noise and CSP flakiness.
 
-**Shared utility module with inline duplication.** `src/utils/flightUtils.js` is imported by unit tests. `main.js` re-implements the same functions inline (no import) to keep the bundle self-contained. **These two copies must stay in sync.** Current duplicated functions: `filterFlightsByTime`, `filterSupportedAirlines`, `getTimeWindowConfig`, `getTimeWindow`, `roundDownToStep`, `extractPlaneFamily`, `getAvailableFamilies`, `filterByPlaneType`.
+**Shared utility module with inline duplication.** `src/utils/flightUtils.js` is imported by unit tests. `main.js` re-implements the same functions inline (no import) to keep the bundle self-contained. **These two copies must stay in sync.** Current duplicated functions: `filterFlightsByTime`, `filterSupportedAirlines`, `getTimeWindowConfig`, `getTimeWindow`, `roundDownToStep`, `extractPlaneFamily`, `getAvailableFamilies`, `filterByPlaneType`. Same convention applies to `src/utils/blockTimes.js`: `BLOCK_TIME_MINUTES`, `TURNAROUND_MINUTES`, `getMinPlausibleRoundTripMinutes`, `findReturnLeg`.
 
 **CSP `connect-src` lists only real origins.** An earlier commit included `https://api.taoyuan-airport.com`, which does not resolve in DNS. The real API lives at `https://www.taoyuan-airport.com/api/api/flight/a_flight` (the `www` host with an `/api/` path). Only add origins to CSP that the app actually talks to.
 

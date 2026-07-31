@@ -386,6 +386,16 @@ body {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* Issue #33 — departures return-leg gate column. The gate itself inherits
+ * the nth-child(5) bump above; the flight number underneath it is
+ * secondary info and stays small/muted so the gate value is still the
+ * thing the eye lands on first. */
+#output table tbody .return-flight-no {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--text-color) 70%, transparent);
+}
 /* Pull flight-button-to-table only when there actually are flight buttons,
  * so the gap does not appear in the "ALL airline" no-pin case. */
 #flightButtons:not(:empty) {
