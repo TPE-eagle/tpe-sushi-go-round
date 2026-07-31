@@ -356,4 +356,31 @@ test.describe('Browser Language Detection Tests', () => {
       expect(cookies.find(c => c.name === 'lang')).toBeUndefined()
     })
   })
+
+  // Regression for PR #49 review R4: an unrecognised `lang` cookie value used
+  // to be trusted verbatim by detectLanguage(), which threw through
+  // updateLanguageText() before initTheme() / updateLanguageLinks() /
+  // updateAirlineLinks() ran — an empty shell, silently re-pinned for another
+  // 400 days by renewPins() on every subsequent visit. detectLanguage() now
+  // validates the cookie against `translations` before trusting it.
+  test.describe('invalid lang cookie value falls through to auto-detection (#46 review R4)', () => {
+    for (const badValue of ['fr', 'zh-TW']) {
+      test(`unrecognised lang cookie "${badValue}" does not brick the app`, async ({ page }) => {
+        await page.context().addCookies([
+          { name: 'lang', value: badValue, domain: 'localhost', path: '/' }
+        ])
+
+        await page.goto('/')
+
+        // Only present once initApp() has run past detectLanguage() -- the
+        // pre-fix brick threw before this ever rendered.
+        await page.waitForSelector('#airlineButtons a[data-airline=""] .airline-full', { timeout: 8000 })
+        await expect(page.locator('#airlineButtons a[data-airline=""] .airline-full')).toBeVisible()
+
+        // Fell through to auto-detection rather than adopting the bad value as-is.
+        const activeLang = await page.locator('.lang-links a.active').getAttribute('data-lang')
+        expect(['zh', 'en', 'jp']).toContain(activeLang)
+      })
+    }
+  })
 })
