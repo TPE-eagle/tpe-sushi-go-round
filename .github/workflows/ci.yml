@@ -68,21 +68,41 @@ jobs:
         path: ~/.cache/ms-playwright
         key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
 
-    - name: "🛫 Deploying Browser Engines"
-      # Cache hit → install only system deps (skip the hundreds-MB browser download → CI flies).
-      # nick-fields/retry (actively maintained; microsoft/playwright-actions is archived) rides
-      # out the flaky microsoft-packages apt mirror — no hand-rolled shell loop.
+    # Split out of the single "Deploying Browser Engines" step (#36). The apt stage and the
+    # browser download have very different cost profiles and used to share one 5-minute budget
+    # sized for the fast path; each now gets its own.
+    #
+    # ⚠️ The budget is the real protection here, NOT max_attempts. When a nick-fields/retry
+    # timeout fires it walks the process tree and calls process.kill on a process it does not
+    # own, throwing `Error: kill EPERM`. That exception escapes the action, so the job hard-fails
+    # on attempt 1 and the configured retries never happen — the wrapper that exists to absorb
+    # the flake is what turns it into a red build, with the test step reported as *skipped*
+    # rather than failed. Still unfixed upstream as of v4.0.0: nick-fields/retry#124 (EPERM on
+    # timeout) and #114 (whole run fails without another attempt) are both open; checked
+    # 2026-07-31. So keep these budgets generous rather than tight.
+    - name: "🔧 Ground Crew: Browser System Deps (apt)"
+      # Runs on EVERY run, cache hit or not: the Playwright cache above only holds
+      # ~/.cache/ms-playwright (the browsers), never system libraries. This is the step that
+      # actually blew the old budget — on a slow-mirror day it is ~114 MB / 181 packages from
+      # azure.archive.ubuntu.com, and one observed run was still at package 20 of 181 when the
+      # 5 minutes ran out.
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 5
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 15
-        command: |
-          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" = "true" ]; then
-            npx playwright install-deps
-          else
-            npx playwright install --with-deps
-          fi
+        command: npx playwright install-deps
+
+    - name: "🛫 Deploying Browser Engines"
+      # Browser download only (system deps handled above), and skipped entirely on a cache hit —
+      # which is exactly why it should not share a budget with the apt stage.
+      if: steps.cache-playwright.outputs.cache-hit != 'true'
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 15
+        command: npx playwright install
 
     - name: "✈️ Execute Local E2E Flight Plan"
       run: npm run test:e2e:local
@@ -198,21 +218,41 @@ jobs:
         path: ~/.cache/ms-playwright
         key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
 
-    - name: "🛫 Deploying Browser Engines"
-      # Cache hit → install only system deps (skip the hundreds-MB browser download → CI flies).
-      # nick-fields/retry (actively maintained; microsoft/playwright-actions is archived) rides
-      # out the flaky microsoft-packages apt mirror — no hand-rolled shell loop.
+    # Split out of the single "Deploying Browser Engines" step (#36). The apt stage and the
+    # browser download have very different cost profiles and used to share one 5-minute budget
+    # sized for the fast path; each now gets its own.
+    #
+    # ⚠️ The budget is the real protection here, NOT max_attempts. When a nick-fields/retry
+    # timeout fires it walks the process tree and calls process.kill on a process it does not
+    # own, throwing `Error: kill EPERM`. That exception escapes the action, so the job hard-fails
+    # on attempt 1 and the configured retries never happen — the wrapper that exists to absorb
+    # the flake is what turns it into a red build, with the test step reported as *skipped*
+    # rather than failed. Still unfixed upstream as of v4.0.0: nick-fields/retry#124 (EPERM on
+    # timeout) and #114 (whole run fails without another attempt) are both open; checked
+    # 2026-07-31. So keep these budgets generous rather than tight.
+    - name: "🔧 Ground Crew: Browser System Deps (apt)"
+      # Runs on EVERY run, cache hit or not: the Playwright cache above only holds
+      # ~/.cache/ms-playwright (the browsers), never system libraries. This is the step that
+      # actually blew the old budget — on a slow-mirror day it is ~114 MB / 181 packages from
+      # azure.archive.ubuntu.com, and one observed run was still at package 20 of 181 when the
+      # 5 minutes ran out.
       uses: nick-fields/retry@v3
       with:
-        timeout_minutes: 5
+        timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 15
-        command: |
-          if [ "${{ steps.cache-playwright.outputs.cache-hit }}" = "true" ]; then
-            npx playwright install-deps
-          else
-            npx playwright install --with-deps
-          fi
+        command: npx playwright install-deps
+
+    - name: "🛫 Deploying Browser Engines"
+      # Browser download only (system deps handled above), and skipped entirely on a cache hit —
+      # which is exactly why it should not share a budget with the apt stage.
+      if: steps.cache-playwright.outputs.cache-hit != 'true'
+      uses: nick-fields/retry@v3
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 15
+        command: npx playwright install
 
     - name: "🛫 Holding Pattern: Waiting for Deployment"
       if: github.event_name == 'push'   # only a fresh deploy needs propagation time; PR runs test the live site as-is
