@@ -115,12 +115,28 @@ test.describe('API Integration Tests', () => {
     // label. A harness bug that fed departures mode a leftover arrivals
     // payload would still pass a title-only check — the title only reflects
     // which mode was requested, not which data the app actually received.
-    const seenAStates = []
+    //
+    // Characterization test, not a regression test (issue #38 review N1):
+    // setupMockApiRoute() (used here) was already state-aware before this
+    // fix — it reads body.AState and re-tags every record — so this test
+    // passes unchanged on main. It locks in existing correct behavior and
+    // satisfies the issue's first acceptance item; it is not evidence that
+    // this PR changed anything. setupSmartApiRoute() is what changed, and
+    // is covered separately in smart-api-cache.spec.js.
+    //
+    // Correlate each response with its own request rather than with array
+    // position (issue #38 review R2): the response handler is async, so
+    // push order isn't guaranteed to match request order, and once the
+    // departures-mode pairing fetch (PR #35) lands, one departures cycle
+    // issues two requests — "the last response" stops meaning "the
+    // response to the request we just made".
+    const seen = []
     page.on('response', async (response) => {
       if (response.url() !== 'https://www.taoyuan-airport.com/api/api/flight/a_flight') return
+      const asked = response.request().postDataJSON()?.AState ?? 'A'
       const body = await response.json().catch(() => null)
       if (Array.isArray(body) && body.length > 0) {
-        seenAStates.push(new Set(body.map(flight => flight.AState)))
+        seen.push({ asked, got: [...new Set(body.map(flight => flight.AState))] })
       }
     })
 
@@ -133,8 +149,8 @@ test.describe('API Integration Tests', () => {
     await expect(page.locator('#flight-mode-toggle')).toContainText('🛬')
     // Title can be in different languages depending on browser settings
     await expect(page.locator('#title')).toContainText(/迴轉壽司|回転寿司/)
-    expect(seenAStates.length).toBeGreaterThan(0)
-    expect([...seenAStates[seenAStates.length - 1]]).toEqual(['A'])
+    await expect.poll(() => seen.some(s => s.asked === 'A')).toBe(true)
+    expect(seen.filter(s => s.asked === 'A').map(s => s.got)).toEqual([['A']])
 
     // Switch to departure mode and wait for data refresh
     await page.click('#flight-mode-toggle')
@@ -143,8 +159,9 @@ test.describe('API Integration Tests', () => {
     // Should become departure mode with updated title
     await expect(page.locator('#flight-mode-toggle')).toContainText('🛫')
     await expect(page.locator('#title')).toContainText(/出發便|出発便/)
-    // The response the departures view actually rendered from must itself
-    // be tagged AState 'D' — every record, not a mix left over from arrivals.
-    expect([...seenAStates[seenAStates.length - 1]]).toEqual(['D'])
+    // The response to the departures request must itself be tagged AState
+    // 'D' — every record, not a mix left over from arrivals.
+    await expect.poll(() => seen.some(s => s.asked === 'D')).toBe(true)
+    expect(seen.filter(s => s.asked === 'D').map(s => s.got)).toEqual([['D']])
   })
 })

@@ -17,7 +17,8 @@ export async function blockGoogleAnalytics(page) {
 // the other.
 let realApiCache = {} // { A: [...], D: [...] }
 let cacheTimestamp = {} // { A: ms, D: ms }
-let inFlightFetch = {} // { A: Promise<{status, headers, body}>, D: ... } — only set while a real fetch for that state is outstanding
+let inFlightFetch = {} // { A: Promise<{status, contentType, body}>, D: ... } — only set while a real fetch for that state is outstanding
+let forcedStatesDone = {} // { A: true, D: true } — which states have already had their one forced live call (see forceReal below)
 const CACHE_DURATION = 30 * 60 * 1000 // 30 minutes
 
 function requestAState(request) {
@@ -29,13 +30,45 @@ function requestAState(request) {
   }
 }
 
-export async function setupSmartApiRoute(page, forceReal = false) {
+// Test-only: clears all module-level cache state. setupSmartApiRoute's cache
+// is deliberately module-level (it survives across a page's lifetime so
+// repeated requests for the same state reuse one real call), which means it
+// also survives across tests in the same worker unless reset. Call this in
+// beforeEach for any spec that needs a cold cache — e.g. to exercise the
+// inFlightFetch dedup path deterministically instead of depending on
+// whichever state a previous test happened to warm.
+export function __resetSmartApiCache() {
+  realApiCache = {}
+  cacheTimestamp = {}
+  inFlightFetch = {}
+  forcedStatesDone = {}
+}
+
+async function defaultFetchUpstream(route) {
+  const response = await route.fetch()
+  return { status: response.status(), body: await response.text() }
+}
+
+// fetchUpstream(route, state) => { status, body } lets tests supply
+// deterministic per-state fixtures instead of depending on a live call to
+// the real airport API (issue #38 review R3: a merge-gate spec must not
+// depend on a third party's availability or undocumented response shape).
+// Defaults to the real network call, which is what non-test callers get.
+export async function setupSmartApiRoute(page, { forceReal = false, fetchUpstream = defaultFetchUpstream } = {}) {
   await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
     const state = requestAState(route.request())
     const now = Date.now()
     const cacheExpired = !cacheTimestamp[state] || (now - cacheTimestamp[state]) > CACHE_DURATION
+    // forceReal forces exactly one live call per state, then that state's
+    // cache is reused normally — the multi-state translation of the
+    // pre-#38 behavior, where a single closure-scoped flag forced exactly
+    // one live call per setupSmartApiRoute() install (issue #38 review N2:
+    // re-evaluating forceReal on every request would force a live call on
+    // every single request once state is split out, which is a different
+    // and much more expensive behavior nobody asked for).
+    const forceThisRequest = forceReal && !forcedStatesDone[state]
 
-    if (!forceReal && realApiCache[state] && !cacheExpired) {
+    if (!forceThisRequest && realApiCache[state] && !cacheExpired) {
       // Use cached real data for this state, with language-specific adjustments
       // (the cached blob is frozen at whichever language first populated it).
       console.log(`📋 Using cached API data (${realApiCache[state].length} flights, ${state}, cached ${Math.round((now - cacheTimestamp[state]) / 60000)} min ago)`)
@@ -72,22 +105,28 @@ export async function setupSmartApiRoute(page, forceReal = false) {
     // code set its "captured" flag before the cache was assigned, so a
     // concurrent request could be fulfilled with the string "null").
     if (!inFlightFetch[state]) {
+      if (forceReal) forcedStatesDone[state] = true
       console.log(`🌐 Making real API call to cache fresh ${state} data...`)
       inFlightFetch[state] = (async () => {
         try {
-          const response = await route.fetch()
-          const responseBody = await response.text()
-          realApiCache[state] = JSON.parse(responseBody)
+          const { status, body } = await fetchUpstream(route, state)
+          realApiCache[state] = JSON.parse(body)
           cacheTimestamp[state] = now
           console.log(`✅ Cached ${realApiCache[state].length} flights (${state}) from real API`)
-          return { status: response.status(), headers: response.headers(), body: responseBody }
+          // Always reply with a clean content-type rather than replaying the
+          // upstream's raw headers (issue #38 review R3): response.text()
+          // hands back a decoded body, so replaying an upstream
+          // content-encoding/content-length alongside it would be a decode
+          // mismatch waiting to happen, and it would now fan out to every
+          // route awaiting this shared promise instead of just one.
+          return { status, contentType: 'application/json', body }
         } catch (error) {
           console.log(`❌ Real API call failed for ${state}, falling back to mock data`)
           realApiCache[state] = getMockFlightData().map(flight => ({ ...flight, AState: state }))
           cacheTimestamp[state] = now
           return {
             status: 200,
-            headers: { 'content-type': 'application/json' },
+            contentType: 'application/json',
             body: JSON.stringify(realApiCache[state]),
           }
         } finally {
@@ -100,7 +139,11 @@ export async function setupSmartApiRoute(page, forceReal = false) {
     await route.fulfill(result)
   })
 
-  return realApiCache.A || realApiCache.D || getMockFlightData()
+  // No caller reads this return value today. Returning the per-state map
+  // (rather than picking one of A/D/mock, as before) is the only version of
+  // this that answers a well-formed question once the cache itself is
+  // per-state (issue #38 review N3).
+  return { ...realApiCache }
 }
 
 export function getCurrentUTC8Date() {
