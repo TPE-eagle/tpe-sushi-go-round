@@ -57,6 +57,47 @@ test.describe('About drawer', () => {
     await expect(exampleTable.locator('.return-gate-cell')).toContainText('C7')
   })
 
+  // Issue #62 — at 375px the example used to render the desktop board's 5
+  // columns and long return-gate format, overflowing the drawer panel and
+  // forcing sideways scroll to read it. The fix drops to a 3-column
+  // fragment (flight number, gate, return gate) built through the same
+  // header/return-gate-cell logic as the real board, so it never disagrees
+  // with what the real board shows at the same width.
+  test('the worked example fits at 375px: no overflow, 3-column fragment, matches the real board\'s mobile format', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await page.goto('/')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+
+    const exampleTable = page.locator('.drawer-example-table')
+    await expect(exampleTable).toBeVisible()
+
+    const overflow = await exampleTable.evaluate(el => el.scrollWidth - el.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
+
+    // Real board's mobile format drops the return flight number and shows
+    // gate only (`buildReturnGateCell` / `displayFlights` with isSmall
+    // true) — the example must match, not keep the desktop long form.
+    await expect(exampleTable.locator('thead th')).toHaveCount(3)
+    await expect(exampleTable).toContainText('BR178')
+    await expect(exampleTable.locator('.return-gate-cell')).toHaveText('← C7')
+    await expect(exampleTable.locator('.return-gate-cell')).not.toContainText('BR177')
+
+    // Destination/Terminal columns are dropped on mobile, not scrolled to.
+    await expect(exampleTable).not.toContainText('KIX')
+  })
+
+  test('install and share buttons render filled, not outline, so they read as tappable', async ({ page }) => {
+    await page.goto('/')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+
+    await expect(page.locator('#drawer-install-btn')).toHaveClass(/\bbtn-secondary\b/)
+    await expect(page.locator('#drawer-install-btn')).not.toHaveClass(/\bbtn-outline-secondary\b/)
+    await expect(page.locator('#drawer-share-btn')).toHaveClass(/\bbtn-secondary\b/)
+    await expect(page.locator('#drawer-share-btn')).not.toHaveClass(/\bbtn-outline-secondary\b/)
+  })
+
   test('install section shows the iOS text steps (no button) when beforeinstallprompt never fires', async ({ page }) => {
     await page.goto('/')
     await page.click('#about-drawer-toggle')

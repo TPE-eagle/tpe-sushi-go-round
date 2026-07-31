@@ -572,17 +572,51 @@ function drawerParagraphs(lines) {
 // text) so the drawer's worked example is visually identical to the live
 // feature. Values are the flight the issue itself specifies and are
 // language-independent (flight/gate codes), only the headers are localized.
+//
+// Issue #62: the example must render through the same header-variant and
+// return-gate-cell logic as the real board (`displayFlights` /
+// `buildReturnGateCell`), not a hand-copied long-form markup — otherwise the
+// two drift apart the moment the real board's responsive behaviour changes.
+// At ≤768px it also drops to a 3-column fragment (flight number, gate,
+// return gate — the pair the section is explaining, plus enough context to
+// read as one board row) instead of trying to cram 5 columns into a mobile
+// drawer and relying on horizontal scroll.
 function buildDrawerExampleTable(lang) {
     const headers = translations[lang]["tableHeaders"];
+    const isSmall = isSmallScreen();
+    const flightNumberHeader = isSmall ? headers["FlightNumberShort"] : headers["FlightNumber"];
+    const returnGateHeader = isSmall ? headers["ReturnGateShort"] : headers["ReturnGate"];
+    const returnGateCell = formatReturnGateCell('BR177', 'C7', isSmall);
+
+    if (isSmall) {
+        return `
+            <table class="table table-sm table-striped table-borderless drawer-example-table">
+                <thead class="table-br">
+                    <tr>
+                        <th>${flightNumberHeader}</th>
+                        <th class="text-center">${headers["Gate"]}</th>
+                        <th class="text-center">${returnGateHeader}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>BR178</td>
+                        <td class="text-center">C5</td>
+                        <td class="text-center">${returnGateCell}</td>
+                    </tr>
+                </tbody>
+            </table>`;
+    }
+
     return `
         <table class="table table-sm table-striped table-borderless drawer-example-table">
             <thead class="table-br">
                 <tr>
-                    <th>${headers["FlightNumber"]}</th>
+                    <th>${flightNumberHeader}</th>
                     <th class="text-center">${headers["Destination"]}</th>
                     <th class="text-center">${headers["Terminal"]}</th>
                     <th class="text-center">${headers["Gate"]}</th>
-                    <th class="text-center">${headers["ReturnGate"]}</th>
+                    <th class="text-center">${returnGateHeader}</th>
                 </tr>
             </thead>
             <tbody>
@@ -591,7 +625,7 @@ function buildDrawerExampleTable(lang) {
                     <td class="text-center">KIX</td>
                     <td class="text-center">T2</td>
                     <td class="text-center">C5</td>
-                    <td class="text-center"><span class="return-gate-cell">←&nbsp;BR177&nbsp;C7</span></td>
+                    <td class="text-center">${returnGateCell}</td>
                 </tr>
             </tbody>
         </table>`;
@@ -621,7 +655,7 @@ function buildDrawerContent(lang) {
                 <p class="drawer-section-body drawer-fallback-note">${d.install.iosFallback}</p>
             </div>
             <div id="drawer-install-button-wrap">
-                <button type="button" id="drawer-install-btn" class="btn btn-sm btn-outline-secondary">${d.install.installButtonLabel}</button>
+                <button type="button" id="drawer-install-btn" class="btn btn-sm btn-secondary">${d.install.installButtonLabel}</button>
             </div>
             <p class="drawer-section-body">${d.install.offlineNote}</p>
         </section>`;
@@ -631,7 +665,7 @@ function buildDrawerContent(lang) {
             <h6 class="drawer-section-title">${d.share.heading}</h6>
             <p class="drawer-section-body">${d.share.body}</p>
             <div class="drawer-share-row">
-                ${(canShare || canCopy) ? `<button type="button" id="drawer-share-btn" class="btn btn-sm btn-outline-secondary">${shareButtonLabel}</button>` : ''}
+                ${(canShare || canCopy) ? `<button type="button" id="drawer-share-btn" class="btn btn-sm btn-secondary">${shareButtonLabel}</button>` : ''}
                 <span id="drawer-share-confirmation" class="drawer-inline-confirmation" hidden>${d.share.copiedConfirmation}</span>
             </div>
         </section>`;
@@ -1616,18 +1650,25 @@ function isSmallScreen() {
 // breakpoints: `← C5` on mobile, `← BR178 C5` above 768px once there's room
 // for the flight number to confirm which return. Styling (bold departure
 // gate / regular-weight secondary-colour return gate) lives in style.scss.
+// Shared by the real board (`buildReturnGateCell`, dynamic data) and the
+// About drawer's worked example (`buildDrawerExampleTable`, static example
+// values) so the two markup shapes can't drift apart — see issue #62.
+function formatReturnGateCell(returnFlightNo, gate, isSmall) {
+    if (isSmall) {
+        return `<span class="return-gate-cell">←&nbsp;${gate}</span>`;
+    }
+    return `<span class="return-gate-cell">←&nbsp;${returnFlightNo}&nbsp;${gate}</span>`;
+}
+
 function buildReturnGateCell(departureFlight, isSmall) {
     if (!returnLegArrivals) return '';
     if (!dayReturn(departureFlight.ACode, departureFlight.CityCode)) return '';
     const returnLeg = findReturnLeg(departureFlight, returnLegArrivals);
     if (!returnLeg || !returnLeg.Gate) return '';
 
-    const returnFlightNo = `${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, '');
+    const returnFlightNo = escapeHtml(`${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, ''));
     const gate = escapeHtml(returnLeg.Gate);
-    if (isSmall) {
-        return `<span class="return-gate-cell">←&nbsp;${gate}</span>`;
-    }
-    return `<span class="return-gate-cell">←&nbsp;${escapeHtml(returnFlightNo)}&nbsp;${gate}</span>`;
+    return formatReturnGateCell(returnFlightNo, gate, isSmall);
 }
 
 function displayFlights(flights, ACode) {
