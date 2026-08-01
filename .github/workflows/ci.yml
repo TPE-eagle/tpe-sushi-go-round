@@ -77,16 +77,17 @@ jobs:
     # own, throwing `Error: kill EPERM`. That exception escapes the action, so the job hard-fails
     # on attempt 1 and the configured retries never happen — the wrapper that exists to absorb
     # the flake is what turns it into a red build, with the test step reported as *skipped*
-    # rather than failed. Still unfixed upstream as of v4.0.0: nick-fields/retry#124 (EPERM on
-    # timeout) and #114 (whole run fails without another attempt) are both open; checked
-    # 2026-07-31. So keep these budgets generous rather than tight.
+    # rather than failed. Still unfixed upstream in v4, the version pinned below:
+    # nick-fields/retry#124 (EPERM on timeout) and #114 (whole run fails without another
+    # attempt) are both open; re-checked 2026-08-01. v4.0.0 is a node24 runtime bump and
+    # nothing else, so it buys no reliability here. Keep these budgets generous, not tight.
     - name: "🔧 Ground Crew: Browser System Deps (apt)"
       # Runs on EVERY run, cache hit or not: the Playwright cache above only holds
       # ~/.cache/ms-playwright (the browsers), never system libraries. This is the step that
       # actually blew the old budget — on a slow-mirror day it is ~114 MB / 181 packages from
       # azure.archive.ubuntu.com, and one observed run was still at package 20 of 181 when the
       # 5 minutes ran out.
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -97,7 +98,7 @@ jobs:
       # Browser download only (system deps handled above), and skipped entirely on a cache hit —
       # which is exactly why it should not share a budget with the apt stage.
       if: steps.cache-playwright.outputs.cache-hit != 'true'
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3
@@ -227,16 +228,17 @@ jobs:
     # own, throwing `Error: kill EPERM`. That exception escapes the action, so the job hard-fails
     # on attempt 1 and the configured retries never happen — the wrapper that exists to absorb
     # the flake is what turns it into a red build, with the test step reported as *skipped*
-    # rather than failed. Still unfixed upstream as of v4.0.0: nick-fields/retry#124 (EPERM on
-    # timeout) and #114 (whole run fails without another attempt) are both open; checked
-    # 2026-07-31. So keep these budgets generous rather than tight.
+    # rather than failed. Still unfixed upstream in v4, the version pinned below:
+    # nick-fields/retry#124 (EPERM on timeout) and #114 (whole run fails without another
+    # attempt) are both open; re-checked 2026-08-01. v4.0.0 is a node24 runtime bump and
+    # nothing else, so it buys no reliability here. Keep these budgets generous, not tight.
     - name: "🔧 Ground Crew: Browser System Deps (apt)"
       # Runs on EVERY run, cache hit or not: the Playwright cache above only holds
       # ~/.cache/ms-playwright (the browsers), never system libraries. This is the step that
       # actually blew the old budget — on a slow-mirror day it is ~114 MB / 181 packages from
       # azure.archive.ubuntu.com, and one observed run was still at package 20 of 181 when the
       # 5 minutes ran out.
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -247,7 +249,7 @@ jobs:
       # Browser download only (system deps handled above), and skipped entirely on a cache hit —
       # which is exactly why it should not share a budget with the apt stage.
       if: steps.cache-playwright.outputs.cache-hit != 'true'
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3
