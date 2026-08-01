@@ -48,7 +48,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
+          # Deliberately NOT ci.yml's key (#81). Both jobs here install chromium only;
+          # ci.yml installs every engine. One name for two payloads means whichever job
+          # writes first once the key goes absent — a Playwright version bump, or a 7-day
+          # eviction — decides what everyone else restores afterwards. A chromium-only blob
+          # under ci.yml's name silently starves e2e-tests-production of webkit: its binary
+          # install is gated on `cache-hit != 'true'` and nothing downstream re-checks, so
+          # it fails on a missing browser with apt green in front of it. The key has to
+          # encode the content set, not just the version.
+          key: ${{ runner.os }}-playwright-chromium-${{ steps.pw-version.outputs.VERSION }}
       - name: "Install Playwright chromium"
         uses: nick-fields/retry@v4   # rides out the flaky microsoft-packages apt mirror
         with:
@@ -83,7 +91,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
+          # Deliberately NOT ci.yml's key (#81). Both jobs here install chromium only;
+          # ci.yml installs every engine. One name for two payloads means whichever job
+          # writes first once the key goes absent — a Playwright version bump, or a 7-day
+          # eviction — decides what everyone else restores afterwards. A chromium-only blob
+          # under ci.yml's name silently starves e2e-tests-production of webkit: its binary
+          # install is gated on `cache-hit != 'true'` and nothing downstream re-checks, so
+          # it fails on a missing browser with apt green in front of it. The key has to
+          # encode the content set, not just the version.
+          key: ${{ runner.os }}-playwright-chromium-${{ steps.pw-version.outputs.VERSION }}
       - name: "Install Playwright chromium"
         uses: nick-fields/retry@v4
         with:
