@@ -764,13 +764,23 @@ body {
   outline: none;
 }
 
+/* Row, not column: a vertical stack grows taller with every button added
+ * (issue #66 — the 3rd button pushed the stack to 130px tall and it
+ * started covering the table header, with zero layout space reserved for
+ * it since it's position: absolute). A row only ever grows wider, and the
+ * cluster's height stays pinned at one button's height (38px) no matter
+ * how many toggles it holds. This clears the table header at both desktop
+ * widths tested (1280px/1024px). At ≤768px a 130px-wide right-anchored row
+ * instead reaches into the centred title text — see the position: static
+ * override in the mobile media query below, which fixes that case
+ * separately rather than relying on this rule alone. */
 .theme-buttons-container {
   position: absolute;
   top: 10px;
   right: 10px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: 8px;
   z-index: 1030;
 }
@@ -854,6 +864,24 @@ body {
     padding: 4px;
     margin: 6px 0;
     font-size: 1.5rem;
+  }
+
+  /* At ≤768px the container is narrow enough that a right-anchored,
+   * out-of-flow cluster overlaps the centred title's ink (issue #66 R3):
+   * row layout made the cluster wide instead of tall, but "wide" still
+   * reaches into the title's horizontal centre on a narrow screen. Same
+   * root cause as the original bug (position: absolute reserves zero
+   * layout space), so the same class of fix applies: take it out of
+   * absolute positioning here so it renders as a normal flow block above
+   * the title (it's already #title's preceding sibling in the DOM) —
+   * that is overlap-proof by construction, at any button count and any
+   * title length, not just the ones measured. Desktop keeps the
+   * absolute/row layout above, already verified clear of the title and
+   * table header. */
+  .theme-buttons-container {
+    position: static;
+    justify-content: flex-end;
+    margin: 0 0 4px;
   }
 
   .theme-toggle-btn {
