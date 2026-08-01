@@ -273,16 +273,27 @@ jobs:
       run: sleep 30
 
     - name: "✈️ Execute Production E2E Flight Plan"
+      id: e2e
       run: npm run test:e2e:prod
       env:
         CI: true
 
     - name: "📥 Upload Production Flight Logs"
       uses: actions/upload-artifact@v7
-      if: failure()
+      # Scoped to the test step, not the job — same reasoning as the local job
+      # above. `failure()` alone is job-scoped, so a job that dies before
+      # Playwright ever runs (the `playwright install` retry class, #59) would
+      # trip the `error` guard below and report "No files were found", which
+      # reads like a reporter regression sitting on top of the real cause.
+      if: failure() && steps.e2e.conclusion == 'failure'
       with:
         name: playwright-report-production
         path: playwright-report/
+        # Default is `warn`. This step has been green-with-nothing for the whole
+        # life of the job (#74): playwright-report/ only exists when the html
+        # reporter is configured, and playwright.prod.config.js had none until
+        # #76. `error` makes the next such drift fail loudly instead of silently.
+        if-no-files-found: error
         retention-days: 7
 
     - name: "📝 Flight Deck Report: Comment PR with Test Results"
