@@ -115,6 +115,12 @@ jobs:
       with:
         name: playwright-report-local
         path: playwright-report/
+        # Default is `warn`, which uploaded nothing and still reported success
+        # for months (#54): playwright-report/ only exists when the html
+        # reporter is configured, and it was not. `error` makes that drift fail
+        # loudly instead of silently. This step only runs on an already-red job,
+        # so erroring here costs no signal.
+        if-no-files-found: error
         retention-days: 7
 
   build-check:
