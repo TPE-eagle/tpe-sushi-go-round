@@ -50,7 +50,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
       - name: "Install Playwright chromium"
-        uses: nick-fields/retry@v3   # rides out the flaky microsoft-packages apt mirror
+        uses: nick-fields/retry@v4   # rides out the flaky microsoft-packages apt mirror
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -85,7 +85,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
       - name: "Install Playwright chromium"
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 5
           max_attempts: 3
