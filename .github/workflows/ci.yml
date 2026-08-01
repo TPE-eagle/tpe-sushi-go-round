@@ -68,35 +68,31 @@ jobs:
         path: ~/.cache/ms-playwright
         key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.VERSION }}
 
-    # Split out of the single "Deploying Browser Engines" step (#36). The apt stage and the
-    # browser download have very different cost profiles and used to share one 5-minute budget
-    # sized for the fast path; each now gets its own.
+    # ⚠️ NO `npx playwright install-deps` in this job, deliberately — see #59.
     #
-    # ⚠️ The budget is the real protection here, NOT max_attempts. When a nick-fields/retry
-    # timeout fires it walks the process tree and calls process.kill on a process it does not
-    # own, throwing `Error: kill EPERM`. That exception escapes the action, so the job hard-fails
-    # on attempt 1 and the configured retries never happen — the wrapper that exists to absorb
-    # the flake is what turns it into a red build, with the test step reported as *skipped*
-    # rather than failed. Still unfixed upstream in v4, the version pinned below:
-    # nick-fields/retry#124 (EPERM on timeout) and #114 (whole run fails without another
-    # attempt) are both open; re-checked 2026-08-01. v4.0.0 is a node24 runtime bump and
-    # nothing else, so it buys no reliability here. Keep these budgets generous, not tight.
-    - name: "🔧 Ground Crew: Browser System Deps (apt)"
-      # Runs on EVERY run, cache hit or not: the Playwright cache above only holds
-      # ~/.cache/ms-playwright (the browsers), never system libraries. This is the step that
-      # actually blew the old budget — on a slow-mirror day it is ~114 MB / 181 packages from
-      # azure.archive.ubuntu.com, and one observed run was still at package 20 of 181 when the
-      # 5 minutes ran out.
-      uses: nick-fields/retry@v4
-      with:
-        timeout_minutes: 15
-        max_attempts: 3
-        retry_wait_seconds: 15
-        command: npx playwright install-deps
-
+    # This job runs playwright.local.config.js, whose only project is chromium. Measured on
+    # ubuntu24 (image 20260720.247.2, Playwright 1.59.1): chromium is missing **0 of its 21**
+    # declared system packages on the runner, it launches clean, and this whole E2E suite is
+    # green with no apt stage at all. Evidence: run 30701702518 on branch probe/install-deps-59.
+    #
+    # That deletes the #36 flake class from this job outright rather than budgeting around it,
+    # and takes ~50s off every run — apt ran on EVERY run, cache hit included, because the
+    # Playwright cache below only holds ~/.cache/ms-playwright (browsers), never system libs.
+    #
+    # e2e-tests-production still needs its apt stage: that config also runs mobile-safari
+    # (iPhone 12) on webkit, which IS missing 21 of its 51 packages here and fails to launch
+    # (libgtk-4, libgraphene, gstreamer, libflite …). Do not copy this deletion over there.
+    #
+    # ⚠️ On the retry wrapper below, the budget is the real protection, NOT max_attempts. When a
+    # nick-fields/retry timeout fires it walks the process tree and calls process.kill on a
+    # process it does not own, throwing `Error: kill EPERM`. That exception escapes the action,
+    # so the job hard-fails on attempt 1 and the configured retries never happen — the wrapper
+    # that exists to absorb the flake is what turns it into a red build, with the test step
+    # reported as *skipped* rather than failed. Still unfixed upstream in v4, the version pinned
+    # below: nick-fields/retry#124 (EPERM on timeout) and #114 (whole run fails without another
+    # attempt) are both open; re-checked 2026-08-01. Keep this budget generous, not tight.
     - name: "🛫 Deploying Browser Engines"
-      # Browser download only (system deps handled above), and skipped entirely on a cache hit —
-      # which is exactly why it should not share a budget with the apt stage.
+      # Browser download only, and skipped entirely on a cache hit.
       if: steps.cache-playwright.outputs.cache-hit != 'true'
       uses: nick-fields/retry@v4
       with:
