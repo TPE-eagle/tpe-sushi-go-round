@@ -45,7 +45,7 @@ test.describe('Toggle cluster layout (issue #66)', () => {
 
           if (mode === 'departures') {
             await page.click('#flight-mode-toggle')
-            await page.waitForTimeout(300)
+            await expect(page.locator('#flight-mode-toggle')).toHaveText('🛫')
           }
 
           const clusterBox = await page.locator('.theme-buttons-container').boundingBox()
