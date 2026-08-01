@@ -764,13 +764,22 @@ body {
   outline: none;
 }
 
+/* Row, not column: a vertical stack grows taller with every button added
+ * (issue #66 — the 3rd button pushed the stack to 130px tall and it
+ * started covering the table header, with zero layout space reserved for
+ * it since it's position: absolute). A row only ever grows wider, and the
+ * cluster's height stays pinned at one button's height (38px) no matter
+ * how many toggles it holds. Same class governs both desktop and the
+ * ≤768px media query below (no separate mobile override exists for this
+ * selector), so this also fixes the identical vertical overlap risk on
+ * mobile. */
 .theme-buttons-container {
   position: absolute;
   top: 10px;
   right: 10px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-direction: row;
+  align-items: center;
   gap: 8px;
   z-index: 1030;
 }

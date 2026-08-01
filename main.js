@@ -406,7 +406,13 @@ function renderApp() {
             <div class="theme-buttons-container">
                 <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
                 <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
-                <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">☰</div>
+                <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">
+                    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                        <rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor"></rect>
+                        <rect x="3" y="9" width="14" height="2" rx="1" fill="currentColor"></rect>
+                        <rect x="3" y="14" width="14" height="2" rx="1" fill="currentColor"></rect>
+                    </svg>
+                </div>
             </div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
