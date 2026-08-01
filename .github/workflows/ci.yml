@@ -105,16 +105,28 @@ jobs:
         command: npx playwright install
 
     - name: "✈️ Execute Local E2E Flight Plan"
+      id: e2e
       run: npm run test:e2e:local
       env:
         CI: true
 
     - name: "📥 Upload Local Flight Logs"
       uses: actions/upload-artifact@v7
-      if: failure()
+      # Scoped to the test step, not the job. `failure()` alone is job-scoped,
+      # so a job that dies before Playwright ever runs — `playwright install`
+      # exhausting its retries (#59) — would trip the `error` guard below and
+      # report "No files were found", which reads like a reporter regression
+      # sitting above the real cause.
+      if: failure() && steps.e2e.conclusion == 'failure'
       with:
         name: playwright-report-local
         path: playwright-report/
+        # Default is `warn`, which uploaded nothing and still reported success
+        # for months (#54): playwright-report/ only exists when the html
+        # reporter is configured, and it was not. `error` makes that drift fail
+        # loudly instead of silently. Given the `if:` above, this only runs when
+        # the E2E step itself failed, so erroring here costs no signal.
+        if-no-files-found: error
         retention-days: 7
 
   build-check:
