@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // vi.hoisted runs synchronously before any static imports are evaluated.
 // This lets us set process.env before api-canary.mjs captures GITHUB_TOKEN as a const.
 vi.hoisted(() => {
   process.env.GITHUB_TOKEN = 'test-token';
   process.env.CANARY_GH_RETRY_DELAY_MS = '0'; // no sleep during tests
+  process.env.DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token';
 });
 
 // Mock the playwright probe so importing api-canary.mjs doesn't require a real browser.
@@ -13,8 +14,10 @@ vi.mock('./probe.mjs', () => ({
   isChallengeHtml: vi.fn(() => false),
 }));
 
+import { probeFlightApiPair } from './probe.mjs';
 import {
-  findOpenIncident,
+  findOpenIncidents,
+  incidentClass,
   ghApiRetry,
   GH_READ_FAILED,
   checkFieldPopulation,
@@ -22,6 +25,7 @@ import {
   sampleAndCheckShape,
   ARRIVALS_FIELDS,
   DEPARTURES_FIELDS,
+  run,
 } from './api-canary.mjs';
 
 // fetch is set to vi.fn() globally by src/test/setup.js.
@@ -74,39 +78,61 @@ describe('ghApiRetry', () => {
   });
 });
 
-describe('findOpenIncident', () => {
-  it('returns null when no open incidents', async () => {
+describe('findOpenIncidents', () => {
+  it('returns an empty array when no open incidents', async () => {
     fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
-    const result = await findOpenIncident();
-    expect(result).toBeNull();
+    const result = await findOpenIncidents();
+    expect(result).toEqual([]);
   });
 
-  it('returns the open incident object when one exists', async () => {
-    const issue = { number: 42, title: '🚨 API down (availability)', created_at: '2026-07-17T00:00:00Z' };
-    fetch.mockResolvedValueOnce({ ok: true, json: async () => [issue] });
-    const result = await findOpenIncident();
-    expect(result).toEqual(issue);
+  it('returns every open incident, not just the first (issue #86)', async () => {
+    const contractIssue = { number: 41, title: '🚨 API contract drift', created_at: '2026-07-17T00:00:00Z', labels: [{ name: 'status:incident' }, { name: 'canary:contract' }] };
+    const availabilityIssue = { number: 42, title: '🚨 API down (availability)', created_at: '2026-07-18T00:00:00Z', labels: [{ name: 'status:incident' }, { name: 'canary:availability' }] };
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => [contractIssue, availabilityIssue] });
+    const result = await findOpenIncidents();
+    expect(result).toEqual([contractIssue, availabilityIssue]);
   });
 
   it('returns GH_READ_FAILED when GitHub API returns 503 on every attempt (default 3 retries)', async () => {
     fetch.mockResolvedValue({ ok: false, status: 503, text: async () => 'Service Unavailable' });
-    const result = await findOpenIncident();
+    const result = await findOpenIncidents();
     expect(result).toBe(GH_READ_FAILED);
     expect(fetch).toHaveBeenCalledTimes(3); // exhausted all 3 attempts
   });
 
-  it('recovers and returns null when a retry succeeds after an initial 503', async () => {
+  it('recovers and returns an empty array when a retry succeeds after an initial 503', async () => {
     fetch
       .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'Service Unavailable' })
       .mockResolvedValueOnce({ ok: true, json: async () => [] });
-    const result = await findOpenIncident();
-    expect(result).toBeNull();
+    const result = await findOpenIncidents();
+    expect(result).toEqual([]);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('GH_READ_FAILED is a Symbol distinct from null', () => {
+  it('GH_READ_FAILED is a Symbol distinct from an empty array', () => {
     expect(typeof GH_READ_FAILED).toBe('symbol');
-    expect(GH_READ_FAILED).not.toBeNull();
+    expect(GH_READ_FAILED).not.toEqual([]);
+  });
+});
+
+describe('incidentClass', () => {
+  it('reads the failure class from a canary:<type> label', () => {
+    const issue = { labels: [{ name: 'status:incident' }, { name: 'canary:availability' }] };
+    expect(incidentClass(issue)).toBe('availability');
+  });
+
+  it('handles labels returned as plain strings (some GitHub API responses use this shape)', () => {
+    const issue = { labels: ['status:incident', 'canary:contract'] };
+    expect(incidentClass(issue)).toBe('contract');
+  });
+
+  it('returns null for an issue with no canary:<type> label (pre-migration/unknown class)', () => {
+    const issue = { labels: [{ name: 'status:incident' }] };
+    expect(incidentClass(issue)).toBeNull();
+  });
+
+  it('returns null for an issue with no labels array at all', () => {
+    expect(incidentClass({})).toBeNull();
   });
 });
 
@@ -139,33 +165,37 @@ describe('checkFieldPopulation', () => {
     );
   }
 
-  it('returns null when the ratio is at or above the 95% threshold', () => {
+  it('returns status "pass" when the ratio is at or above the 95% threshold', () => {
     const records = makeRecords(ARRIVAL_OTIME, 20, 1); // 19/20 = 95%
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
-  it('returns a detail string when both the ratio is below threshold and blanks clear the floor', () => {
+  it('returns status "fail" with a detail string when both the ratio is below threshold and blanks clear the floor', () => {
     const records = makeRecords(ARRIVAL_OTIME, 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
-    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).not.toBeNull();
-    expect(detail).toContain('StopCode');
-    expect(detail).toContain('14/20');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('StopCode');
+    expect(result.detail).toContain('14/20');
   });
 
-  it('does not fire when blanks are below the absolute floor, even below the ratio threshold', () => {
-    // 16/20 = 80%, below the 95% ratio threshold, but only 4 blanks — below the 5-blank floor.
+  it('passes (not skips) when blanks are below the absolute floor but n itself clears it', () => {
+    // 16/20 = 80%, below the 95% ratio threshold, but only 4 blanks — below the 5-blank
+    // floor. n=20 itself is well above the floor, so this is a real, meaningful pass —
+    // not the "n too small to ever fire" skip case below (issue #86 PR #99 review).
     const records = makeRecords(ARRIVAL_OTIME, 20, 4);
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
-  it('never fires when the rendered window has fewer rows than the absolute floor', () => {
-    const records = makeRecords(ARRIVAL_OTIME, 3, 3); // all 3 rows blank, window smaller than the floor
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+  it('returns status "skip" when the rendered window has fewer rows than the absolute floor (issue #86)', () => {
+    // n=3 rows, all blank — even 100% blank can't clear the 5-blank floor, so this
+    // sample is structurally incapable of failing and must not read as a pass either.
+    const records = makeRecords(ARRIVAL_OTIME, 3, 3);
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
   });
 
-  it('returns null (skips the check) when no rows fall in the rendered window', () => {
+  it('returns status "skip" when no rows fall in the rendered window', () => {
     const records = makeRecords('23:00:00', 20, 20); // all rows outside the window, none populated
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
   });
 
   it('treats "", whitespace-only, and "-" as unpopulated', () => {
@@ -180,37 +210,44 @@ describe('checkFieldPopulation', () => {
       makeRecord(ARRIVAL_OTIME, '-'),
     ];
     // 5 unpopulated of 8 clears the floor.
-    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).toContain('3/8');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('3/8');
   });
 
   it('excludes unsupported airlines and cancelled flights from the denominator', () => {
+    // 6 supported/populated rows + 5 excluded (unsupported airline / cancelled) rows that
+    // are all blank. If exclusion were broken, n=11, blanks=5 (>= floor), ratio=6/11=54.5%
+    // (< threshold) => 'fail'. With exclusion working, n=6, blanks=0 => 'pass' — the two
+    // outcomes are distinguishable, unlike a smaller fixture where both paths agree.
     const records = [
-      makeRecord(ARRIVAL_OTIME, '05'),
-      makeRecord(ARRIVAL_OTIME, '', { ACode: 'XX' }), // not a supported airline — excluded
+      ...Array.from({ length: 6 }, () => makeRecord(ARRIVAL_OTIME, '05')),
+      ...Array.from({ length: 5 }, () => makeRecord(ARRIVAL_OTIME, '', { ACode: 'XX' })), // unsupported — excluded
       makeRecord(ARRIVAL_OTIME, '', { Memo: '取消' }), // cancelled — excluded
     ];
-    // Only the first row counts; it's populated, so the ratio is 1/1 = 100%.
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
   it('uses the departure window and Gate field for mode D', () => {
     const records = makeRecords(DEPARTURE_OTIME, 20, 6, 'Gate'); // 14/20 = 70%, 6 blanks >= floor
-    const detail = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
-    expect(detail).not.toBeNull();
-    expect(detail).toContain('Gate');
-    expect(detail).toContain('14/20');
+    const result = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('Gate');
+    expect(result.detail).toContain('14/20');
   });
 
-  it('returns a contract-detail string instead of throwing when a record is malformed', () => {
+  it('returns status "fail" instead of throwing when a record is malformed', () => {
     // Memo missing — filterSupportedAirlines() calls flight.Memo.toLowerCase() unguarded
     // (PR #84 review R4); checkRecordShape's own contract treats null Memo as valid, so
-    // this must degrade to a reported detail, not crash the run.
+    // this must degrade to a reported detail, not crash the run. Status is 'fail', not
+    // 'skip' (issue #86 PR #99 review): a malformed record is a real contract problem,
+    // not an inconclusive sample.
     const records = [
       { ACode: 'BR', ODate: '2026/01/15', OTime: ARRIVAL_OTIME, StopCode: '05' },
     ];
-    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).toContain('row filtering threw');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('row filtering threw');
   });
 });
 
@@ -285,5 +322,209 @@ describe('checkRecordShape / sampleAndCheckShape (departures, issue #83)', () =>
     const record = makeDeparturesRecord();
     const issues = checkRecordShape(record, 0, ARRIVALS_FIELDS);
     expect(issues).toContain('record[0] missing `StopCode`');
+  });
+});
+
+describe('run() — per-class incident state machine (issue #86)', () => {
+  // Routes the GitHub + Discord fetch calls run() makes to whichever callback the test
+  // supplied, so each test only asserts on the calls it cares about. Throws on anything
+  // unhandled rather than silently returning ok — an unexpected call is a sign the test's
+  // mental model of the request sequence is wrong.
+  function mockFetchRouter({ openIncidents = [], onIssuePost, onPatch, onComment, onDiscordPost } = {}) {
+    fetch.mockImplementation(async (url, opts = {}) => {
+      const method = opts.method ?? 'GET';
+      if (url.includes('/issues?labels=')) {
+        return { ok: true, json: async () => openIncidents };
+      }
+      if (url.includes('/labels/') && method === 'GET') {
+        return { ok: true, json: async () => ({}) }; // label already exists, skip creation
+      }
+      if (/\/issues\/\d+\/comments$/.test(url) && method === 'POST') {
+        onComment?.(url, JSON.parse(opts.body));
+        return { ok: true, json: async () => ({}) };
+      }
+      if (/\/issues\/\d+$/.test(url) && method === 'PATCH') {
+        onPatch?.(url, JSON.parse(opts.body));
+        return { ok: true, json: async () => ({}) };
+      }
+      if (url.endsWith('/issues') && method === 'POST') {
+        const body = JSON.parse(opts.body);
+        onIssuePost?.(body);
+        return { ok: true, json: async () => ({ number: 99, html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/99' }) };
+      }
+      if (url.includes('discord.com') && method === 'POST') {
+        onDiscordPost?.(JSON.parse(opts.body));
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`Unhandled fetch in test: ${method} ${url}`);
+    });
+  }
+
+  const UNHEALTHY_PROBE = {
+    arrivals: { status: 500, body: 'Internal Server Error', networkError: null },
+    departures: { status: 500, body: 'Internal Server Error', networkError: null },
+  };
+  // Empty arrays are a legitimate off-peak result (see run()'s own comment on
+  // recordCount), so this clears both the availability and contract checks without
+  // needing well-formed flight records.
+  const HEALTHY_PROBE = {
+    arrivals: { status: 200, body: '[]', networkError: null },
+    departures: { status: 200, body: '[]', networkError: null },
+  };
+
+  beforeEach(() => {
+    vi.spyOn(process, 'exit').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('an availability outage still opens a new incident and alerts while a contract incident is already open', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+    };
+    let issuePost = null;
+    const discordPosts = [];
+    mockFetchRouter({
+      openIncidents: [contractIncident],
+      onIssuePost: (b) => { issuePost = b; },
+      onDiscordPost: (b) => discordPosts.push(b),
+    });
+    probeFlightApiPair.mockResolvedValue(UNHEALTHY_PROBE);
+
+    // probeWithRetry absorbs one bad probe with a real 30s wait before giving up — fast
+    // -forward it rather than actually sleeping.
+    vi.useFakeTimers();
+    const runPromise = run();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await runPromise;
+
+    expect(issuePost).not.toBeNull();
+    expect(issuePost.labels).toEqual(expect.arrayContaining(['status:incident', 'canary:availability']));
+    expect(discordPosts).toHaveLength(1);
+    expect(discordPosts[0].embeds[0].title).toContain('API unavailable');
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('a repeat availability failure stays silent and never touches a separate open contract incident', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+    };
+    const availabilityIncident = {
+      number: 42,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/42',
+      labels: [{ name: 'status:incident' }, { name: 'canary:availability' }],
+    };
+    let issuePosted = false;
+    let patched = false;
+    mockFetchRouter({
+      openIncidents: [contractIncident, availabilityIncident],
+      onIssuePost: () => { issuePosted = true; },
+      onPatch: () => { patched = true; },
+    });
+    probeFlightApiPair.mockResolvedValue(UNHEALTHY_PROBE);
+
+    vi.useFakeTimers();
+    const runPromise = run();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await runPromise;
+
+    expect(issuePosted).toBe(false); // no duplicate incident for the same class
+    expect(patched).toBe(false); // the still-open contract incident is untouched
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  // Fixed reference instant + well-formed, well-populated records for both legs, so
+  // *every* class — including contract — reaches a genuine 'pass' verdict this cycle,
+  // not just 'no failure'. (issue #86 PR #99 review: an empty/off-peak payload is
+  // healthy but 'skip', not 'pass' — see the dedicated test below for that case.)
+  const CONTRACT_HEALTHY_NOW = new Date('2026-01-15T04:00:00+08:00');
+  function makeHealthyArrivalsRecord(i) {
+    return {
+      ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${100 + i}`,
+      ODate: '2026/01/15', OTime: '04:00:00', // inside the arrivals render window
+      CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
+      BNO: i, StopCode: '05', Gate: 'C5', PlaneNo: 'B-18316', flightCode: `BR${100 + i}`,
+    };
+  }
+  function makeHealthyDeparturesRecord(i) {
+    return {
+      ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${200 + i}`,
+      ODate: '2026/01/15', OTime: '04:30:00', // inside the departures render window
+      CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
+      BNO: i, Gate: 'C5', PlaneNo: 'B-18316',
+    };
+  }
+
+  it('a healthy run closes every open incident, each with its own class in the recovery detail', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+      created_at: '2026-07-19T00:00:00Z',
+    };
+    const availabilityIncident = {
+      number: 42,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/42',
+      labels: [{ name: 'status:incident' }, { name: 'canary:availability' }],
+      created_at: '2026-07-19T00:00:00Z',
+    };
+    const patchedUrls = [];
+    const discordPosts = [];
+    mockFetchRouter({
+      openIncidents: [contractIncident, availabilityIncident],
+      onPatch: (url) => patchedUrls.push(url),
+      onDiscordPost: (b) => discordPosts.push(b),
+    });
+    // n=6 on each leg, fully populated — clears the population floor with a genuine
+    // 100% ratio, so contract's verdict this cycle is 'pass', not merely 'not failing'.
+    probeFlightApiPair.mockResolvedValue({
+      arrivals: { status: 200, body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyArrivalsRecord(i))), networkError: null },
+      departures: { status: 200, body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyDeparturesRecord(i))), networkError: null },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(CONTRACT_HEALTHY_NOW);
+    await run(); // healthy on the first probe attempt — no retry wait
+
+    expect(patchedUrls).toHaveLength(2);
+    expect(patchedUrls.some((u) => u.endsWith('/issues/41'))).toBe(true);
+    expect(patchedUrls.some((u) => u.endsWith('/issues/42'))).toBe(true);
+    expect(discordPosts).toHaveLength(2);
+    const descriptions = discordPosts.map((p) => p.embeds[0].description);
+    expect(descriptions.some((d) => d.includes('(contract)'))).toBe(true);
+    expect(descriptions.some((d) => d.includes('(availability)'))).toBe(true);
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it('a contract incident stays open when this run\'s rendered window is empty — "no failure" is not "recovered" (issue #86 PR #99 review)', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+    };
+    let patched = false;
+    let discordPosted = false;
+    mockFetchRouter({
+      openIncidents: [contractIncident],
+      onPatch: () => { patched = true; },
+      onDiscordPost: () => { discordPosted = true; },
+    });
+    // Empty arrays: availability/canary-blocked pass cleanly, but contract's own
+    // per-leg check never runs (empty payload is legitimate off-peak, but it means
+    // this cycle can't confirm the field-population regression that might have opened
+    // the incident is actually gone) — contract's verdict is 'skip', not 'pass'.
+    probeFlightApiPair.mockResolvedValue(HEALTHY_PROBE);
+
+    await run();
+
+    expect(patched).toBe(false); // the open contract incident is left exactly as it was
+    expect(discordPosted).toBe(false); // no false "API recovered"
+    expect(process.exit).not.toHaveBeenCalled();
   });
 });

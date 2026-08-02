@@ -4,12 +4,23 @@
 // State model: healthy / down-availability (non-200) / down-contract (shape drift) /
 // canary-blocked (Cloudflare served a challenge to the canary itself — a canary problem,
 // not necessarily an API outage).
-// State is stored in open GitHub issues (label: status:incident) — Upptime pattern.
-// Discord alerts fire only on state TRANSITIONS, not every run:
-//   healthy → down : open GitHub issue + Discord 🚨 alert
-//   down    → down : silent (incident issue already open)
-//   down    → healthy : close issue with recovery comment + Discord ✅ alert
-//   healthy → healthy : silent
+// State is stored in open GitHub issues (label: status:incident) — Upptime pattern —
+// tracked PER FAILURE CLASS (issue #86), via an additional `canary:<failureType>` label:
+// a contract incident staying open must never silence a later, unrelated availability
+// outage (or vice versa), so only an incident carrying the SAME class's label counts as
+// "already open" for transition purposes.
+//
+// Each class gets a per-run verdict of 'fail' / 'pass' / 'skip' (issue #86 PR #99
+// review), not just "did anything fail" — a class the probe didn't meaningfully exercise
+// this cycle (an empty rendered window, a too-small sample, or a class that was never
+// reached because a different class short-circuited it) is 'skip', and an open incident
+// for a 'skip' class is left exactly as it is: not a failure, not a recovery. Only 'pass'
+// closes an open incident. Discord alerts fire only on state TRANSITIONS, not every run:
+//   fail, no matching open incident      : open GitHub issue + Discord 🚨 alert
+//   fail, matching open incident         : silent (that class's incident already open)
+//   pass, matching open incident         : close it, its own recovery comment + Discord ✅
+//   pass, no matching open incident      : silent
+//   skip                                 : silent; any open incident for that class untouched
 //
 // The API sits behind a Cloudflare managed challenge, so the probe is a stealth browser
 // (see canary/probe.mjs — curl/undici get 403, cf_clearance is IP-bound). Discord +
@@ -112,12 +123,22 @@ function isPopulated(value) {
 
 // Population-ratio guard, shared by the arrivals/StopCode and departures/Gate call
 // sites. `records` is the full-day payload for one AState; `mode` picks the matching
-// time window ('A' or 'D'). Returns null when the check can't fire (no rows currently
-// rendered, filtering threw on a malformed row shape (PR #84 review R4 — a full-payload
-// filterSupportedAirlines/filterFlightsByTime pass is unguarded against a null Memo/ODate,
-// which checkRecordShape's own contract allows), or the ratio/floor didn't clear) or when
-// the ratio holds; otherwise a detail string. `now` defaults to the real clock; tests pass
-// a fixed instant for determinism.
+// time window ('A' or 'D'). `now` defaults to the real clock; tests pass a fixed instant
+// for determinism.
+//
+// Returns `{ status, detail }`, not a bare string|null (issue #86 PR #99 review): a run()
+// that only sees "no issue" can't tell a genuine pass apart from a sample too small to have
+// ever failed, and closing an open incident on the strength of the latter is the same
+// "unevaluated ≠ passed" mistake the ticket exists to fix on the state-machine side —
+// `status` is one of:
+//   'fail' — either populated below both the ratio and blank-count thresholds, or row
+//            filtering itself threw on a malformed record (PR #84 review R4 — that's a
+//            real contract problem, not an inconclusive sample); `detail` is set.
+//   'skip' — the rendered window was empty, OR (below) the window was too small for the
+//            floor to ever have fired even at 0% populated — neither says anything about
+//            the field's real health, so this cycle can't confirm it either way.
+//   'pass' — evaluated on a window large enough that the floor *could* have fired, and it
+//            didn't.
 //
 // Every call logs n/blanks/ratio, healthy or not (PR #84 review R3) — the rendered window
 // is small (~2h) and its per-hour row count is otherwise never observed in production, so
@@ -128,11 +149,11 @@ export function checkFieldPopulation(records, field, mode, label, now = new Date
   try {
     rendered = filterFlightsByTime(filterSupportedAirlines(records), mode, now);
   } catch (err) {
-    return `${label}: \`${field}\` check — row filtering threw on a malformed record: ${err.message}`;
+    return { status: 'fail', detail: `${label}: \`${field}\` check — row filtering threw on a malformed record: ${err.message}` };
   }
   if (rendered.length === 0) {
     console.log(`[canary] ${label} \`${field}\`: rendered window empty (n=0) — check skipped`);
-    return null; // nothing in the rendered window right now
+    return { status: 'skip', detail: null }; // nothing in the rendered window right now
   }
   const populated = rendered.filter(r => isPopulated(r[field])).length;
   const n = rendered.length;
@@ -140,8 +161,18 @@ export function checkFieldPopulation(records, field, mode, label, now = new Date
   const ratio = populated / n;
   const pct = (ratio * 100).toFixed(1);
   console.log(`[canary] ${label} \`${field}\`: n=${n} blanks=${blanks} ratio=${pct}%`);
-  if (blanks < POPULATION_MIN_BLANKS_TO_FIRE || ratio >= POPULATION_RATIO_THRESHOLD) return null;
-  return `${label}: \`${field}\` populated in only ${populated}/${n} (${pct}%) of rendered-window rows (${blanks} blanks) — below both the ${POPULATION_RATIO_THRESHOLD * 100}% threshold and the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor.`;
+  // issue #86 PR #99 review, case 2: at n < the blank floor, even a 100%-blank sample can't
+  // clear POPULATION_MIN_BLANKS_TO_FIRE — the check is structurally incapable of failing,
+  // so a "no issue" result here is not evidence of health, real or otherwise.
+  if (n < POPULATION_MIN_BLANKS_TO_FIRE) {
+    console.log(`[canary] ${label} \`${field}\`: n=${n} below the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor — even a fully-blank sample couldn't clear it, so this cycle can't confirm health (skipped)`);
+    return { status: 'skip', detail: null };
+  }
+  if (blanks < POPULATION_MIN_BLANKS_TO_FIRE || ratio >= POPULATION_RATIO_THRESHOLD) return { status: 'pass', detail: null };
+  return {
+    status: 'fail',
+    detail: `${label}: \`${field}\` populated in only ${populated}/${n} (${pct}%) of rendered-window rows (${blanks} blanks) — below both the ${POPULATION_RATIO_THRESHOLD * 100}% threshold and the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor.`,
+  };
 }
 
 const ODATE_RE = /^\d{4}\/\d{2}\/\d{2}$/;
@@ -174,7 +205,7 @@ async function ghApi(method, path, body) {
   return r.json();
 }
 
-// Sentinel returned by findOpenIncident() when GitHub's own API is unavailable.
+// Sentinel returned by findOpenIncidents() when GitHub's own API is unavailable.
 // Distinct from null ("no open incident") so run() can skip state management without crashing.
 export const GH_READ_FAILED = Symbol('GH_READ_FAILED');
 
@@ -201,13 +232,41 @@ export async function ghApiRetry(path, maxAttempts = 3) {
   }
 }
 
-export async function findOpenIncident() {
-  if (!GITHUB_TOKEN) return null; // local/no-token run: skip state management, probe only
+// Issue #86: state is tracked per failure class, not as one repo-wide open/closed bit —
+// a `status:incident` label groups every incident issue this canary manages, and a
+// `canary:<failureType>` label on top of that records *which* class opened it. Without
+// the class label, `run()` could only ask "is anything open", so a contract incident
+// left open would make a *different*, unrelated availability outage take the silent
+// `down → down` branch instead of alerting — the failure this ticket exists to fix.
+const CANARY_CLASS_LABEL_PREFIX = 'canary:';
+const classLabel = (failureType) => `${CANARY_CLASS_LABEL_PREFIX}${failureType}`;
+
+// Reads the failure class an incident issue was opened for, from its `canary:<type>`
+// label. Returns null when there isn't one — an issue opened before this per-class
+// tracking existed. Treated as an unknown class rather than guessed at: it never matches
+// the current run's `failureType`, so a real failure of any class still opens its own
+// incident and alerts instead of silently deferring to an unclassified open issue.
+export function incidentClass(issue) {
+  const label = (issue.labels ?? []).find((l) => {
+    const name = typeof l === 'string' ? l : l?.name;
+    return typeof name === 'string' && name.startsWith(CANARY_CLASS_LABEL_PREFIX);
+  });
+  const name = typeof label === 'string' ? label : label?.name;
+  return name ? name.slice(CANARY_CLASS_LABEL_PREFIX.length) : null;
+}
+
+// Fetches every currently-open incident issue, across all failure classes — plural,
+// unlike the old single-incident lookup, because more than one class's incident can be
+// open at the same time (e.g. a contract drift and a later, independent availability
+// outage). `run()` matches the current failureType against this list itself rather than
+// this function pre-filtering, so a healthy run can close every open incident in one pass.
+export async function findOpenIncidents() {
+  if (!GITHUB_TOKEN) return []; // local/no-token run: skip state management, probe only
   try {
     const issues = await ghApiRetry(
-      `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=1`,
+      `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=100`,
     );
-    return Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
+    return Array.isArray(issues) ? issues : [];
   } catch (err) {
     console.warn(
       `[canary] ⚠️  GitHub API read failed after retries — skipping state management this run: ${err.message.slice(0, 150)}`,
@@ -216,13 +275,13 @@ export async function findOpenIncident() {
   }
 }
 
-async function ensureLabel() {
+async function ensureLabel(name, color, description) {
   try {
-    await ghApi('GET', `/repos/${REPO_OWNER}/${REPO_NAME}/labels/${encodeURIComponent(INCIDENT_LABEL)}`);
+    await ghApi('GET', `/repos/${REPO_OWNER}/${REPO_NAME}/labels/${encodeURIComponent(name)}`);
   } catch {
     // 404 = not found; create it. Any other error is unexpected but non-fatal.
     await ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/labels`, {
-      name: INCIDENT_LABEL, color: 'e11d48', description: 'API canary incident',
+      name, color, description,
     }).catch(() => {}); // ignore 422 if another run just created it concurrently
   }
 }
@@ -234,7 +293,8 @@ const INCIDENT_TITLES = {
 };
 
 async function openIncidentIssue(failureType, detail, startedAt) {
-  await ensureLabel();
+  await ensureLabel(INCIDENT_LABEL, 'e11d48', 'API canary incident');
+  await ensureLabel(classLabel(failureType), '5319e7', `API canary incident class: ${failureType}`);
   return ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
     title: `${IS_DRILL ? '🧪 [DRILL] ' : ''}${INCIDENT_TITLES[failureType] ?? `API issue (${failureType})`} — started ${startedAt.slice(0, 16)}Z`,
     body: [
@@ -249,7 +309,7 @@ async function openIncidentIssue(failureType, detail, startedAt) {
       `---`,
       `*Opened by api-canary. Will be auto-closed on recovery.*`,
     ].join('\n'),
-    labels: [INCIDENT_LABEL],
+    labels: [INCIDENT_LABEL, classLabel(failureType)],
   });
 }
 
@@ -401,13 +461,51 @@ function parseLegBody(rawBody, label) {
 // Shared healthy-run summary label — both the GH-read-failed fallback log and the
 // steady-state healthy log report the same two counts (PR #84 review R3: departures is
 // fetched every run now but was never reported).
+//
+// Both branches key off `=== 0`, not `=== null` (issue #86 minor item): on the healthy
+// path departuresRecordCount is always a number (set the moment the departures leg
+// parses; a parse failure routes to the failure branch instead and never reaches this
+// function with recordCount/departuresRecordCount populated), so an `=== null` check was
+// dead code — a genuinely empty departures window printed a bare "0 departures" with no
+// off-peak marker, unlike the arrivals leg right next to it.
 function formatHealthyLabel(recordCount, departuresRecordCount) {
   if (recordCount === null) return 'drill (probe skipped)';
   const arrivalsLabel = recordCount === 0 ? '0 arrivals (off-peak window)' : `${recordCount} arrivals`;
-  const departuresLabel = departuresRecordCount === null
+  const departuresLabel = departuresRecordCount === 0
     ? '0 departures (off-peak window)'
     : `${departuresRecordCount} departures`;
   return `${arrivalsLabel}, ${departuresLabel}, contract intact`;
+}
+
+// Evaluates one probe leg's contract (shape + field population) and reduces it to a
+// three-state verdict, mirroring checkFieldPopulation's own states (issue #86 PR #99
+// review): 'fail' (a real issue), 'skip' (an empty payload, or the population check
+// itself couldn't confirm health on too small a sample — see checkFieldPopulation),
+// or 'pass' (shape held and population was evaluated on a meaningful sample).
+// `recordCount` is returned alongside for formatHealthyLabel's summary whenever the body
+// parsed (including 'skip' on an empty array) — null only when parsing itself failed, in
+// which case `verdict` is 'fail' and `failureType` ends up set, so formatHealthyLabel's
+// null-means-drill branch is never actually reached with this kind of null.
+function evaluateLegContract(rawBody, fields, popField, mode, label) {
+  const parsed = parseLegBody(rawBody, label);
+  if (parsed.contractDetail) {
+    return { verdict: 'fail', issues: [parsed.contractDetail], recordCount: null };
+  }
+  const data = parsed.data;
+  const recordCount = data.length;
+  // Empty array is legitimate during off-peak windows — not a failure, but nothing here
+  // confirms contract health either, so this leg is unevaluated, not passed.
+  if (data.length === 0) {
+    return { verdict: 'skip', issues: [], recordCount };
+  }
+  const issues = [];
+  const shapeIssue = sampleAndCheckShape(data, fields, label);
+  if (shapeIssue) issues.push(shapeIssue);
+  const popResult = checkFieldPopulation(data, popField, mode, label);
+  if (popResult.status === 'fail') issues.push(popResult.detail);
+  if (issues.length > 0) return { verdict: 'fail', issues, recordCount };
+  if (popResult.status === 'skip') return { verdict: 'skip', issues: [], recordCount };
+  return { verdict: 'pass', issues: [], recordCount };
 }
 
 async function run() {
@@ -421,6 +519,13 @@ async function run() {
   let recordCount = null;
   let departuresRecordCount = null;
 
+  // Per-class verdict for this cycle (issue #86 PR #99 review): 'skip' by default —
+  // a class only becomes 'fail' or 'pass' when this cycle's probe actually exercised it.
+  // A single scalar `failureType` can't carry this (it only names the one *failing*
+  // class, if any), so the state-machine below reads this map instead of inferring
+  // "everything else must be fine" from `failureType` being null.
+  const verdicts = { availability: 'skip', 'canary-blocked': 'skip', contract: 'skip' };
+
   const drillPair = {
     arrivals: { status: -1, body: '', networkError: null },
     departures: { status: -1, body: '', networkError: null },
@@ -430,6 +535,7 @@ async function run() {
   if (IS_DRILL) {
     failureType = SIMULATE;
     failureDetail = `**SIMULATED ${SIMULATE} failure** — manual alert-path test via workflow_dispatch. Not a real outage.`;
+    verdicts[SIMULATE] = 'fail'; // the other two classes stay 'skip' — a drill exercises one path only
     console.log(`[canary] ⚙️  SIMULATE=${SIMULATE} — exercising the incident/Discord state machine`);
   } else {
     const availabilityIssue =
@@ -439,51 +545,41 @@ async function run() {
     if (availabilityIssue) {
       failureType = availabilityIssue.failureType;
       failureDetail = availabilityIssue.failureDetail;
+      verdicts[failureType] = 'fail';
+      // contract never ran this cycle (short-circuited below), and whichever of
+      // {availability, canary-blocked} didn't fire was never checked either — both
+      // stay 'skip', not 'pass'.
     } else {
-      const contractIssues = [];
+      // Both legs cleared availability/canary-blocked classification this cycle.
+      verdicts.availability = 'pass';
+      verdicts['canary-blocked'] = 'pass';
 
-      const arrivalsParsed = parseLegBody(arrivals.body, 'Arrivals (AState=A)');
-      if (arrivalsParsed.contractDetail) {
-        contractIssues.push(arrivalsParsed.contractDetail);
-      } else {
-        const data = arrivalsParsed.data;
-        recordCount = data.length;
-        // Empty array is legitimate during off-peak windows — not a failure.
-        if (data.length > 0) {
-          const shapeIssue = sampleAndCheckShape(data, ARRIVALS_FIELDS, 'Arrivals (AState=A)');
-          if (shapeIssue) contractIssues.push(shapeIssue);
-          const stopCodeIssue = checkFieldPopulation(data, 'StopCode', 'A', 'Arrivals (AState=A)');
-          if (stopCodeIssue) contractIssues.push(stopCodeIssue);
-        }
-      }
+      const arrivalsResult = evaluateLegContract(arrivals.body, ARRIVALS_FIELDS, 'StopCode', 'A', 'Arrivals (AState=A)');
+      const departuresResult = evaluateLegContract(departures.body, DEPARTURES_FIELDS, 'Gate', 'D', 'Departures (AState=D)');
+      recordCount = arrivalsResult.recordCount;
+      departuresRecordCount = departuresResult.recordCount;
 
-      const departuresParsed = parseLegBody(departures.body, 'Departures (AState=D)');
-      if (departuresParsed.contractDetail) {
-        contractIssues.push(departuresParsed.contractDetail);
-      } else {
-        const departuresData = departuresParsed.data;
-        departuresRecordCount = departuresData.length;
-        if (departuresData.length > 0) {
-          const shapeIssue = sampleAndCheckShape(departuresData, DEPARTURES_FIELDS, 'Departures (AState=D)');
-          if (shapeIssue) contractIssues.push(shapeIssue);
-          const gateIssue = checkFieldPopulation(departuresData, 'Gate', 'D', 'Departures (AState=D)');
-          if (gateIssue) contractIssues.push(gateIssue);
-        }
-      }
-
+      const contractIssues = [...arrivalsResult.issues, ...departuresResult.issues];
       if (contractIssues.length > 0) {
         failureType = 'contract';
         failureDetail = contractIssues.join('\n\n');
+        verdicts.contract = 'fail';
+      } else if (arrivalsResult.verdict === 'skip' || departuresResult.verdict === 'skip') {
+        verdicts.contract = 'skip';
+      } else {
+        verdicts.contract = 'pass';
       }
     }
   }
 
-  // Determine current incident state (open issue = currently down).
-  const openIncident = await findOpenIncident();
+  // Determine current incident state — every currently-open incident, across all failure
+  // classes (issue #86: a contract incident and a later, independent availability outage
+  // can be open at the same time, so this can no longer be a single open/closed bit).
+  const incidents = await findOpenIncidents();
 
   // GitHub's own API was unavailable (even after retries) — skip state management for
   // this run so a GitHub control-plane blip never causes a false-red canary exit.
-  if (openIncident === GH_READ_FAILED) {
+  if (incidents === GH_READ_FAILED) {
     if (failureType) {
       console.error(
         `[canary] ⚠️  GitHub API unavailable — state management skipped. Flight probe: ❌ ${failureType}. Manual follow-up required.`,
@@ -501,10 +597,16 @@ async function run() {
     return; // exit 0: flight API is healthy; don't turn a GitHub blip into a false red
   }
 
-  // State transitions.
+  // State transitions — per failure class (issue #86).
   if (failureType) {
-    if (!openIncident) {
-      // healthy → down: open incident issue + Discord alert.
+    // Only an incident already open for *this* failureType silences a new alert. An
+    // incident open for a different class (or no class label at all — pre-migration/
+    // unknown) never matches, so an availability outage still alerts even while a
+    // contract incident sits open, and vice versa — the acceptance property this
+    // ticket exists to enforce.
+    const matching = incidents.find((i) => incidentClass(i) === failureType);
+    if (!matching) {
+      // healthy → down (for this class): open incident issue + Discord alert.
       if (DRY_RUN) {
         console.log(`[canary] [DRY RUN] ❌ ${failureType} failure — would open incident issue and alert Discord`);
         console.log(`[canary] [DRY RUN] failure detail: ${failureDetail}`);
@@ -523,27 +625,34 @@ async function run() {
         );
       }
     } else {
-      // down → down: silent, incident already open.
-      console.log(`[canary] ❌ ${failureType} failure — incident #${openIncident.number} already open, no new alert`);
+      // down → down (same class): silent, incident already open.
+      console.log(`[canary] ❌ ${failureType} failure — incident #${matching.number} already open, no new alert`);
     }
     process.exit(1);
   } else {
-    if (openIncident) {
-      // down → healthy: close incident + Discord recovery alert.
-      if (DRY_RUN) {
-        console.log(`[canary] [DRY RUN] ✅ Healthy — would close incident #${openIncident.number} and alert Discord`);
-      } else {
-        console.log(`[canary] ✅ Healthy — closing incident #${openIncident.number}`);
-        await closeIncidentIssue(openIncident, now);
+    // No class actively failed this cycle, but that's not the same as every class
+    // having passed (issue #86 PR #99 review) — only close an incident whose class's
+    // verdict this cycle is 'pass'. A 'skip' class (e.g. an empty rendered window, or a
+    // contract incident sitting open while today's window is too small to re-check it)
+    // leaves that incident exactly as it is: not a failure, not a recovery.
+    console.log(`[canary] ✅ Probe healthy this cycle — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
+    for (const incident of incidents) {
+      const cls = incidentClass(incident);
+      if (cls && verdicts[cls] === 'pass') {
+        if (DRY_RUN) {
+          console.log(`[canary] [DRY RUN] ✅ would close incident #${incident.number} (${cls}) and alert Discord`);
+          continue;
+        }
+        console.log(`[canary] ✅ Closing incident #${incident.number} (${cls}) — recovered`);
+        await closeIncidentIssue(incident, now);
         await sendDiscordAlert(
           'API recovered',
-          `Service restored. Incident: ${openIncident.html_url}`,
+          `Service restored (${cls}). Incident: ${incident.html_url}`,
           true,
         );
+      } else {
+        console.log(`[canary] ⏭️  Incident #${incident.number} (${cls ?? 'unknown'}) left open — not evaluated this cycle`);
       }
-    } else {
-      // healthy → healthy: silent.
-      console.log(`[canary] ✅ Healthy — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
     }
   }
 }
