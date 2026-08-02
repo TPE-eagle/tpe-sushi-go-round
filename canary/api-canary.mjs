@@ -482,8 +482,10 @@ function formatHealthyLabel(recordCount, departuresRecordCount) {
 // review): 'fail' (a real issue), 'skip' (an empty payload, or the population check
 // itself couldn't confirm health on too small a sample — see checkFieldPopulation),
 // or 'pass' (shape held and population was evaluated on a meaningful sample).
-// `recordCount` is returned alongside for formatHealthyLabel's summary, unconditionally
-// (even on 'skip'/'fail') so the healthy-run log always reports what the probe actually saw.
+// `recordCount` is returned alongside for formatHealthyLabel's summary whenever the body
+// parsed (including 'skip' on an empty array) — null only when parsing itself failed, in
+// which case `verdict` is 'fail' and `failureType` ends up set, so formatHealthyLabel's
+// null-means-drill branch is never actually reached with this kind of null.
 function evaluateLegContract(rawBody, fields, popField, mode, label) {
   const parsed = parseLegBody(rawBody, label);
   if (parsed.contractDetail) {
