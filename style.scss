@@ -877,9 +877,22 @@ body {
    * that is overlap-proof by construction, at any button count and any
    * title length, not just the ones measured. Desktop keeps the
    * absolute/row layout above, already verified clear of the title and
-   * table header. */
+   * table header.
+   *
+   * `position: relative`, not `static` (issue #72 item 1): a `static`
+   * element ignores `z-index` entirely, silently dropping the base
+   * rule's `z-index: 1030` at this breakpoint. `#refresh-icon` (the
+   * pull-to-refresh pill) is `position: absolute; z-index: 10` — with
+   * `static` the pill paints over this cluster during a pull gesture;
+   * `relative` restores the intended stacking (cluster above pill).
+   * `top`/`right` are reset to `auto` because the base rule's
+   * `top: 10px; right: 10px` are inert under `static` but apply under
+   * `relative` — left as-is, the cluster would visibly shift 10px
+   * left/down from its in-flow position instead of staying put. */
   .theme-buttons-container {
-    position: static;
+    position: relative;
+    top: auto;
+    right: auto;
     justify-content: flex-end;
     margin: 0 0 4px;
   }

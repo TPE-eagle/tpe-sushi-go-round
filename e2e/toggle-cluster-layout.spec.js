@@ -12,6 +12,11 @@ import { setupMockApiRoute, blockGoogleAnalytics, waitForApiAndTable } from './t
 const DESKTOP_VIEWPORTS = [
   { width: 1280, height: 800 },
   { width: 1024, height: 768 },
+  // 769px is the narrowest width that still gets the desktop absolute/row
+  // cluster layout — the ≤768px media query hasn't kicked in yet, so this
+  // is the true worst case for cluster-vs-title clearance (issue #72
+  // item 2: 769-1023px was previously untested).
+  { width: 769, height: 800 },
 ]
 
 function intersects(a, b) {
@@ -29,7 +34,20 @@ function intersects(a, b) {
 // returns the rendered ink instead (the centred children only, not the
 // empty flex space around them), which is what "the cluster visibly covers
 // this" actually means.
+//
+// Two things settle before that measurement (issue #72 PR #95 review R2):
+// #title runs a 2s dropShadowAnimation (style.scss) that widens its
+// letter-spacing from 10px/40px down to 0 as it plays, so measuring mid-
+// animation catches a transient, wider-than-final ink box — this is what
+// made the 769x800 case flaky (fails on the fast first attempt, passes on
+// retry once the animation has settled). changeLanguageFont() (main.js)
+// also appends a Google Fonts stylesheet at runtime, so an early measurement
+// can land on the fallback face before the real one swaps in. Both apply to
+// every caller of this helper, not just the language-axis tests, since the
+// animation plays on every load regardless of language.
 async function getInkBox(locator) {
+  await locator.evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)))
+  await locator.page().evaluate(() => document.fonts.ready)
   return locator.evaluate(el => {
     const r = document.createRange()
     r.selectNodeContents(el)
@@ -85,29 +103,35 @@ test.describe('Toggle cluster layout (issue #66)', () => {
           // can't suppress it.
           expect(clusterBox.height).toBeLessThanOrEqual(40)
 
-          // theadRow is the actual regression target from issue #66. The
-          // mock always returns flights, so an absent/hidden thead here is
+          // theadRow and #title are the actual regression targets from
+          // issue #66 (theadRow) and issue #72 item 3 (#title): the mock
+          // always returns flights and #title is unconditional markup
+          // (main.js's renderApp()), so either being absent/hidden here is
           // a render failure, not a legitimately-conditional element —
-          // assert it's there instead of silently skipping past it.
+          // assert both are there instead of silently skipping past them.
           const theadRow = page.locator('#output table thead tr').first()
           await expect(theadRow).toBeVisible()
           const theadBox = await theadRow.boundingBox()
           expect.soft(intersects(clusterBox, theadBox), 'theadRow intersects the toggle cluster').toBe(false)
 
+          const titleLocator = page.locator('#title')
+          await expect(titleLocator).toBeVisible()
+          const titleInk = await getInkBox(titleLocator)
+          expect.soft(intersects(clusterBox, titleInk), 'title intersects the toggle cluster').toBe(false)
+
           // These are full-width flex/block containers with centred
           // content — measure the rendered ink (getInkBox), not the block
           // box, or the assertion is geometry the user cannot see (R1).
+          // Legitimately conditional (e.g. planeTypeButtons only renders
+          // once an airline is pinned) — count()===0 here is a real
+          // "not applicable", unlike title/theadRow above.
           const inkTargets = {
-            title: page.locator('#title'),
             airlineButtons: page.locator('#airlineButtons'),
             planeTypeButtons: page.locator('#planeTypeButtons'),
             flightButtons: page.locator('#flightButtons'),
           }
 
           for (const [name, locator] of Object.entries(inkTargets)) {
-            // These rows are legitimately conditional (e.g. planeTypeButtons
-            // only renders once an airline is pinned) — count()===0 here is
-            // a real "not applicable", unlike theadRow above.
             if (await locator.count() === 0) continue
             const ink = await getInkBox(locator)
             if (ink.width === 0 || ink.height === 0) continue
@@ -142,11 +166,37 @@ test.describe('Toggle cluster layout (issue #66)', () => {
     const theadBox = await theadRow.boundingBox()
     expect.soft(intersects(clusterBox, theadBox), 'theadRow intersects the toggle cluster on mobile').toBe(false)
 
-    const titleInk = await getInkBox(page.locator('#title'))
-    if (titleInk.width > 0 && titleInk.height > 0) {
-      expect.soft(intersects(clusterBox, titleInk), 'title intersects the toggle cluster on mobile').toBe(false)
-    }
+    const titleLocator = page.locator('#title')
+    await expect(titleLocator).toBeVisible()
+    const titleInk = await getInkBox(titleLocator)
+    expect.soft(intersects(clusterBox, titleInk), 'title intersects the toggle cluster on mobile').toBe(false)
   })
+
+  // Issue #72 item 2, second axis: the loop above only exercises whatever
+  // language the browser context defaults to. #title's copy changes with
+  // the language switcher (main.js translations), and cluster-vs-title
+  // clearance is a function of title width — so at 769x800, the worst-case
+  // viewport for this overlap, check every language's title rather than
+  // assume the default happens to be the widest one.
+  for (const lang of ['zh', 'en', 'jp']) {
+    test(`title does not overlap the toggle cluster at 769x800 — ${lang}`, async ({ page }) => {
+      await page.setViewportSize({ width: 769, height: 800 })
+      await page.goto('/')
+      await waitForApiAndTable(page)
+      await page.waitForSelector('.theme-buttons-container', { timeout: 8000 })
+
+      await page.click(`[data-lang="${lang}"]`)
+      await page.waitForSelector(`[data-lang="${lang}"].active`, { timeout: 5000 })
+
+      const clusterBox = await page.locator('.theme-buttons-container').boundingBox()
+      expect(clusterBox).not.toBeNull()
+
+      const titleLocator = page.locator('#title')
+      await expect(titleLocator).toBeVisible()
+      const titleInk = await getInkBox(titleLocator)
+      expect.soft(intersects(clusterBox, titleInk), `title (${lang}) intersects the toggle cluster at 769x800`).toBe(false)
+    })
+  }
 
   // Issue #66's other complaint: the ☰ glyph read off-centre next to the
   // 🌙/🛬 emoji, suspected to be a text-vs-emoji font baseline mismatch.
