@@ -34,7 +34,20 @@ function intersects(a, b) {
 // returns the rendered ink instead (the centred children only, not the
 // empty flex space around them), which is what "the cluster visibly covers
 // this" actually means.
+//
+// Two things settle before that measurement (issue #72 PR #95 review R2):
+// #title runs a 2s dropShadowAnimation (style.scss) that widens its
+// letter-spacing from 10px/40px down to 0 as it plays, so measuring mid-
+// animation catches a transient, wider-than-final ink box — this is what
+// made the 769x800 case flaky (fails on the fast first attempt, passes on
+// retry once the animation has settled). changeLanguageFont() (main.js)
+// also appends a Google Fonts stylesheet at runtime, so an early measurement
+// can land on the fallback face before the real one swaps in. Both apply to
+// every caller of this helper, not just the language-axis tests, since the
+// animation plays on every load regardless of language.
 async function getInkBox(locator) {
+  await locator.evaluate(el => Promise.all(el.getAnimations().map(a => a.finished)))
+  await locator.page().evaluate(() => document.fonts.ready)
   return locator.evaluate(el => {
     const r = document.createRange()
     r.selectNodeContents(el)
@@ -153,10 +166,10 @@ test.describe('Toggle cluster layout (issue #66)', () => {
     const theadBox = await theadRow.boundingBox()
     expect.soft(intersects(clusterBox, theadBox), 'theadRow intersects the toggle cluster on mobile').toBe(false)
 
-    const titleInk = await getInkBox(page.locator('#title'))
-    if (titleInk.width > 0 && titleInk.height > 0) {
-      expect.soft(intersects(clusterBox, titleInk), 'title intersects the toggle cluster on mobile').toBe(false)
-    }
+    const titleLocator = page.locator('#title')
+    await expect(titleLocator).toBeVisible()
+    const titleInk = await getInkBox(titleLocator)
+    expect.soft(intersects(clusterBox, titleInk), 'title intersects the toggle cluster on mobile').toBe(false)
   })
 
   // Issue #72 item 2, second axis: the loop above only exercises whatever
