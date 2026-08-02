@@ -1,16 +1,17 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 // Mirror cookie functions from main.js for isolated unit testing.
 function setCookie(name, value, days = 400) {
     const d = new Date()
     d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000)
-    document.cookie = `${name}=${value};expires=${d.toUTCString()};path=/`
+    document.cookie = `${name}=${encodeURIComponent(value)};expires=${d.toUTCString()};path=/`
 }
 
 function getCookie(name) {
     const value = `; ${document.cookie}`
     const parts = value.split(`; ${name}=`)
-    if (parts.length === 2) return parts.pop().split(';').shift()
+    if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift())
 }
 
 function renewPins(names) {
@@ -99,5 +100,63 @@ describe('Cookie sliding renew', () => {
         writtenCookies = []
         renewPins(['ACode', 'PlaneType', 'theme'])
         expect(writtenCookies).toHaveLength(0)
+    })
+
+    // issue #102 "Done when" #2: a value containing a cookie-jar-reserved character
+    // survives a setCookie -> getCookie round trip. getCookie() splits on `;` to find a
+    // value's end, so an unencoded `;` — or `,`/`=`/space, all of which are meaningful in
+    // a raw Set-Cookie string — would corrupt the parse without the encode/decode pair.
+    test.each([
+        ['a value containing a semicolon', 'A;B'],
+        ['a value containing a comma', 'A,B'],
+        ['a value containing an equals sign', 'A=B'],
+        ['a value containing a space', 'A B'],
+    ])('setCookie/getCookie round-trips %s', (_label, value) => {
+        setCookie('ACode', value)
+        expect(getCookie('ACode')).toBe(value)
+    })
+
+    // issue #102 "Done when" #3: the one regression path worth testing explicitly. Every
+    // value written by the app today (BR / A321 / dark / zh) is encodeURIComponent-
+    // identity, so a cookie jar written by the OLD (unencoded) code must still read back
+    // correctly under the NEW decode — checked here, not assumed.
+    test('a cookie jar written by the old, unencoded code still reads back identically under the new decode', () => {
+        proto.set.call(document, 'ACode=BR;path=/')
+        proto.set.call(document, 'PlaneType=A321;path=/')
+        proto.set.call(document, 'theme=dark;path=/')
+        proto.set.call(document, 'lang=zh;path=/')
+
+        expect(getCookie('ACode')).toBe('BR')
+        expect(getCookie('PlaneType')).toBe('A321')
+        expect(getCookie('theme')).toBe('dark')
+        expect(getCookie('lang')).toBe('zh')
+    })
+})
+
+// issue #102 "Done when" #1, strongest form: not just that PERSISTED_COOKIE_NAMES exists,
+// but that a persisted cookie added without also registering it for renewal is a failing
+// test. Parses main.js as text (same technique as src/test/logo.test.js's issue #96
+// guard) rather than importing, since main.js exports nothing — these functions are
+// intentionally inline, not part of the documented src/utils/ duplication convention.
+describe("main.js's PERSISTED_COOKIE_NAMES registry covers every setCookie() call site (issue #102)", () => {
+    const mainSrc = readFileSync('main.js', 'utf8')
+
+    test('every setCookie(<COOKIE_NAME_CONST>, ...) call site is covered by the registry', () => {
+        const registryMatch = mainSrc.match(/const PERSISTED_COOKIE_NAMES = \[([^\]]*)\];/)
+        expect(
+            registryMatch,
+            "main.js's PERSISTED_COOKIE_NAMES literal wasn't found by this guard's regex — " +
+            'it was likely reformatted. Update the regex in src/test/cookie.test.js, don\'t skip this check.'
+        ).not.toBeNull()
+        const registered = new Set(registryMatch[1].split(',').map(s => s.trim()).filter(Boolean))
+
+        // Every setCookie(<UPPER_SNAKE_CASE_CONST>, ...) call site names the cookie it
+        // persists. renewPins()'s own call — setCookie(name, value), a lowercase loop
+        // variable, not a specific constant — doesn't match this pattern and is correctly
+        // excluded: it's the renewal itself, not a new declaration.
+        const callSites = [...mainSrc.matchAll(/\bsetCookie\(([A-Z][A-Z0-9_]*),/g)].map(m => m[1])
+        expect(callSites.length).toBeGreaterThan(0) // sanity: the regex itself still matches something
+        const missing = callSites.filter(name => !registered.has(name))
+        expect(missing).toEqual([])
     })
 })

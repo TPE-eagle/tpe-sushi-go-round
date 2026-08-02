@@ -1746,17 +1746,25 @@ function displayFlights(flights, ACode) {
         : tableContent;
 }
 
+// issue #102: encode on write / decode on read, changed together — encoding only the
+// write would produce a value that no longer round-trips, and the failure would only
+// surface for the first value that actually needs escaping (nobody's written one yet).
+// Every value written today (BR / A321 / dark / zh) is encodeURIComponent-identity, so
+// existing users' cookies stay byte-identical and keep parsing under the new decode —
+// checked, not assumed (see src/test/cookie.test.js). getCookie() also splits on `;` to
+// find a value's end, so an unencoded `;`/`,`/`=`/space in a future value would corrupt
+// not just that cookie but the parse of whichever cookie follows it in the jar.
 function setCookie(name, value, days = 400) {
     const d = new Date();
     d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
     const expires = "expires=" + d.toUTCString();
-    document.cookie = `${name}=${value};${expires};path=/`;
+    document.cookie = `${name}=${encodeURIComponent(value)};${expires};path=/`;
 }
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(";").shift();
+    if (parts.length === 2) return decodeURIComponent(parts.pop().split(";").shift());
 }
 
 function deleteCookie(name) {
@@ -1767,8 +1775,15 @@ function checkCookie(name) {
     return !!getCookie(name);
 }
 
+// issue #102: the set of persisted cookies used to exist only as this function's own
+// forEach argument — a hand-maintained list nothing else read. Declaring it once here
+// and having a test (src/test/cookie.test.js) assert every setCookie() call site's
+// cookie-name constant is covered by it means a persisted cookie added without also
+// registering it for renewal is a failing test, not a silent 400-day-later expiry.
+const PERSISTED_COOKIE_NAMES = [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME, LANGUAGE_COOKIE_NAME];
+
 function renewPins() {
-    [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME, LANGUAGE_COOKIE_NAME].forEach(name => {
+    PERSISTED_COOKIE_NAMES.forEach(name => {
         const value = getCookie(name);
         if (value !== undefined) setCookie(name, value);
     });
