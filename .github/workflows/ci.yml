@@ -92,8 +92,25 @@ jobs:
     # below: nick-fields/retry#124 (EPERM on timeout) and #114 (whole run fails without another
     # attempt) are both open; re-checked 2026-08-01. Keep this budget generous, not tight.
     - name: "🛫 Deploying Browser Engines"
-      # Browser download only, and skipped entirely on a cache hit.
-      if: steps.cache-playwright.outputs.cache-hit != 'true'
+      # Browser download only. Runs UNCONDITIONALLY — deliberately NOT gated on the cache hit (#92).
+      #
+      # ⚠️ NOT because a failed run can persist a partial cache. It cannot: actions/cache declares
+      # `post-if: success()`, verified on every release from v1 through the v5 pinned above, so a run
+      # that dies partway through this step saves nothing at all. (v4.0.0 briefly allowed
+      # `success() || inputs.save-always`; that input is deprecated as "does not work as intended".)
+      # #92 was filed on the save-on-failure theory and that theory is wrong — do not reinstate the
+      # guard by re-deriving it, and do not repeat the claim.
+      #
+      # The reason that survives is #81's class of defect, which a *green* run is enough to cause.
+      # This job and e2e-tests-production share one key with no engine-set component, so a payload
+      # that is complete but scoped to the wrong browser set restores as a hit. Gated on that hit,
+      # the job fails on a missing binary; unconditional, it repairs itself. That is benign today
+      # only because both jobs run the identical bare `npx playwright install` and therefore write
+      # byte-identical payloads — so this is defence in depth against that ceasing to be true, not
+      # a fix for a live bug.
+      #
+      # Costs ~nothing: `playwright install` consults the browser registry and downloads only what
+      # is absent, so against a complete warm cache it is a no-op.
       uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
@@ -254,9 +271,20 @@ jobs:
         command: npx playwright install-deps
 
     - name: "🛫 Deploying Browser Engines"
-      # Browser download only (system deps handled above), and skipped entirely on a cache hit —
-      # which is exactly why it should not share a budget with the apt stage.
-      if: steps.cache-playwright.outputs.cache-hit != 'true'
+      # Browser download only (system deps handled above). Runs UNCONDITIONALLY — deliberately NOT
+      # gated on the cache hit; the full reasoning is on the same-named step in e2e-tests-local (#92).
+      # Short version: this job shares a key with that one and the key encodes no engine set, so a
+      # complete-but-wrong-set payload would restore as a hit and, if gated, leave this job failing
+      # on a missing binary — with the apt stage above green immediately in front of it, disguising
+      # the cause. Unconditional, it repairs itself. (NOT a save-on-failure argument; actions/cache
+      # is `post-if: success()` and never persists a partial cache — see the other job's note.)
+      #
+      # This job is the one that would actually be starved, because its config runs mobile-safari on
+      # webkit while e2e-tests-local is chromium-only.
+      #
+      # It still keeps its own budget rather than sharing the apt stage's: the two have very
+      # different cost profiles, which is what #36 split them for. That rationale never depended on
+      # this step being skippable.
       uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
