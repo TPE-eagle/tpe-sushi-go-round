@@ -154,10 +154,10 @@ describe('Cookie sliding renew', () => {
 // test. Parses main.js as text (same technique as src/test/logo.test.js's issue #96
 // guard) rather than importing, since main.js exports nothing — these functions are
 // intentionally inline, not part of the documented src/utils/ duplication convention.
-describe("main.js's PERSISTED_COOKIE_NAMES registry covers every setCookie() call site (issue #102)", () => {
+describe("main.js's PERSISTED_COOKIE_NAMES registry covers every setCookie() call site (issue #102, hardened by #107)", () => {
     const mainSrc = readFileSync('main.js', 'utf8')
 
-    test('every setCookie(<COOKIE_NAME_CONST>, ...) call site is covered by the registry', () => {
+    test('every setCookie(...) call site names either a registered constant or the renewal loop variable — a closed set, not a pattern', () => {
         const registryMatch = mainSrc.match(/const PERSISTED_COOKIE_NAMES = \[([^\]]*)\];/)
         expect(
             registryMatch,
@@ -166,14 +166,18 @@ describe("main.js's PERSISTED_COOKIE_NAMES registry covers every setCookie() cal
         ).not.toBeNull()
         const registered = new Set(registryMatch[1].split(',').map(s => s.trim()).filter(Boolean))
 
-        // Every setCookie(<UPPER_SNAKE_CASE_CONST>, ...) call site names the cookie it
-        // persists. renewPins()'s own call — setCookie(name, value), a lowercase loop
-        // variable, not a specific constant — doesn't match this pattern and is correctly
-        // excluded: it's the renewal itself, not a new declaration.
-        const callSites = [...mainSrc.matchAll(/\bsetCookie\(([A-Z][A-Z0-9_]*),/g)].map(m => m[1])
+        // issue #107 item 1: the previous version of this guard only captured
+        // [A-Z][A-Z0-9_]* call sites, so setCookie('newpref', value) or
+        // setCookie(newPrefName, value) were both invisible to it — what shipped was "a
+        // new persisted cookie declared as an uppercase const can't skip renewal", not
+        // #102's flat "not possible". Capturing everything up to the first comma, verbatim
+        // — identifier or string literal, any case — and allowing only two shapes closes
+        // that: a name in the registry, or exactly `name`, renewPins()'s own loop variable
+        // (unchanged from before — it's the renewal call itself, not a new declaration).
+        const callSites = [...mainSrc.matchAll(/\bsetCookie\(\s*([^,\n]+?)\s*,/g)].map(m => m[1])
         expect(callSites.length).toBeGreaterThan(0) // sanity: the regex itself still matches something
-        const missing = callSites.filter(name => !registered.has(name))
-        expect(missing).toEqual([])
+        const disallowed = callSites.filter(arg => arg !== 'name' && !registered.has(arg))
+        expect(disallowed).toEqual([])
     })
 })
 
@@ -209,5 +213,15 @@ describe("main.js's setCookie/getCookie actually encode/decode (issue #102 F2 re
     test('the shipped getCookie() reads through decodeURIComponent', () => {
         const body = extractFunctionBody(/function getCookie\(name\)/)
         expect(body).toContain('decodeURIComponent(raw)')
+    })
+
+    // issue #107 item 2: the test above only asserted the call exists — deleting the
+    // try/catch around it (keeping the call) stays green there, while getCookie() regains
+    // a throw path on the startup boot path (initApp() -> renewPins() -> getCookie()),
+    // exactly the failure #106's F1 fix existed to remove. Asserting the wrapped shape,
+    // not just the call, covers the property the fix was for, not just the fix's presence.
+    test("the shipped getCookie()'s decodeURIComponent call is wrapped in try/catch, not just present", () => {
+        const body = extractFunctionBody(/function getCookie\(name\)/)
+        expect(body).toMatch(/try\s*\{\s*return decodeURIComponent\(raw\);\s*\}\s*catch/)
     })
 })
