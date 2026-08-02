@@ -65,12 +65,12 @@ describe('main.js inline literal stays in sync with src/utils/flightUtils.js', (
         return JSON.parse(match[1].replace(/'/g, '"'));
     }
 
-    it('KNOWN_LOGO_CODES', () => {
+    it("main.js's inline KNOWN_LOGO_CODES matches the flightUtils.js export", () => {
         const inline = extractLiteral('KNOWN_LOGO_CODES', /const KNOWN_LOGO_CODES = (\[[^\]]*\]);/);
         expect(new Set(inline)).toEqual(new Set(KNOWN_LOGO_CODES));
     });
 
-    it('AIRLINE_GROUPS', () => {
+    it("main.js's inline AIRLINE_GROUPS matches the flightUtils.js export", () => {
         const inline = extractLiteral('AIRLINE_GROUPS', /const AIRLINE_GROUPS = (\{[\s\S]*?\});/);
         expect(inline).toEqual(AIRLINE_GROUPS);
     });
