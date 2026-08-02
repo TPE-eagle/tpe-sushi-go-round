@@ -4,12 +4,17 @@
 // State model: healthy / down-availability (non-200) / down-contract (shape drift) /
 // canary-blocked (Cloudflare served a challenge to the canary itself — a canary problem,
 // not necessarily an API outage).
-// State is stored in open GitHub issues (label: status:incident) — Upptime pattern.
-// Discord alerts fire only on state TRANSITIONS, not every run:
-//   healthy → down : open GitHub issue + Discord 🚨 alert
-//   down    → down : silent (incident issue already open)
-//   down    → healthy : close issue with recovery comment + Discord ✅ alert
-//   healthy → healthy : silent
+// State is stored in open GitHub issues (label: status:incident) — Upptime pattern —
+// tracked PER FAILURE CLASS (issue #86), via an additional `canary:<failureType>` label:
+// a contract incident staying open must never silence a later, unrelated availability
+// outage (or vice versa), so only an incident carrying the SAME class's label counts as
+// "already open" for transition purposes. Discord alerts fire only on state TRANSITIONS,
+// not every run, evaluated per class:
+//   healthy → down (this class)  : open GitHub issue + Discord 🚨 alert
+//   down    → down (same class)  : silent (that class's incident issue already open)
+//   healthy (all classes)        : close every currently-open incident, each with its
+//                                   own recovery comment + Discord ✅ alert naming its class
+//   healthy → healthy, nothing open : silent
 //
 // The API sits behind a Cloudflare managed challenge, so the probe is a stealth browser
 // (see canary/probe.mjs — curl/undici get 403, cf_clearance is IP-bound). Discord +
@@ -174,7 +179,7 @@ async function ghApi(method, path, body) {
   return r.json();
 }
 
-// Sentinel returned by findOpenIncident() when GitHub's own API is unavailable.
+// Sentinel returned by findOpenIncidents() when GitHub's own API is unavailable.
 // Distinct from null ("no open incident") so run() can skip state management without crashing.
 export const GH_READ_FAILED = Symbol('GH_READ_FAILED');
 
@@ -201,13 +206,41 @@ export async function ghApiRetry(path, maxAttempts = 3) {
   }
 }
 
-export async function findOpenIncident() {
-  if (!GITHUB_TOKEN) return null; // local/no-token run: skip state management, probe only
+// Issue #86: state is tracked per failure class, not as one repo-wide open/closed bit —
+// a `status:incident` label groups every incident issue this canary manages, and a
+// `canary:<failureType>` label on top of that records *which* class opened it. Without
+// the class label, `run()` could only ask "is anything open", so a contract incident
+// left open would make a *different*, unrelated availability outage take the silent
+// `down → down` branch instead of alerting — the failure this ticket exists to fix.
+const CANARY_CLASS_LABEL_PREFIX = 'canary:';
+const classLabel = (failureType) => `${CANARY_CLASS_LABEL_PREFIX}${failureType}`;
+
+// Reads the failure class an incident issue was opened for, from its `canary:<type>`
+// label. Returns null when there isn't one — an issue opened before this per-class
+// tracking existed. Treated as an unknown class rather than guessed at: it never matches
+// the current run's `failureType`, so a real failure of any class still opens its own
+// incident and alerts instead of silently deferring to an unclassified open issue.
+export function incidentClass(issue) {
+  const label = (issue.labels ?? []).find((l) => {
+    const name = typeof l === 'string' ? l : l?.name;
+    return typeof name === 'string' && name.startsWith(CANARY_CLASS_LABEL_PREFIX);
+  });
+  const name = typeof label === 'string' ? label : label?.name;
+  return name ? name.slice(CANARY_CLASS_LABEL_PREFIX.length) : null;
+}
+
+// Fetches every currently-open incident issue, across all failure classes — plural,
+// unlike the old single-incident lookup, because more than one class's incident can be
+// open at the same time (e.g. a contract drift and a later, independent availability
+// outage). `run()` matches the current failureType against this list itself rather than
+// this function pre-filtering, so a healthy run can close every open incident in one pass.
+export async function findOpenIncidents() {
+  if (!GITHUB_TOKEN) return []; // local/no-token run: skip state management, probe only
   try {
     const issues = await ghApiRetry(
-      `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=1`,
+      `/repos/${REPO_OWNER}/${REPO_NAME}/issues?labels=${INCIDENT_LABEL}&state=open&per_page=100`,
     );
-    return Array.isArray(issues) && issues.length > 0 ? issues[0] : null;
+    return Array.isArray(issues) ? issues : [];
   } catch (err) {
     console.warn(
       `[canary] ⚠️  GitHub API read failed after retries — skipping state management this run: ${err.message.slice(0, 150)}`,
@@ -216,13 +249,13 @@ export async function findOpenIncident() {
   }
 }
 
-async function ensureLabel() {
+async function ensureLabel(name, color, description) {
   try {
-    await ghApi('GET', `/repos/${REPO_OWNER}/${REPO_NAME}/labels/${encodeURIComponent(INCIDENT_LABEL)}`);
+    await ghApi('GET', `/repos/${REPO_OWNER}/${REPO_NAME}/labels/${encodeURIComponent(name)}`);
   } catch {
     // 404 = not found; create it. Any other error is unexpected but non-fatal.
     await ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/labels`, {
-      name: INCIDENT_LABEL, color: 'e11d48', description: 'API canary incident',
+      name, color, description,
     }).catch(() => {}); // ignore 422 if another run just created it concurrently
   }
 }
@@ -234,7 +267,8 @@ const INCIDENT_TITLES = {
 };
 
 async function openIncidentIssue(failureType, detail, startedAt) {
-  await ensureLabel();
+  await ensureLabel(INCIDENT_LABEL, 'e11d48', 'API canary incident');
+  await ensureLabel(classLabel(failureType), '5319e7', `API canary incident class: ${failureType}`);
   return ghApi('POST', `/repos/${REPO_OWNER}/${REPO_NAME}/issues`, {
     title: `${IS_DRILL ? '🧪 [DRILL] ' : ''}${INCIDENT_TITLES[failureType] ?? `API issue (${failureType})`} — started ${startedAt.slice(0, 16)}Z`,
     body: [
@@ -249,7 +283,7 @@ async function openIncidentIssue(failureType, detail, startedAt) {
       `---`,
       `*Opened by api-canary. Will be auto-closed on recovery.*`,
     ].join('\n'),
-    labels: [INCIDENT_LABEL],
+    labels: [INCIDENT_LABEL, classLabel(failureType)],
   });
 }
 
@@ -401,10 +435,17 @@ function parseLegBody(rawBody, label) {
 // Shared healthy-run summary label — both the GH-read-failed fallback log and the
 // steady-state healthy log report the same two counts (PR #84 review R3: departures is
 // fetched every run now but was never reported).
+//
+// Both branches key off `=== 0`, not `=== null` (issue #86 minor item): on the healthy
+// path departuresRecordCount is always a number (set the moment the departures leg
+// parses; a parse failure routes to the failure branch instead and never reaches this
+// function with recordCount/departuresRecordCount populated), so an `=== null` check was
+// dead code — a genuinely empty departures window printed a bare "0 departures" with no
+// off-peak marker, unlike the arrivals leg right next to it.
 function formatHealthyLabel(recordCount, departuresRecordCount) {
   if (recordCount === null) return 'drill (probe skipped)';
   const arrivalsLabel = recordCount === 0 ? '0 arrivals (off-peak window)' : `${recordCount} arrivals`;
-  const departuresLabel = departuresRecordCount === null
+  const departuresLabel = departuresRecordCount === 0
     ? '0 departures (off-peak window)'
     : `${departuresRecordCount} departures`;
   return `${arrivalsLabel}, ${departuresLabel}, contract intact`;
@@ -478,12 +519,14 @@ async function run() {
     }
   }
 
-  // Determine current incident state (open issue = currently down).
-  const openIncident = await findOpenIncident();
+  // Determine current incident state — every currently-open incident, across all failure
+  // classes (issue #86: a contract incident and a later, independent availability outage
+  // can be open at the same time, so this can no longer be a single open/closed bit).
+  const incidents = await findOpenIncidents();
 
   // GitHub's own API was unavailable (even after retries) — skip state management for
   // this run so a GitHub control-plane blip never causes a false-red canary exit.
-  if (openIncident === GH_READ_FAILED) {
+  if (incidents === GH_READ_FAILED) {
     if (failureType) {
       console.error(
         `[canary] ⚠️  GitHub API unavailable — state management skipped. Flight probe: ❌ ${failureType}. Manual follow-up required.`,
@@ -501,10 +544,16 @@ async function run() {
     return; // exit 0: flight API is healthy; don't turn a GitHub blip into a false red
   }
 
-  // State transitions.
+  // State transitions — per failure class (issue #86).
   if (failureType) {
-    if (!openIncident) {
-      // healthy → down: open incident issue + Discord alert.
+    // Only an incident already open for *this* failureType silences a new alert. An
+    // incident open for a different class (or no class label at all — pre-migration/
+    // unknown) never matches, so an availability outage still alerts even while a
+    // contract incident sits open, and vice versa — the acceptance property this
+    // ticket exists to enforce.
+    const matching = incidents.find((i) => incidentClass(i) === failureType);
+    if (!matching) {
+      // healthy → down (for this class): open incident issue + Discord alert.
       if (DRY_RUN) {
         console.log(`[canary] [DRY RUN] ❌ ${failureType} failure — would open incident issue and alert Discord`);
         console.log(`[canary] [DRY RUN] failure detail: ${failureDetail}`);
@@ -523,28 +572,32 @@ async function run() {
         );
       }
     } else {
-      // down → down: silent, incident already open.
-      console.log(`[canary] ❌ ${failureType} failure — incident #${openIncident.number} already open, no new alert`);
+      // down → down (same class): silent, incident already open.
+      console.log(`[canary] ❌ ${failureType} failure — incident #${matching.number} already open, no new alert`);
     }
     process.exit(1);
-  } else {
-    if (openIncident) {
-      // down → healthy: close incident + Discord recovery alert.
+  } else if (incidents.length > 0) {
+    // healthy: every check that runs this cycle passed, so every currently-open
+    // incident — whichever class(es) it's for — has recovered. Close each on its own,
+    // with its own recovery comment/alert naming its class, rather than one incident's
+    // class standing in for all of them (the mirror defect this ticket calls out).
+    for (const incident of incidents) {
+      const cls = incidentClass(incident) ?? 'unknown';
       if (DRY_RUN) {
-        console.log(`[canary] [DRY RUN] ✅ Healthy — would close incident #${openIncident.number} and alert Discord`);
-      } else {
-        console.log(`[canary] ✅ Healthy — closing incident #${openIncident.number}`);
-        await closeIncidentIssue(openIncident, now);
-        await sendDiscordAlert(
-          'API recovered',
-          `Service restored. Incident: ${openIncident.html_url}`,
-          true,
-        );
+        console.log(`[canary] [DRY RUN] ✅ Healthy — would close incident #${incident.number} (${cls}) and alert Discord`);
+        continue;
       }
-    } else {
-      // healthy → healthy: silent.
-      console.log(`[canary] ✅ Healthy — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
+      console.log(`[canary] ✅ Healthy — closing incident #${incident.number} (${cls})`);
+      await closeIncidentIssue(incident, now);
+      await sendDiscordAlert(
+        'API recovered',
+        `Service restored (${cls}). Incident: ${incident.html_url}`,
+        true,
+      );
     }
+  } else {
+    // healthy → healthy: silent.
+    console.log(`[canary] ✅ Healthy — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
   }
 }
 
