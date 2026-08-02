@@ -222,6 +222,19 @@ describe("main.js's setCookie/getCookie actually encode/decode (issue #102 F2 re
     // not just the call, covers the property the fix was for, not just the fix's presence.
     test("the shipped getCookie()'s decodeURIComponent call is wrapped in try/catch, not just present", () => {
         const body = extractFunctionBody(/function getCookie\(name\)/)
-        expect(body).toMatch(/try\s*\{\s*return decodeURIComponent\(raw\);\s*\}\s*catch/)
+        // jonatw-eagle review on #108 R1: the exact-statement form this replaced
+        // (`try\s*\{\s*return decodeURIComponent\(raw\);\s*\}\s*catch`) pins the literal
+        // text, so a correct getCookie() — an added comment, a dropped semicolon, a
+        // formatter pass — turns this red with a bare diff, not the "regex likely
+        // outdated, update it" message this file uses everywhere else. `[^}]*` (rather
+        // than gemini's suggested `[\s\S]*?`, which is unbounded and can walk past the
+        // try block's own closing brace into unrelated code — matching a decode call that
+        // isn't actually wrapped) tolerates reformatting inside the try block while still
+        // being unable to cross out of it.
+        expect(
+            body,
+            "getCookie()'s try/catch shape wasn't matched by this guard's regex — " +
+            "if you refactored it, update the regex in src/test/cookie.test.js, don't skip this check."
+        ).toMatch(/try\s*\{[^}]*decodeURIComponent\s*\(\s*raw\s*\)[^}]*\}\s*catch/)
     })
 })
