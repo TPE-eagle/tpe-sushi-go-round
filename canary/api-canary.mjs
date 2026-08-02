@@ -597,6 +597,60 @@ async function run() {
     return; // exit 0: flight API is healthy; don't turn a GitHub blip into a false red
   }
 
+  // Close every incident whose class's verdict THIS cycle is 'pass' — unconditionally,
+  // before the failureType branch below decides whether to open/silence/exit (issue #101
+  // F4). The verdict map already knows the per-class answer; running this only inside the
+  // "nothing failed" branch missed the same-cycle mixed case — e.g. availability recovers
+  // while contract starts failing — leaving a genuinely-recovered class's incident open
+  // until its *next* failure silently reuses the stale one (no new alert, wrong duration).
+  // A 'skip' class (empty rendered window, or a sample too small to re-check) still leaves
+  // its incident exactly as it is: not a failure, not a recovery (issue #86 PR #99 review).
+  for (const incident of incidents) {
+    const cls = incidentClass(incident);
+    if (cls && verdicts[cls] === 'pass') {
+      if (DRY_RUN) {
+        console.log(`[canary] [DRY RUN] ✅ would close incident #${incident.number} (${cls}) and alert Discord`);
+        continue;
+      }
+      console.log(`[canary] ✅ Closing incident #${incident.number} (${cls}) — recovered`);
+      try {
+        await closeIncidentIssue(incident, now);
+        await sendDiscordAlert(
+          'API recovered',
+          `Service restored (${cls}). Incident: ${incident.html_url}`,
+          true,
+        );
+      } catch (err) {
+        // issue #101 F1: GH_READ_FAILED already guards the read path (findOpenIncidents);
+        // this write path performs N writes with no equivalent guard, so one transient
+        // GitHub error mid-loop must not abort the remaining incidents in this loop, nor
+        // turn an otherwise-healthy run into a false non-zero exit. jonatw-eagle review on
+        // #105 R1: swallowing this into console.error alone converts a loud failure (pre-
+        // this-PR, the same 502 threw to the top-level handler, alerting + exiting 1) into
+        // a quiet one whose residue is exactly what #101 was filed about — the incident
+        // stays open, and the next real failure of this class dedupes against it silently.
+        // Not retried (writes are deliberately not auto-retried, unlike GH_READ_FAILED's
+        // read path), but not silent either: best-effort Discord alert so a human sees it
+        // outside the Actions log. sendDiscordAlert self-catches and never throws, so this
+        // is safe with no further nesting.
+        console.error(`[canary] ⚠️  Failed to close incident #${incident.number} (${cls}): ${err.message}`);
+        await sendDiscordAlert(
+          'Incident close failed',
+          `Could not close a recovered ${cls} incident: ${incident.html_url}\n\nIt stays open, so the next ${cls} failure will dedupe against it and alert silently.\n\n\`${err.message.slice(0, 300)}\``,
+          false,
+        );
+      }
+    } else {
+      // issue #101 F4 follow-up (gemini-code-assist review on #105): this loop now also
+      // sees incidents whose class failed this cycle (verdicts[cls] === 'fail'), not just
+      // classes never evaluated — "not evaluated this cycle" would be wrong for those; it
+      // was evaluated, and failed. Distinguishing them keeps the audit log from
+      // contradicting itself against the "❌ ... already open" log two branches below.
+      const reason = cls && verdicts[cls] === 'fail' ? 'still failing' : 'not evaluated this cycle';
+      console.log(`[canary] ⏭️  Incident #${incident.number} (${cls ?? 'unknown'}) left open — ${reason}`);
+    }
+  }
+
   // State transitions — per failure class (issue #86).
   if (failureType) {
     // Only an incident already open for *this* failureType silences a new alert. An
@@ -630,30 +684,7 @@ async function run() {
     }
     process.exit(1);
   } else {
-    // No class actively failed this cycle, but that's not the same as every class
-    // having passed (issue #86 PR #99 review) — only close an incident whose class's
-    // verdict this cycle is 'pass'. A 'skip' class (e.g. an empty rendered window, or a
-    // contract incident sitting open while today's window is too small to re-check it)
-    // leaves that incident exactly as it is: not a failure, not a recovery.
     console.log(`[canary] ✅ Probe healthy this cycle — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
-    for (const incident of incidents) {
-      const cls = incidentClass(incident);
-      if (cls && verdicts[cls] === 'pass') {
-        if (DRY_RUN) {
-          console.log(`[canary] [DRY RUN] ✅ would close incident #${incident.number} (${cls}) and alert Discord`);
-          continue;
-        }
-        console.log(`[canary] ✅ Closing incident #${incident.number} (${cls}) — recovered`);
-        await closeIncidentIssue(incident, now);
-        await sendDiscordAlert(
-          'API recovered',
-          `Service restored (${cls}). Incident: ${incident.html_url}`,
-          true,
-        );
-      } else {
-        console.log(`[canary] ⏭️  Incident #${incident.number} (${cls ?? 'unknown'}) left open — not evaluated this cycle`);
-      }
-    }
   }
 }
 
