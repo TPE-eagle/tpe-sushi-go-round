@@ -527,4 +527,153 @@ describe('run() — per-class incident state machine (issue #86)', () => {
     expect(discordPosted).toBe(false); // no false "API recovered"
     expect(process.exit).not.toHaveBeenCalled();
   });
+
+  // issue #101 F2: the discriminating test #99 was missing. The two existing tests above
+  // each cover one incident in isolation — "everything passes ⇒ close" and "empty window
+  // ⇒ contract stays open" — but neither proves the close loop tells the two classes
+  // *apart* within the same run. A regression such as an early return on an empty window
+  // would leave both of those tests green while wrongly stranding the availability
+  // incident too; this is the one test that would catch it.
+  it('one empty-window run leaves a contract incident open while closing a separate availability incident (issue #101 F2)', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+    };
+    const availabilityIncident = {
+      number: 42,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/42',
+      labels: [{ name: 'status:incident' }, { name: 'canary:availability' }],
+      created_at: '2026-07-19T00:00:00Z',
+    };
+    const patchedUrls = [];
+    const discordPosts = [];
+    mockFetchRouter({
+      openIncidents: [contractIncident, availabilityIncident],
+      onPatch: (url) => patchedUrls.push(url),
+      onDiscordPost: (b) => discordPosts.push(b),
+    });
+    // Empty arrays: both legs are a clean 200, so availability/canary-blocked reach a
+    // genuine 'pass' verdict; contract's own check never runs on an empty payload, so its
+    // verdict is 'skip', not 'pass'.
+    probeFlightApiPair.mockResolvedValue(HEALTHY_PROBE);
+
+    await run();
+
+    expect(patchedUrls).toEqual(['https://api.github.com/repos/TPE-eagle/tpe-sushi-go-round/issues/42']);
+    expect(discordPosts).toHaveLength(1);
+    expect(discordPosts[0].embeds[0].description).toContain('(availability)');
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  // issue #101 F4: a failing cycle used to exit(1) before the close loop ever ran, so a
+  // class that genuinely recovered THIS cycle stayed open as long as some other class
+  // failed in the same cycle. Reproduces the mechanism directly: contract fails on a real
+  // shape/population problem while both legs are a clean 200 (availability/canary-blocked
+  // verdict 'pass'), with a pre-existing open availability incident that this cycle's
+  // verdict says should close.
+  it('a failing cycle still closes a different class\'s incident that genuinely recovered this cycle (issue #101 F4)', async () => {
+    const availabilityIncident = {
+      number: 42,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/42',
+      labels: [{ name: 'status:incident' }, { name: 'canary:availability' }],
+      created_at: '2026-07-19T00:00:00Z',
+    };
+    let issuePost = null;
+    const patchedUrls = [];
+    const discordPosts = [];
+    mockFetchRouter({
+      openIncidents: [availabilityIncident],
+      onIssuePost: (b) => { issuePost = b; },
+      onPatch: (url) => patchedUrls.push(url),
+      onDiscordPost: (b) => discordPosts.push(b),
+    });
+    // Both legs 200 (availability/canary-blocked pass), departures fully healthy, but
+    // arrivals' StopCode population fails: n=6, 5 blanks — below both the ratio and the
+    // absolute floor, same fixture shape as the checkFieldPopulation 'fail' tests above.
+    probeFlightApiPair.mockResolvedValue({
+      arrivals: {
+        status: 200,
+        body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyArrivalsRecord(i)).map((r, i) => ({ ...r, StopCode: i < 5 ? '' : '05' }))),
+        networkError: null,
+      },
+      departures: {
+        status: 200,
+        body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyDeparturesRecord(i))),
+        networkError: null,
+      },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(CONTRACT_HEALTHY_NOW);
+    await run(); // healthy probe (both legs 200) — no retry wait
+
+    // The recovered availability incident closes even though this cycle exits 1 for contract.
+    expect(patchedUrls).toEqual(['https://api.github.com/repos/TPE-eagle/tpe-sushi-go-round/issues/42']);
+    // A new contract incident opens — this class has no prior open incident.
+    expect(issuePost).not.toBeNull();
+    expect(issuePost.labels).toEqual(expect.arrayContaining(['status:incident', 'canary:contract']));
+    const descriptions = discordPosts.map((p) => p.embeds[0].description);
+    expect(descriptions.some((d) => d.includes('(availability)'))).toBe(true); // recovery alert
+    expect(descriptions.some((d) => d.includes('StopCode'))).toBe(true); // new contract alert
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  // issue #101 F1: the write path (closing incidents) had no equivalent to GH_READ_FAILED
+  // on the read path. A transient GitHub error closing one incident must not abort the
+  // rest of the loop or crash an otherwise-healthy run.
+  it('a transient error closing one incident does not abort the rest of the close loop (issue #101 F1)', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+      created_at: '2026-07-19T00:00:00Z',
+    };
+    const availabilityIncident = {
+      number: 42,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/42',
+      labels: [{ name: 'status:incident' }, { name: 'canary:availability' }],
+      created_at: '2026-07-19T00:00:00Z',
+    };
+    const patchedUrls = [];
+    const discordPosts = [];
+    fetch.mockImplementation(async (url, opts = {}) => {
+      const method = opts.method ?? 'GET';
+      if (url.includes('/issues?labels=')) {
+        return { ok: true, json: async () => [contractIncident, availabilityIncident] };
+      }
+      // #41's comment POST (first ghApi call inside closeIncidentIssue) fails every time —
+      // simulates a transient GitHub error on that one incident's close.
+      if (url === 'https://api.github.com/repos/TPE-eagle/tpe-sushi-go-round/issues/41/comments' && method === 'POST') {
+        return { ok: false, status: 502, text: async () => 'Bad Gateway' };
+      }
+      if (/\/issues\/\d+\/comments$/.test(url) && method === 'POST') {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (/\/issues\/\d+$/.test(url) && method === 'PATCH') {
+        patchedUrls.push(url);
+        return { ok: true, json: async () => ({}) };
+      }
+      if (url.includes('discord.com') && method === 'POST') {
+        discordPosts.push(JSON.parse(opts.body));
+        return { ok: true, text: async () => '' };
+      }
+      throw new Error(`Unhandled fetch in test: ${method} ${url}`);
+    });
+    probeFlightApiPair.mockResolvedValue({
+      arrivals: { status: 200, body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyArrivalsRecord(i))), networkError: null },
+      departures: { status: 200, body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyDeparturesRecord(i))), networkError: null },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(CONTRACT_HEALTHY_NOW);
+    await expect(run()).resolves.not.toThrow();
+
+    // #41 (contract) failed to close, but #42 (availability) still did — the loop
+    // continued past the failure instead of aborting.
+    expect(patchedUrls).toEqual(['https://api.github.com/repos/TPE-eagle/tpe-sushi-go-round/issues/42']);
+    expect(discordPosts).toHaveLength(1);
+    expect(discordPosts[0].embeds[0].description).toContain('(availability)');
+    expect(process.exit).not.toHaveBeenCalled(); // both classes passed this cycle — still a healthy run
+  });
 });
