@@ -176,3 +176,38 @@ describe("main.js's PERSISTED_COOKIE_NAMES registry covers every setCookie() cal
         expect(missing).toEqual([])
     })
 })
+
+// jonatw-eagle review on #106 F2: every encode/decode test above exercises the mirrored
+// setCookie/getCookie declared at the top of this file, not the shipped main.js — so all
+// of them stay green even if main.js's encode/decode were reverted entirely. That matters
+// specifically because #102's "Done when" #3 is about the code that ships, not a copy.
+// Parses main.js as text (same technique as the registry guard above and the #96 logo
+// guard) to assert the shipped functions actually encode/decode, closing that gap.
+describe("main.js's setCookie/getCookie actually encode/decode (issue #102 F2 review)", () => {
+    const mainSrc = readFileSync('main.js', 'utf8')
+
+    function extractFunctionBody(signaturePattern) {
+        // Top-level functions in main.js are unindented, so their own closing brace is a
+        // '}' at column 0 (immediately after a newline, no leading whitespace) — every
+        // inner block's closing brace (if/try/catch) is indented and so never matches
+        // `\n\}` literally. Non-greedy: stops at this function's own close, not a later one.
+        const pattern = new RegExp(`${signaturePattern.source} \\{[\\s\\S]*?\\n\\}`);
+        const match = mainSrc.match(pattern);
+        expect(
+            match,
+            `main.js's function body wasn't found by this guard's regex (${pattern}) — ` +
+            "it was likely reformatted. Update the regex in src/test/cookie.test.js, don't skip this check."
+        ).not.toBeNull();
+        return match[0];
+    }
+
+    test('the shipped setCookie() writes through encodeURIComponent', () => {
+        const body = extractFunctionBody(/function setCookie\(name, value, days = 400\)/)
+        expect(body).toContain('encodeURIComponent(value)')
+    })
+
+    test('the shipped getCookie() reads through decodeURIComponent', () => {
+        const body = extractFunctionBody(/function getCookie\(name\)/)
+        expect(body).toContain('decodeURIComponent(raw)')
+    })
+})
