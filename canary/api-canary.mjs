@@ -16,14 +16,17 @@
 // GitHub API calls use native fetch (those services aren't gated). Each run fetches both
 // AState=A (arrivals) and AState=D (departures) for today, in one browser session.
 //
-// Contract is derived from getMockFlightData() in e2e/test-helpers.js and the
-// "Response fields consumed" list in CLAUDE.md. Required-field shape (including
-// `StopCode`) is sampled on the arrivals payload only — rename / type-change is caught
-// there with no threshold. `StopCode` (arrivals) and `Gate` (departures) additionally get
-// a population-ratio + absolute-floor check over the rows the app actually renders (today,
-// inside the mode's time window) — see checkFieldPopulation — because both are
-// legitimately empty on some rows even on a healthy day, so full-payload / per-row
-// assertions on "present but empty" would misfire (issue #77 / #67 R13, PR #84 review R1).
+// Contract is derived from the app's own render path (main.js / blockTimes.js /
+// flightUtils.js) and the "Response fields consumed" list in CLAUDE.md. Required-field
+// shape is sampled on both payloads — arrivals against ARRIVALS_FIELDS (including
+// `StopCode`, the arrivals carousel), departures against the separately-derived
+// DEPARTURES_FIELDS (issue #83) — via the shared sampleAndCheckShape()/checkRecordShape();
+// rename / type-change is caught there with no threshold. `StopCode` (arrivals) and `Gate`
+// (departures) additionally get a population-ratio + absolute-floor check over the rows
+// the app actually renders (today, inside the mode's time window) — see
+// checkFieldPopulation — because both are legitimately empty on some rows even on a
+// healthy day, so full-payload / per-row assertions on "present but empty" would misfire
+// (issue #77 / #67 R13, PR #84 review R1).
 
 import { fileURLToPath } from 'url';
 import { probeFlightApiPair, isChallengeHtml } from './probe.mjs';
@@ -56,6 +59,30 @@ const REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 
 const REQUIRED_NUMBER_FIELDS = ['BNO'];
 // Must be present; may be empty string (Gate, PlaneNo) or a derived string.
 const EXPECTED_PRESENT_FIELDS = ['Gate', 'PlaneNo', 'CityName', 'flightCode'];
+const ARRIVALS_FIELDS = {
+  requiredString: REQUIRED_STRING_FIELDS,
+  requiredNumber: REQUIRED_NUMBER_FIELDS,
+  expectedPresent: EXPECTED_PRESENT_FIELDS,
+};
+
+// Departures (AState=D) field lists — issue #83. Derived from the AState=D render path
+// (displayFlights/generateAirlineLinks in main.js, findReturnLeg in blockTimes.js,
+// filterSupportedAirlines/filterFlightsByTime in flightUtils.js), not copied from
+// arrivals. Same as the arrivals lists minus StopCode (arrivals carousel column, never
+// read on the departures path — grepped, zero hits outside StopCode's own arrivals-only
+// call site) and minus flightCode: despite being in EXPECTED_PRESENT_FIELDS above and in
+// CLAUDE.md's "Response fields consumed" list, it is not read by main.js in *either* mode
+// (grepped main.js + src/utils/*.js — zero hits outside test fixtures/mocks), so it isn't
+// something a rename/drop here would actually break. Left out rather than carried over by
+// habit; the arrivals list itself is unchanged (scope lock, #83 review item 6).
+const DEPARTURES_REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 'CityCode', 'CityEname', 'Memo'];
+const DEPARTURES_REQUIRED_NUMBER_FIELDS = ['BNO'];
+const DEPARTURES_EXPECTED_PRESENT_FIELDS = ['Gate', 'PlaneNo', 'CityName'];
+const DEPARTURES_FIELDS = {
+  requiredString: DEPARTURES_REQUIRED_STRING_FIELDS,
+  requiredNumber: DEPARTURES_REQUIRED_NUMBER_FIELDS,
+  expectedPresent: DEPARTURES_EXPECTED_PRESENT_FIELDS,
+};
 
 // Issue #77 / #67 R13: StopCode (arrivals carousel) and Gate (departures boarding gate)
 // are populated well below 100% even on a healthy day, so a per-row hard fail would page
@@ -275,17 +302,19 @@ async function sendDiscordAlert(title, description, isOk = false) {
   }
 }
 
-function checkRecordShape(record, index) {
+// `fields` is one of ARRIVALS_FIELDS / DEPARTURES_FIELDS — the caller picks the bundle,
+// this function stays mode-agnostic (issue #83: one shape checker, not two).
+function checkRecordShape(record, index, fields) {
   const issues = [];
-  for (const f of REQUIRED_STRING_FIELDS) {
+  for (const f of fields.requiredString) {
     if (!(f in record)) { issues.push(`record[${index}] missing \`${f}\``); continue; }
     if (record[f] !== null && typeof record[f] !== 'string') issues.push(`record[${index}].${f}: expected string|null, got ${typeof record[f]}`);
   }
-  for (const f of REQUIRED_NUMBER_FIELDS) {
+  for (const f of fields.requiredNumber) {
     if (!(f in record)) { issues.push(`record[${index}] missing \`${f}\``); continue; }
     if (record[f] !== null && typeof record[f] !== 'number') issues.push(`record[${index}].${f}: expected number|null, got ${typeof record[f]}`);
   }
-  for (const f of EXPECTED_PRESENT_FIELDS) {
+  for (const f of fields.expectedPresent) {
     if (!(f in record)) issues.push(`record[${index}] missing \`${f}\``);
   }
   if (record.ODate && !ODATE_RE.test(record.ODate))
@@ -293,6 +322,25 @@ function checkRecordShape(record, index) {
   if (record.OTime && !OTIME_RE.test(record.OTime))
     issues.push(`record[${index}].OTime format unexpected: "${record.OTime}"`);
   return issues;
+}
+
+// Samples up to 5 records (indices 0, 1, 2, middle, last — de-duped) from `data`, runs
+// checkRecordShape() over each with the given field-list bundle, and formats a single
+// contract-issue string if any sampled record fails. Shared by the arrivals and
+// departures legs (issue #83 item 1) so the sampling recipe and the liveKeys-on-mismatch
+// reporting can't drift between the two the way two independent samplers would.
+function sampleAndCheckShape(data, fields, label) {
+  const idxs = [...new Set([0, 1, 2, Math.floor(data.length / 2), data.length - 1])]
+    .filter(i => i < data.length);
+  const shapeIssues = [...new Set(idxs.flatMap(i => checkRecordShape(data[i], i, fields)))];
+  if (shapeIssues.length === 0) return null;
+  const liveKeys = Object.keys(data[0]).join(', ');
+  return [
+    `${label}: shape mismatch (${data.length} records; sampled indices ${idxs.join(', ')}):`,
+    shapeIssues.map(s => `• ${s}`).join('\n'),
+    ``,
+    `Live record keys: \`${liveKeys}\``,
+  ].join('\n');
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -402,18 +450,8 @@ async function run() {
         recordCount = data.length;
         // Empty array is legitimate during off-peak windows — not a failure.
         if (data.length > 0) {
-          const idxs = [...new Set([0, 1, 2, Math.floor(data.length / 2), data.length - 1])]
-            .filter(i => i < data.length);
-          const shapeIssues = [...new Set(idxs.flatMap(i => checkRecordShape(data[i], i)))];
-          if (shapeIssues.length > 0) {
-            const liveKeys = Object.keys(data[0]).join(', ');
-            contractIssues.push([
-              `Arrivals (AState=A): shape mismatch (${data.length} records; sampled indices ${idxs.join(', ')}):`,
-              shapeIssues.map(s => `• ${s}`).join('\n'),
-              ``,
-              `Live record keys: \`${liveKeys}\``,
-            ].join('\n'));
-          }
+          const shapeIssue = sampleAndCheckShape(data, ARRIVALS_FIELDS, 'Arrivals (AState=A)');
+          if (shapeIssue) contractIssues.push(shapeIssue);
           const stopCodeIssue = checkFieldPopulation(data, 'StopCode', 'A', 'Arrivals (AState=A)');
           if (stopCodeIssue) contractIssues.push(stopCodeIssue);
         }
@@ -423,9 +461,12 @@ async function run() {
       if (departuresParsed.contractDetail) {
         contractIssues.push(departuresParsed.contractDetail);
       } else {
-        departuresRecordCount = departuresParsed.data.length;
-        if (departuresParsed.data.length > 0) {
-          const gateIssue = checkFieldPopulation(departuresParsed.data, 'Gate', 'D', 'Departures (AState=D)');
+        const departuresData = departuresParsed.data;
+        departuresRecordCount = departuresData.length;
+        if (departuresData.length > 0) {
+          const shapeIssue = sampleAndCheckShape(departuresData, DEPARTURES_FIELDS, 'Departures (AState=D)');
+          if (shapeIssue) contractIssues.push(shapeIssue);
+          const gateIssue = checkFieldPopulation(departuresData, 'Gate', 'D', 'Departures (AState=D)');
           if (gateIssue) contractIssues.push(gateIssue);
         }
       }
@@ -516,4 +557,4 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   });
 }
 
-export { run };
+export { run, checkRecordShape, sampleAndCheckShape, ARRIVALS_FIELDS, DEPARTURES_FIELDS };

@@ -80,16 +80,10 @@ async function fetchOnPage(page, date, state) {
   return { status: res.status, body: res.body };
 }
 
-export async function probeFlightApi(date, state = 'A') {
-  try {
-    return await withProbePage(page => fetchOnPage(page, date, state));
-  } catch (err) {
-    return { status: 0, body: '', networkError: err.message };
-  }
-}
-
 // Fetches AState=A (arrivals) and AState=D (departures) for the same date in one
-// browser session — see withProbePage for why this isn't two probeFlightApi() calls.
+// browser session — see withProbePage for why a single-leg fetch isn't offered
+// separately (a second chromium.launch() from the same runner IP raises the bot
+// score for no reason; #67).
 export async function probeFlightApiPair(date) {
   try {
     return await withProbePage(async page => ({

@@ -13,7 +13,16 @@ vi.mock('./probe.mjs', () => ({
   isChallengeHtml: vi.fn(() => false),
 }));
 
-import { findOpenIncident, ghApiRetry, GH_READ_FAILED, checkFieldPopulation } from './api-canary.mjs';
+import {
+  findOpenIncident,
+  ghApiRetry,
+  GH_READ_FAILED,
+  checkFieldPopulation,
+  checkRecordShape,
+  sampleAndCheckShape,
+  ARRIVALS_FIELDS,
+  DEPARTURES_FIELDS,
+} from './api-canary.mjs';
 
 // fetch is set to vi.fn() globally by src/test/setup.js.
 // Each test configures its own responses; vi.resetAllMocks() wipes them between tests.
@@ -202,5 +211,79 @@ describe('checkFieldPopulation', () => {
     ];
     const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     expect(detail).toContain('row filtering threw');
+  });
+});
+
+describe('checkRecordShape / sampleAndCheckShape (departures, issue #83)', () => {
+  // A valid AState=D record covering every field in DEPARTURES_FIELDS, so a single
+  // drop/rename per test is the only thing that can make it fail.
+  function makeDeparturesRecord(overrides = {}) {
+    return {
+      ACode: 'BR',
+      AName: 'EVA Air',
+      FlightNo: 'BR087',
+      ODate: '2026/01/15',
+      OTime: '04:30:00',
+      CityCode: 'NRT',
+      CityEname: 'Tokyo Narita',
+      CityName: '東京成田',
+      Memo: '',
+      BNO: 5,
+      Gate: 'C5',
+      PlaneNo: 'B-18316',
+      ...overrides,
+    };
+  }
+
+  it('passes shape check on a well-formed departures record', () => {
+    const record = makeDeparturesRecord();
+    expect(checkRecordShape(record, 0, DEPARTURES_FIELDS)).toEqual([]);
+  });
+
+  it('fires when a required departures field is dropped (rename/removal regression)', () => {
+    const record = makeDeparturesRecord();
+    delete record.CityEname;
+    const issues = checkRecordShape(record, 0, DEPARTURES_FIELDS);
+    expect(issues).toContain('record[0] missing `CityEname`');
+  });
+
+  it('fires when a required departures field is renamed to an unexpected type', () => {
+    // e.g. the API starts sending BNO as a numeric string instead of a number.
+    const record = makeDeparturesRecord({ BNO: '5' });
+    const issues = checkRecordShape(record, 0, DEPARTURES_FIELDS);
+    expect(issues).toContain('record[0].BNO: expected number|null, got string');
+  });
+
+  it('does not require StopCode (arrivals-only) on departures records', () => {
+    const record = makeDeparturesRecord();
+    expect('StopCode' in record).toBe(false);
+    expect(checkRecordShape(record, 0, DEPARTURES_FIELDS)).toEqual([]);
+  });
+
+  it('sampleAndCheckShape returns null across a healthy departures sample', () => {
+    const records = Array.from({ length: 6 }, (_, i) =>
+      makeDeparturesRecord({ FlightNo: `BR0${80 + i}` }),
+    );
+    expect(sampleAndCheckShape(records, DEPARTURES_FIELDS, 'Departures (AState=D)')).toBeNull();
+  });
+
+  it('sampleAndCheckShape reports the mismatch and the live key set when a field is dropped', () => {
+    const records = Array.from({ length: 6 }, (_, i) =>
+      makeDeparturesRecord({ FlightNo: `BR0${80 + i}` }),
+    );
+    delete records[2].Gate; // sampled index (0, 1, 2, 3, 5) includes index 2
+    const detail = sampleAndCheckShape(records, DEPARTURES_FIELDS, 'Departures (AState=D)');
+    expect(detail).not.toBeNull();
+    expect(detail).toContain('Departures (AState=D): shape mismatch');
+    expect(detail).toContain('missing `Gate`');
+    expect(detail).toContain('Live record keys:');
+  });
+
+  it('arrivals field-list checks are unaffected by the departures bundle (scope lock, issue #83 item 6)', () => {
+    // ARRIVALS_FIELDS still requires StopCode; a departures-shaped record (no StopCode)
+    // must still fail against it, proving the two bundles stayed independent.
+    const record = makeDeparturesRecord();
+    const issues = checkRecordShape(record, 0, ARRIVALS_FIELDS);
+    expect(issues).toContain('record[0] missing `StopCode`');
   });
 });
