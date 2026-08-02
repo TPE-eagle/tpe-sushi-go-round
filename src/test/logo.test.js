@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { hasVendoredLogo, KNOWN_LOGO_CODES, AIRLINE_GROUPS } from '../utils/flightUtils.js'
 
 // issue #69: logos are vendored locally for the 5 codes an airline group
@@ -39,5 +39,39 @@ describe('hasVendoredLogo', () => {
     it('covers every code AIRLINE_GROUPS can surface', () => {
         const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
         expect(new Set(KNOWN_LOGO_CODES)).toEqual(new Set(allGroupCodes));
+    });
+});
+
+// issue #96: the three-things-must-agree list for a logo to render has a
+// third member — main.js's own inline KNOWN_LOGO_CODES / AIRLINE_GROUPS
+// literals (the repo's documented duplication convention; see CLAUDE.md).
+// Every test above imports from src/utils/flightUtils.js, so none of them
+// can see main.js's copy drift — editing main.js's literals directly still
+// leaves every existing test green while shipping the exact 404'd <img>
+// hasVendoredLogo() exists to prevent.
+describe('main.js inline literal stays in sync with src/utils/flightUtils.js', () => {
+    const mainSrc = readFileSync('main.js', 'utf8');
+
+    // A regex that stops matching (reformatted literal: multi-line array,
+    // trailing comma, double quotes) must fail loudly as a drift signal,
+    // not throw a TypeError on `null[1]` that reads like a broken test.
+    function extractLiteral(name, pattern) {
+        const match = mainSrc.match(pattern);
+        expect(
+            match,
+            `main.js's inline \`${name}\` literal wasn't found by this guard's regex (${pattern}) — ` +
+            `it was likely reformatted. Update the regex in src/test/logo.test.js, don't skip this check.`
+        ).not.toBeNull();
+        return JSON.parse(match[1].replace(/'/g, '"'));
+    }
+
+    it('KNOWN_LOGO_CODES', () => {
+        const inline = extractLiteral('KNOWN_LOGO_CODES', /const KNOWN_LOGO_CODES = (\[[^\]]*\]);/);
+        expect(new Set(inline)).toEqual(new Set(KNOWN_LOGO_CODES));
+    });
+
+    it('AIRLINE_GROUPS', () => {
+        const inline = extractLiteral('AIRLINE_GROUPS', /const AIRLINE_GROUPS = (\{[\s\S]*?\});/);
+        expect(inline).toEqual(AIRLINE_GROUPS);
     });
 });
