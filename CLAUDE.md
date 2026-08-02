@@ -151,7 +151,7 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 **Block Google Analytics in E2E.** All setups call `blockGoogleAnalytics()` to avoid tracking noise and CSP flakiness.
 
-**Shared utility module with inline duplication.** `src/utils/flightUtils.js` is imported by unit tests. `main.js` re-implements the same functions inline (no import) to keep the bundle self-contained. **These two copies must stay in sync.** Current duplicated functions: `filterFlightsByTime`, `filterSupportedAirlines`, `getTimeWindowConfig`, `getTimeWindow`, `roundDownToStep`, `extractPlaneFamily`, `getAvailableFamilies`, `filterByPlaneType`. Same convention applies to `src/utils/blockTimes.js`: `BLOCK_TIME_MINUTES`, `TURNAROUND_MINUTES`, `getMinPlausibleRoundTripMinutes`, `findReturnLeg`, `dayReturn`. (`getUncoveredCityCodes` is test/build-time only — not part of the render path, not mirrored in `main.js`. `findReturnLeg`'s aircraft-type check calls `extractPlaneFamily`, already in this list.)
+**Shared utility module with inline duplication.** `src/utils/flightUtils.js` is imported by unit tests. `main.js` re-implements the same functions inline (no import) to keep the bundle self-contained. **These two copies must stay in sync.** Current duplicated functions: `filterFlightsByTime`, `filterSupportedAirlines`, `getTimeWindowConfig`, `getTimeWindow`, `roundDownToStep`, `extractPlaneFamily`, `getAvailableFamilies`, `filterByPlaneType`, `hasVendoredLogo` (plus the `KNOWN_LOGO_CODES` constant it reads — issue #69). Same convention applies to `src/utils/blockTimes.js`: `BLOCK_TIME_MINUTES`, `TURNAROUND_MINUTES`, `getMinPlausibleRoundTripMinutes`, `findReturnLeg`, `dayReturn`. (`getUncoveredCityCodes` is test/build-time only — not part of the render path, not mirrored in `main.js`. `findReturnLeg`'s aircraft-type check calls `extractPlaneFamily`, already in this list.)
 
 **CSP `connect-src` lists only real origins.** An earlier commit included `https://api.taoyuan-airport.com`, which does not resolve in DNS. The real API lives at `https://www.taoyuan-airport.com/api/api/flight/a_flight` (the `www` host with an `/api/` path). Only add origins to CSP that the app actually talks to.
 
@@ -210,7 +210,7 @@ After changes:
 When uncertain:
 - All times are UTC+8. Watch for timezone drift in new tests.
 - Do not guess at API response fields; probe the real endpoint or inspect `e2e/test-helpers.js` mock.
-- Adding an airline: update `AIRLINE_CODES` and `AIRLINE_GROUPS` in both `main.js` and `src/utils/flightUtils.js`, plus logo / colour styles in `style.scss`.
+- Adding an airline: update `AIRLINE_CODES` and `AIRLINE_GROUPS` in both `main.js` and `src/utils/flightUtils.js`, plus logo / colour styles in `style.scss`. Also vendor the new code's GIF into `public/logos/` and add it to `KNOWN_LOGO_CODES` (both copies) — otherwise `hasVendoredLogo()` correctly abstains and the airline silently renders with no logo.
 - Changing a duplicated utility: update both `main.js` and `src/utils/flightUtils.js` in the same commit.
 
 ## Global Behavior Rules
