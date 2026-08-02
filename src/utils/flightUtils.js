@@ -12,6 +12,19 @@ export const AIRLINE_GROUPS = {
     'JX': ['JX']
 };
 
+// Airline codes with a vendored logo file in public/logos/ (issue #69).
+// An ACode outside this set (new route, codeshare, API change) has no
+// local file, so hasVendoredLogo() returning false renders with no logo
+// image rather than a broken <img src>.
+export const KNOWN_LOGO_CODES = ['BR', 'B7', 'CI', 'AE', 'JX'];
+
+/**
+ * Whether a vendored logo file exists locally for this airline code.
+ */
+export function hasVendoredLogo(code) {
+    return KNOWN_LOGO_CODES.includes(code);
+}
+
 /**
  * Get UTC+8 date string in YYYY/MM/DD format
  */

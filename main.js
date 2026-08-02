@@ -13,6 +13,16 @@ const AIRLINE_GROUPS = {
     'CI': ['CI', 'AE'],
     'JX': ['JX']
 };
+// Vendored locally (issue #69) — the table renders a logo for every code an
+// airline group can contain, not just the 3 filter buttons, so this must
+// list all 5. A code outside this set (unknown route, codeshare, API change)
+// has no local file, so hasVendoredLogo() returning false renders with no
+// logo image rather than a broken <img src>.
+const KNOWN_LOGO_CODES = ['BR', 'B7', 'CI', 'AE', 'JX'];
+function hasVendoredLogo(code) {
+    return KNOWN_LOGO_CODES.includes(code);
+}
+const LOGO_BASE_URL = `${import.meta.env.BASE_URL}logos/`;
 const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const PLANE_TYPE_COOKIE_NAME = 'PlaneType';
@@ -1259,10 +1269,12 @@ function generateAirlineLinks(flights) {
 
     AIRLINE_CODES.forEach(code => {
         if (airlines[code]) {
-            const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${code}.gif`;
+            const logoImg = hasVendoredLogo(code)
+                ? `<img alt="${code} Logo" width="${imageSize}" height="${Math.floor(imageSize * 0.71)}" src="${LOGO_BASE_URL}${code}.gif">`
+                : '';
             linksHTML += `
                 <a href="#" data-airline="${code}" class="airline-link">
-                    <img alt="${code} Logo" width="${imageSize}" height="${Math.floor(imageSize * 0.71)}" src="${logoUrl}">
+                    ${logoImg}
                     <span class="airline-full">${airlines[code]}</span>
                     <span class="airline-short">${code}</span>
                 </a>`;
@@ -1711,12 +1723,14 @@ function displayFlights(flights, ACode) {
     flights.forEach(flight => {
         const cityDisplay = isSmall ? flight.CityCode : (currentLanguage === 'zh' ? flight.CityName : flight.CityEname);
         const terminalDisplay = flight.BNO ? `T${flight.BNO}` : '';
-        const logoUrl = `https://www.taoyuan-airport.com/uploads/airlogo/${flight.ACode}.gif`;
         const displayFlightNo = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
+        const logoImg = hasVendoredLogo(flight.ACode)
+            ? `<img alt="" width="28" height="20" src="${LOGO_BASE_URL}${flight.ACode}.gif">`
+            : '';
 
         tableContent += `
             <tr>
-                <td><img alt="" width="28" height="20" src="${logoUrl}">${displayFlightNo}</td>
+                <td>${logoImg}${displayFlightNo}</td>
                 <td ${isSmall ? 'class="text-center"' : ''}>${cityDisplay}</td>
                 <td class="text-center">${terminalDisplay}</td>
                 <td class="text-center">${flight.Gate}</td>

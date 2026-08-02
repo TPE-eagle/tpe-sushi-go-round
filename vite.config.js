@@ -36,7 +36,10 @@ export default defineConfig({
         // Precache the app shell only. External requests (Taoyuan Airport API,
         // Google Fonts, GTM) fall through to network. POST requests are never
         // cached by Workbox by default, so the airport API is untouched.
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
+        // `gif` covers the vendored airline logos (issue #69) — self-hosting
+        // them only fixes the offline case if they're also precached, since
+        // an uncached local asset 404s offline the same way a hotlinked one did.
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,gif,webmanifest}'],
         navigateFallback: null,
         cleanupOutdatedCaches: true
       },
