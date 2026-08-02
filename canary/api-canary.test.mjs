@@ -9,11 +9,11 @@ vi.hoisted(() => {
 
 // Mock the playwright probe so importing api-canary.mjs doesn't require a real browser.
 vi.mock('./probe.mjs', () => ({
-  probeFlightApi: vi.fn(),
+  probeFlightApiPair: vi.fn(),
   isChallengeHtml: vi.fn(() => false),
 }));
 
-import { findOpenIncident, ghApiRetry, GH_READ_FAILED } from './api-canary.mjs';
+import { findOpenIncident, ghApiRetry, GH_READ_FAILED, checkFieldPopulation } from './api-canary.mjs';
 
 // fetch is set to vi.fn() globally by src/test/setup.js.
 // Each test configures its own responses; vi.resetAllMocks() wipes them between tests.
@@ -98,5 +98,79 @@ describe('findOpenIncident', () => {
   it('GH_READ_FAILED is a Symbol distinct from null', () => {
     expect(typeof GH_READ_FAILED).toBe('symbol');
     expect(GH_READ_FAILED).not.toBeNull();
+  });
+});
+
+describe('checkFieldPopulation', () => {
+  // Fixed reference instant so window math is deterministic. Arrival window for this
+  // `now` is 03:20:00-05:20:59; departure window is 04:00:00-06:00:59 (see
+  // getTimeWindowConfig in src/utils/flightUtils.js).
+  const NOW = new Date('2026-01-15T04:00:00+08:00');
+  const ARRIVAL_OTIME = '04:00:00'; // inside both windows' overlap, used for mode 'A' rows
+  const DEPARTURE_OTIME = '04:30:00'; // inside the departure window, used for mode 'D' rows
+
+  function makeRecord(otime, stopCodeValue, overrides = {}) {
+    return {
+      ACode: 'BR',
+      Memo: '',
+      ODate: '2026/01/15',
+      OTime: otime,
+      StopCode: stopCodeValue,
+      Gate: stopCodeValue,
+      ...overrides,
+    };
+  }
+
+  function makeRecords(otime, count, unpopulatedCount, field = 'StopCode') {
+    return Array.from({ length: count }, (_, i) =>
+      makeRecord(otime, i < unpopulatedCount ? '' : '05', { [field]: i < unpopulatedCount ? '' : '05' }),
+    );
+  }
+
+  it('returns null when the ratio is at or above the 95% threshold', () => {
+    const records = makeRecords(ARRIVAL_OTIME, 20, 1); // 19/20 = 95%
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+  });
+
+  it('returns a detail string when the ratio is below the 95% threshold', () => {
+    const records = makeRecords(ARRIVAL_OTIME, 20, 2); // 18/20 = 90%
+    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(detail).not.toBeNull();
+    expect(detail).toContain('StopCode');
+    expect(detail).toContain('18/20');
+  });
+
+  it('returns null (skips the check) when no rows fall in the rendered window', () => {
+    const records = makeRecords('23:00:00', 20, 20); // all rows outside the window, none populated
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+  });
+
+  it('treats "", whitespace-only, and "-" as unpopulated', () => {
+    const records = [
+      makeRecord(ARRIVAL_OTIME, '05'),
+      makeRecord(ARRIVAL_OTIME, ''),
+      makeRecord(ARRIVAL_OTIME, '   '),
+      makeRecord(ARRIVAL_OTIME, '-'),
+    ];
+    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(detail).toContain('1/4');
+  });
+
+  it('excludes unsupported airlines and cancelled flights from the denominator', () => {
+    const records = [
+      makeRecord(ARRIVAL_OTIME, '05'),
+      makeRecord(ARRIVAL_OTIME, '', { ACode: 'XX' }), // not a supported airline — excluded
+      makeRecord(ARRIVAL_OTIME, '', { Memo: '取消' }), // cancelled — excluded
+    ];
+    // Only the first row counts; it's populated, so the ratio is 1/1 = 100%.
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+  });
+
+  it('uses the departure window and Gate field for mode D', () => {
+    const records = makeRecords(DEPARTURE_OTIME, 20, 2, 'Gate'); // 18/20 = 90%
+    const detail = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
+    expect(detail).not.toBeNull();
+    expect(detail).toContain('Gate');
+    expect(detail).toContain('18/20');
   });
 });

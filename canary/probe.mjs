@@ -26,11 +26,12 @@ export function isChallengeHtml(body) {
   return typeof body === 'string' && /just a moment|cf-mitigated|__cf_chl|cf_chl_opt/i.test(body);
 }
 
-export async function probeFlightApi(date) {
-  const payload = JSON.stringify({
-    ODate: date, OTimeOpen: null, OTimeClose: null,
-    BNO: null, AState: 'A', language: 'ch', keyword: '',
-  });
+// Opens one browser/page, clears Cloudflare's challenge once, and hands the page to
+// `fn`. A second `chromium.launch()` just to change a request param would double this
+// probe's bot-score exposure from the same runner IP for no reason — #67 hit this
+// directly ("repeated chromium.launch() from the same runner IP is exactly what raises
+// the bot score") when it needed several (date, AState) fetches in one run.
+async function withProbePage(fn) {
   let browser;
   try {
     browser = await chromium.launch({
@@ -51,24 +52,52 @@ export async function probeFlightApi(date) {
     await page.waitForFunction(() => !/just a moment/i.test(document.title), { timeout: 30_000 }).catch(() => {});
     await page.waitForTimeout(2_000);
 
-    const res = await page.evaluate(async ({ url, payload }) => {
-      try {
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', accept: 'application/json, text/plain, */*' },
-          body: payload,
-        });
-        return { status: r.status, body: await r.text() };
-      } catch (e) {
-        return { status: 0, body: '', error: String(e) };
-      }
-    }, { url: API_URL, payload });
-
-    if (res.status === 0) return { status: 0, body: '', networkError: res.error };
-    return { status: res.status, body: res.body };
-  } catch (err) {
-    return { status: 0, body: '', networkError: err.message };
+    return await fn(page);
   } finally {
     if (browser) await browser.close();
+  }
+}
+
+async function fetchOnPage(page, date, state) {
+  const payload = JSON.stringify({
+    ODate: date, OTimeOpen: null, OTimeClose: null,
+    BNO: null, AState: state, language: 'ch', keyword: '',
+  });
+  const res = await page.evaluate(async ({ url, payload }) => {
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/plain, */*' },
+        body: payload,
+      });
+      return { status: r.status, body: await r.text() };
+    } catch (e) {
+      return { status: 0, body: '', error: String(e) };
+    }
+  }, { url: API_URL, payload });
+
+  if (res.status === 0) return { status: 0, body: '', networkError: res.error };
+  return { status: res.status, body: res.body };
+}
+
+export async function probeFlightApi(date, state = 'A') {
+  try {
+    return await withProbePage(page => fetchOnPage(page, date, state));
+  } catch (err) {
+    return { status: 0, body: '', networkError: err.message };
+  }
+}
+
+// Fetches AState=A (arrivals) and AState=D (departures) for the same date in one
+// browser session — see withProbePage for why this isn't two probeFlightApi() calls.
+export async function probeFlightApiPair(date) {
+  try {
+    return await withProbePage(async page => ({
+      arrivals: await fetchOnPage(page, date, 'A'),
+      departures: await fetchOnPage(page, date, 'D'),
+    }));
+  } catch (err) {
+    const failed = { status: 0, body: '', networkError: err.message };
+    return { arrivals: failed, departures: failed };
   }
 }
