@@ -1764,7 +1764,20 @@ function setCookie(name, value, days = 400) {
 function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return decodeURIComponent(parts.pop().split(";").shift());
+    if (parts.length !== 2) return undefined;
+    const raw = parts.pop().split(";").shift();
+    // gemini-code-assist review on #106: cookies are a boundary this app doesn't fully
+    // control (hand-edited via devtools, another script/extension on the same origin, or
+    // simply predating this encode/decode pair) — a malformed percent-encoded value would
+    // throw a URIError, and getCookie() runs during init (restoring pins on cold load), so
+    // an uncaught throw here could break app boot entirely over one bad cookie. Fall back
+    // to the raw value rather than crash; a malformed value was never going to match
+    // anything meaningful downstream regardless.
+    try {
+        return decodeURIComponent(raw);
+    } catch {
+        return raw;
+    }
 }
 
 function deleteCookie(name) {

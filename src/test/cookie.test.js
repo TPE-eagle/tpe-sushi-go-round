@@ -11,7 +11,13 @@ function setCookie(name, value, days = 400) {
 function getCookie(name) {
     const value = `; ${document.cookie}`
     const parts = value.split(`; ${name}=`)
-    if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift())
+    if (parts.length !== 2) return undefined
+    const raw = parts.pop().split(';').shift()
+    try {
+        return decodeURIComponent(raw)
+    } catch {
+        return raw
+    }
 }
 
 function renewPins(names) {
@@ -130,6 +136,16 @@ describe('Cookie sliding renew', () => {
         expect(getCookie('PlaneType')).toBe('A321')
         expect(getCookie('theme')).toBe('dark')
         expect(getCookie('lang')).toBe('zh')
+    })
+
+    // gemini-code-assist review on #106: cookies are hand-editable (devtools, another
+    // script/extension on the same origin), so a malformed percent-encoded value is
+    // reachable in practice, not just in theory. getCookie() runs during init — an
+    // uncaught URIError there could break app boot over one bad cookie.
+    test('getCookie falls back to the raw value instead of throwing on a malformed percent-encoded cookie', () => {
+        proto.set.call(document, 'ACode=100%;path=/') // lone '%' is not valid percent-encoding
+        expect(() => getCookie('ACode')).not.toThrow()
+        expect(getCookie('ACode')).toBe('100%')
     })
 })
 
