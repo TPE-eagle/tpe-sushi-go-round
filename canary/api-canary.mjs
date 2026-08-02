@@ -17,12 +17,13 @@
 // AState=A (arrivals) and AState=D (departures) for today, in one browser session.
 //
 // Contract is derived from getMockFlightData() in e2e/test-helpers.js and the
-// "Response fields consumed" list in CLAUDE.md. Required-field shape is sampled on the
-// arrivals payload only. `StopCode` (arrivals) and `Gate` (departures) additionally get a
-// population-ratio check over the rows the app actually renders (today, inside the
-// mode's time window) — see checkFieldPopulation — because both are legitimately empty
-// on some rows even on a healthy day, so full-payload / per-row assertions on them would
-// misfire (issue #77 / #67 R13).
+// "Response fields consumed" list in CLAUDE.md. Required-field shape (including
+// `StopCode`) is sampled on the arrivals payload only — rename / type-change is caught
+// there with no threshold. `StopCode` (arrivals) and `Gate` (departures) additionally get
+// a population-ratio + absolute-floor check over the rows the app actually renders (today,
+// inside the mode's time window) — see checkFieldPopulation — because both are
+// legitimately empty on some rows even on a healthy day, so full-payload / per-row
+// assertions on "present but empty" would misfire (issue #77 / #67 R13, PR #84 review R1).
 
 import { fileURLToPath } from 'url';
 import { probeFlightApiPair, isChallengeHtml } from './probe.mjs';
@@ -46,21 +47,32 @@ const [REPO_OWNER, REPO_NAME] = REPO.split('/');
 const INCIDENT_LABEL = 'status:incident';
 
 // Fields parseApiResponse() and the rendering pipeline depend on.
-const REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 'CityCode', 'CityEname', 'Memo'];
+// StopCode (arrivals carousel, e.g. "01".."08") is zero-padded in the live payload
+// (#77/#67 R13) — a JSON number literal can't carry a leading zero, so the field is a
+// string on the wire. Rename / type-change is caught here with no threshold; the
+// present-but-empty failure mode (the one that DOES need a threshold) is handled
+// separately below by checkFieldPopulation, since an empty string is still a valid string.
+const REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 'CityCode', 'CityEname', 'Memo', 'StopCode'];
 const REQUIRED_NUMBER_FIELDS = ['BNO'];
 // Must be present; may be empty string (Gate, PlaneNo) or a derived string.
 const EXPECTED_PRESENT_FIELDS = ['Gate', 'PlaneNo', 'CityName', 'flightCode'];
 
 // Issue #77 / #67 R13: StopCode (arrivals carousel) and Gate (departures boarding gate)
-// are populated well below 100% even on a healthy day (4/285 and 3/285 gaps measured),
-// so a per-row hard fail would page on normal rows. A population ratio over the rows the
-// app actually renders — today's payload, filtered the same way main.js filters it,
-// inside the mode's configured time window — catches a real regression (rename, type
-// change, upstream returning it empty) while tolerating legitimate per-row gaps.
-// Measured healthy-day ratios were 98.5% (StopCode) / ~100% (Gate) inside the rendered
-// window; a real drift case (Gate on a future-date payload) measured 2.7%. 95% leaves
-// headroom on both sides.
+// are populated well below 100% even on a healthy day, so a per-row hard fail would page
+// on normal rows. A population ratio over the rows the app actually renders — today's
+// payload, filtered the same way main.js filters it, inside the mode's configured time
+// window — catches a real regression (upstream returning it empty) while tolerating
+// legitimate per-row gaps. Measured healthy-day ratios inside the rendered window: 98.5%
+// (StopCode, 132/134) and 100% (Gate, 151/151); a real drift case (Gate on a future-date
+// payload) measured 2.7%. 95% leaves headroom on both sides.
+//
+// A ratio alone isn't enough at the rendered window's size (~2h, n≈15-34 rows per PR #84
+// review R1): at n≈34, two legitimate gaps is already 94.1% — below threshold, on a normal
+// day. MIN_BLANKS_TO_FIRE is an absolute floor alongside the ratio, not instead of it, so
+// one or a few legitimately-unassigned rows can never page; a real regression (rename,
+// emptying, type change) is still ~100% blank and clears the floor on the first run.
 const POPULATION_RATIO_THRESHOLD = 0.95;
+const POPULATION_MIN_BLANKS_TO_FIRE = 5;
 
 // "" / whitespace / "-" are this API's TBD sentinels (see extractPlaneFamily() in
 // src/utils/flightUtils.js) — not real values. #67 found a predicate that only checked
@@ -74,16 +86,35 @@ function isPopulated(value) {
 // Population-ratio guard, shared by the arrivals/StopCode and departures/Gate call
 // sites. `records` is the full-day payload for one AState; `mode` picks the matching
 // time window ('A' or 'D'). Returns null when the check can't fire (no rows currently
-// rendered — off-peak, not a failure) or when the ratio holds; otherwise a detail string.
-// `now` defaults to the real clock; tests pass a fixed instant for determinism.
+// rendered, filtering threw on a malformed row shape (PR #84 review R4 — a full-payload
+// filterSupportedAirlines/filterFlightsByTime pass is unguarded against a null Memo/ODate,
+// which checkRecordShape's own contract allows), or the ratio/floor didn't clear) or when
+// the ratio holds; otherwise a detail string. `now` defaults to the real clock; tests pass
+// a fixed instant for determinism.
+//
+// Every call logs n/blanks/ratio, healthy or not (PR #84 review R3) — the rendered window
+// is small (~2h) and its per-hour row count is otherwise never observed in production, so
+// POPULATION_MIN_BLANKS_TO_FIRE can only be retuned from real logged data, not from a
+// single measurement run.
 export function checkFieldPopulation(records, field, mode, label, now = new Date()) {
-  const rendered = filterFlightsByTime(filterSupportedAirlines(records), mode, now);
-  if (rendered.length === 0) return null; // nothing in the rendered window right now
+  let rendered;
+  try {
+    rendered = filterFlightsByTime(filterSupportedAirlines(records), mode, now);
+  } catch (err) {
+    return `${label}: \`${field}\` check — row filtering threw on a malformed record: ${err.message}`;
+  }
+  if (rendered.length === 0) {
+    console.log(`[canary] ${label} \`${field}\`: rendered window empty (n=0) — check skipped`);
+    return null; // nothing in the rendered window right now
+  }
   const populated = rendered.filter(r => isPopulated(r[field])).length;
-  const ratio = populated / rendered.length;
-  if (ratio >= POPULATION_RATIO_THRESHOLD) return null;
+  const n = rendered.length;
+  const blanks = n - populated;
+  const ratio = populated / n;
   const pct = (ratio * 100).toFixed(1);
-  return `${label}: \`${field}\` populated in only ${populated}/${rendered.length} (${pct}%) of rendered-window rows — below the ${POPULATION_RATIO_THRESHOLD * 100}% threshold.`;
+  console.log(`[canary] ${label} \`${field}\`: n=${n} blanks=${blanks} ratio=${pct}%`);
+  if (blanks < POPULATION_MIN_BLANKS_TO_FIRE || ratio >= POPULATION_RATIO_THRESHOLD) return null;
+  return `${label}: \`${field}\` populated in only ${populated}/${n} (${pct}%) of rendered-window rows (${blanks} blanks) — below both the ${POPULATION_RATIO_THRESHOLD * 100}% threshold and the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor.`;
 }
 
 const ODATE_RE = /^\d{4}\/\d{2}\/\d{2}$/;
@@ -319,6 +350,18 @@ function parseLegBody(rawBody, label) {
   return { data };
 }
 
+// Shared healthy-run summary label — both the GH-read-failed fallback log and the
+// steady-state healthy log report the same two counts (PR #84 review R3: departures is
+// fetched every run now but was never reported).
+function formatHealthyLabel(recordCount, departuresRecordCount) {
+  if (recordCount === null) return 'drill (probe skipped)';
+  const arrivalsLabel = recordCount === 0 ? '0 arrivals (off-peak window)' : `${recordCount} arrivals`;
+  const departuresLabel = departuresRecordCount === null
+    ? '0 departures (off-peak window)'
+    : `${departuresRecordCount} departures`;
+  return `${arrivalsLabel}, ${departuresLabel}, contract intact`;
+}
+
 async function run() {
   const date = getTaiwanDate();
   const now = new Date().toISOString();
@@ -328,6 +371,7 @@ async function run() {
   let failureType = null;
   let failureDetail = null;
   let recordCount = null;
+  let departuresRecordCount = null;
 
   const drillPair = {
     arrivals: { status: -1, body: '', networkError: null },
@@ -378,9 +422,12 @@ async function run() {
       const departuresParsed = parseLegBody(departures.body, 'Departures (AState=D)');
       if (departuresParsed.contractDetail) {
         contractIssues.push(departuresParsed.contractDetail);
-      } else if (departuresParsed.data.length > 0) {
-        const gateIssue = checkFieldPopulation(departuresParsed.data, 'Gate', 'D', 'Departures (AState=D)');
-        if (gateIssue) contractIssues.push(gateIssue);
+      } else {
+        departuresRecordCount = departuresParsed.data.length;
+        if (departuresParsed.data.length > 0) {
+          const gateIssue = checkFieldPopulation(departuresParsed.data, 'Gate', 'D', 'Departures (AState=D)');
+          if (gateIssue) contractIssues.push(gateIssue);
+        }
       }
 
       if (contractIssues.length > 0) {
@@ -408,9 +455,7 @@ async function run() {
       );
       process.exit(1);
     }
-    const ghLabel = recordCount === null
-      ? 'drill (probe skipped)'
-      : recordCount === 0 ? '0 records (off-peak window)' : `${recordCount} records, contract intact`;
+    const ghLabel = formatHealthyLabel(recordCount, departuresRecordCount);
     console.log(`[canary] ⚠️  GitHub API unavailable — state management skipped. Flight probe: ✅ ${ghLabel}`);
     return; // exit 0: flight API is healthy; don't turn a GitHub blip into a false red
   }
@@ -457,10 +502,7 @@ async function run() {
       }
     } else {
       // healthy → healthy: silent.
-      const label = recordCount === 0
-        ? '0 records (off-peak window)'
-        : `${recordCount} records, contract intact`;
-      console.log(`[canary] ✅ Healthy — ${label}`);
+      console.log(`[canary] ✅ Healthy — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
     }
   }
 }

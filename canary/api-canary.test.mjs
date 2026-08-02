@@ -109,21 +109,24 @@ describe('checkFieldPopulation', () => {
   const ARRIVAL_OTIME = '04:00:00'; // inside both windows' overlap, used for mode 'A' rows
   const DEPARTURE_OTIME = '04:30:00'; // inside the departure window, used for mode 'D' rows
 
-  function makeRecord(otime, stopCodeValue, overrides = {}) {
+  function makeRecord(otime, value, overrides = {}) {
     return {
       ACode: 'BR',
       Memo: '',
       ODate: '2026/01/15',
       OTime: otime,
-      StopCode: stopCodeValue,
-      Gate: stopCodeValue,
+      StopCode: value,
+      Gate: value,
       ...overrides,
     };
   }
 
+  // Baseline value is always populated ('05'); only the target `field` gets the
+  // populated/unpopulated split, via override — avoids double-writing the same field
+  // through both the positional arg and the override (PR #84 review non-blocking #2).
   function makeRecords(otime, count, unpopulatedCount, field = 'StopCode') {
     return Array.from({ length: count }, (_, i) =>
-      makeRecord(otime, i < unpopulatedCount ? '' : '05', { [field]: i < unpopulatedCount ? '' : '05' }),
+      makeRecord(otime, '05', { [field]: i < unpopulatedCount ? '' : '05' }),
     );
   }
 
@@ -132,12 +135,23 @@ describe('checkFieldPopulation', () => {
     expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
   });
 
-  it('returns a detail string when the ratio is below the 95% threshold', () => {
-    const records = makeRecords(ARRIVAL_OTIME, 20, 2); // 18/20 = 90%
+  it('returns a detail string when both the ratio is below threshold and blanks clear the floor', () => {
+    const records = makeRecords(ARRIVAL_OTIME, 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
     const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     expect(detail).not.toBeNull();
     expect(detail).toContain('StopCode');
-    expect(detail).toContain('18/20');
+    expect(detail).toContain('14/20');
+  });
+
+  it('does not fire when blanks are below the absolute floor, even below the ratio threshold', () => {
+    // 16/20 = 80%, below the 95% ratio threshold, but only 4 blanks — below the 5-blank floor.
+    const records = makeRecords(ARRIVAL_OTIME, 20, 4);
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+  });
+
+  it('never fires when the rendered window has fewer rows than the absolute floor', () => {
+    const records = makeRecords(ARRIVAL_OTIME, 3, 3); // all 3 rows blank, window smaller than the floor
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
   });
 
   it('returns null (skips the check) when no rows fall in the rendered window', () => {
@@ -148,12 +162,17 @@ describe('checkFieldPopulation', () => {
   it('treats "", whitespace-only, and "-" as unpopulated', () => {
     const records = [
       makeRecord(ARRIVAL_OTIME, '05'),
+      makeRecord(ARRIVAL_OTIME, '05'),
+      makeRecord(ARRIVAL_OTIME, '05'),
       makeRecord(ARRIVAL_OTIME, ''),
       makeRecord(ARRIVAL_OTIME, '   '),
       makeRecord(ARRIVAL_OTIME, '-'),
+      makeRecord(ARRIVAL_OTIME, ''),
+      makeRecord(ARRIVAL_OTIME, '-'),
     ];
+    // 5 unpopulated of 8 clears the floor.
     const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).toContain('1/4');
+    expect(detail).toContain('3/8');
   });
 
   it('excludes unsupported airlines and cancelled flights from the denominator', () => {
@@ -167,10 +186,21 @@ describe('checkFieldPopulation', () => {
   });
 
   it('uses the departure window and Gate field for mode D', () => {
-    const records = makeRecords(DEPARTURE_OTIME, 20, 2, 'Gate'); // 18/20 = 90%
+    const records = makeRecords(DEPARTURE_OTIME, 20, 6, 'Gate'); // 14/20 = 70%, 6 blanks >= floor
     const detail = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
     expect(detail).not.toBeNull();
     expect(detail).toContain('Gate');
-    expect(detail).toContain('18/20');
+    expect(detail).toContain('14/20');
+  });
+
+  it('returns a contract-detail string instead of throwing when a record is malformed', () => {
+    // Memo missing — filterSupportedAirlines() calls flight.Memo.toLowerCase() unguarded
+    // (PR #84 review R4); checkRecordShape's own contract treats null Memo as valid, so
+    // this must degrade to a reported detail, not crash the run.
+    const records = [
+      { ACode: 'BR', ODate: '2026/01/15', OTime: ARRIVAL_OTIME, StopCode: '05' },
+    ];
+    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(detail).toContain('row filtering threw');
   });
 });
