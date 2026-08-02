@@ -62,7 +62,15 @@ describe('main.js inline literal stays in sync with src/utils/flightUtils.js', (
             `main.js's inline \`${name}\` literal wasn't found by this guard's regex (${pattern}) — ` +
             `it was likely reformatted. Update the regex in src/test/logo.test.js, don't skip this check.`
         ).not.toBeNull();
-        return JSON.parse(match[1].replace(/'/g, '"'));
+        try {
+            return JSON.parse(match[1].replace(/'/g, '"'));
+        } catch (err) {
+            throw new Error(
+                `main.js's inline \`${name}\` literal matched but didn't parse as JSON (${err.message}) — ` +
+                `it was likely reformatted (unquoted keys, trailing comma). Update the parse in ` +
+                `src/test/logo.test.js, don't skip this check.`
+            );
+        }
     }
 
     it("main.js's inline KNOWN_LOGO_CODES matches the flightUtils.js export", () => {
