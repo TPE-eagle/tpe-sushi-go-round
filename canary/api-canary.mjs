@@ -13,14 +13,21 @@
 //
 // The API sits behind a Cloudflare managed challenge, so the probe is a stealth browser
 // (see canary/probe.mjs — curl/undici get 403, cf_clearance is IP-bound). Discord +
-// GitHub API calls use native fetch (those services aren't gated).
+// GitHub API calls use native fetch (those services aren't gated). Each run fetches both
+// AState=A (arrivals) and AState=D (departures) for today, in one browser session.
 //
 // Contract is derived from getMockFlightData() in e2e/test-helpers.js and the
-// "Response fields consumed" list in CLAUDE.md. Only shape is asserted — no flight
-// counts, no specific values (volatile; legitimately empty at night).
+// "Response fields consumed" list in CLAUDE.md. Required-field shape (including
+// `StopCode`) is sampled on the arrivals payload only — rename / type-change is caught
+// there with no threshold. `StopCode` (arrivals) and `Gate` (departures) additionally get
+// a population-ratio + absolute-floor check over the rows the app actually renders (today,
+// inside the mode's time window) — see checkFieldPopulation — because both are
+// legitimately empty on some rows even on a healthy day, so full-payload / per-row
+// assertions on "present but empty" would misfire (issue #77 / #67 R13, PR #84 review R1).
 
 import { fileURLToPath } from 'url';
-import { probeFlightApi, isChallengeHtml } from './probe.mjs';
+import { probeFlightApiPair, isChallengeHtml } from './probe.mjs';
+import { filterSupportedAirlines, filterFlightsByTime } from '../src/utils/flightUtils.js';
 
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -40,10 +47,75 @@ const [REPO_OWNER, REPO_NAME] = REPO.split('/');
 const INCIDENT_LABEL = 'status:incident';
 
 // Fields parseApiResponse() and the rendering pipeline depend on.
-const REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 'CityCode', 'CityEname', 'Memo'];
+// StopCode (arrivals carousel, e.g. "01".."08") is zero-padded in the live payload
+// (#77/#67 R13) — a JSON number literal can't carry a leading zero, so the field is a
+// string on the wire. Rename / type-change is caught here with no threshold; the
+// present-but-empty failure mode (the one that DOES need a threshold) is handled
+// separately below by checkFieldPopulation, since an empty string is still a valid string.
+const REQUIRED_STRING_FIELDS = ['ACode', 'AName', 'FlightNo', 'ODate', 'OTime', 'CityCode', 'CityEname', 'Memo', 'StopCode'];
 const REQUIRED_NUMBER_FIELDS = ['BNO'];
 // Must be present; may be empty string (Gate, PlaneNo) or a derived string.
 const EXPECTED_PRESENT_FIELDS = ['Gate', 'PlaneNo', 'CityName', 'flightCode'];
+
+// Issue #77 / #67 R13: StopCode (arrivals carousel) and Gate (departures boarding gate)
+// are populated well below 100% even on a healthy day, so a per-row hard fail would page
+// on normal rows. A population ratio over the rows the app actually renders — today's
+// payload, filtered the same way main.js filters it, inside the mode's configured time
+// window — catches a real regression (upstream returning it empty) while tolerating
+// legitimate per-row gaps. Measured healthy-day ratios inside the rendered window: 98.5%
+// (StopCode, 132/134) and 100% (Gate, 151/151); a real drift case (Gate on a future-date
+// payload) measured 2.7%. 95% leaves headroom on both sides.
+//
+// A ratio alone isn't enough at the rendered window's size (~2h, n≈15-34 rows per PR #84
+// review R1): at n≈34, two legitimate gaps is already 94.1% — below threshold, on a normal
+// day. MIN_BLANKS_TO_FIRE is an absolute floor alongside the ratio, not instead of it, so
+// one or a few legitimately-unassigned rows can never page; a real regression (rename,
+// emptying, type change) is still ~100% blank and clears the floor on the first run.
+const POPULATION_RATIO_THRESHOLD = 0.95;
+const POPULATION_MIN_BLANKS_TO_FIRE = 5;
+
+// "" / whitespace / "-" are this API's TBD sentinels (see extractPlaneFamily() in
+// src/utils/flightUtils.js) — not real values. #67 found a predicate that only checked
+// `!= null` counted every one of these as populated and produced a false 100% reading.
+function isPopulated(value) {
+  if (value === null || value === undefined) return false;
+  const s = String(value).trim();
+  return s !== '' && s !== '-';
+}
+
+// Population-ratio guard, shared by the arrivals/StopCode and departures/Gate call
+// sites. `records` is the full-day payload for one AState; `mode` picks the matching
+// time window ('A' or 'D'). Returns null when the check can't fire (no rows currently
+// rendered, filtering threw on a malformed row shape (PR #84 review R4 — a full-payload
+// filterSupportedAirlines/filterFlightsByTime pass is unguarded against a null Memo/ODate,
+// which checkRecordShape's own contract allows), or the ratio/floor didn't clear) or when
+// the ratio holds; otherwise a detail string. `now` defaults to the real clock; tests pass
+// a fixed instant for determinism.
+//
+// Every call logs n/blanks/ratio, healthy or not (PR #84 review R3) — the rendered window
+// is small (~2h) and its per-hour row count is otherwise never observed in production, so
+// POPULATION_MIN_BLANKS_TO_FIRE can only be retuned from real logged data, not from a
+// single measurement run.
+export function checkFieldPopulation(records, field, mode, label, now = new Date()) {
+  let rendered;
+  try {
+    rendered = filterFlightsByTime(filterSupportedAirlines(records), mode, now);
+  } catch (err) {
+    return `${label}: \`${field}\` check — row filtering threw on a malformed record: ${err.message}`;
+  }
+  if (rendered.length === 0) {
+    console.log(`[canary] ${label} \`${field}\`: rendered window empty (n=0) — check skipped`);
+    return null; // nothing in the rendered window right now
+  }
+  const populated = rendered.filter(r => isPopulated(r[field])).length;
+  const n = rendered.length;
+  const blanks = n - populated;
+  const ratio = populated / n;
+  const pct = (ratio * 100).toFixed(1);
+  console.log(`[canary] ${label} \`${field}\`: n=${n} blanks=${blanks} ratio=${pct}%`);
+  if (blanks < POPULATION_MIN_BLANKS_TO_FIRE || ratio >= POPULATION_RATIO_THRESHOLD) return null;
+  return `${label}: \`${field}\` populated in only ${populated}/${n} (${pct}%) of rendered-window rows (${blanks} blanks) — below both the ${POPULATION_RATIO_THRESHOLD * 100}% threshold and the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor.`;
+}
 
 const ODATE_RE = /^\d{4}\/\d{2}\/\d{2}$/;
 const OTIME_RE = /^\d{2}:\d{2}:\d{2}$/;
@@ -229,57 +301,104 @@ function checkRecordShape(record, index) {
 // noise, high runner load) so a single bad probe on a healthy API doesn't page. A 200
 // with wrong shape (contract drift) is deterministic, so it isn't retried here.
 async function probeWithRetry(date) {
-  const first = await probeFlightApi(date);
-  if (!first.networkError && first.status === 200) return first;
-  console.log(`[canary] first probe ${first.networkError ? 'errored' : `→ HTTP ${first.status}`} — retrying once in 30s to absorb runner jitter`);
+  const isOk = (r) => !r.networkError && r.status === 200;
+  const first = await probeFlightApiPair(date);
+  if (isOk(first.arrivals) && isOk(first.departures)) return first;
+  console.log('[canary] first probe pair not fully healthy — retrying once in 30s to absorb runner jitter');
   await new Promise((r) => setTimeout(r, 30_000));
-  return probeFlightApi(date);
+  return probeFlightApiPair(date);
+}
+
+// Availability / canary-blocked classification, shared by the arrivals and departures
+// legs of the probe pair. Returns null when this leg reached the API fine (a 200,
+// whatever the body turns out to hold) — contract checking happens one level up, once
+// both legs have cleared this.
+function classifyLegAvailability(result, label) {
+  if (result.networkError || result.status === 0) {
+    return { failureType: 'availability', failureDetail: `${label}: network / browser failure: \`${result.networkError ?? 'unknown'}\`` };
+  }
+  if (result.status === 403 && isChallengeHtml(result.body)) {
+    return {
+      failureType: 'canary-blocked',
+      failureDetail: [
+        `${label}: Cloudflare served a challenge to the canary browser instead of API data.`,
+        'This is a **canary** problem — Cloudflare likely tightened and the stealth browser',
+        'needs updating — **not** necessarily an API outage. Verify the API in a real browser',
+        'before treating this as downtime.',
+      ].join('\n'),
+    };
+  }
+  if (result.status !== 200) {
+    return { failureType: 'availability', failureDetail: `${label}: HTTP \`${result.status}\` from Taoyuan Airport API\n\`\`\`\n${result.body.slice(0, 300)}\n\`\`\`` };
+  }
+  return null;
+}
+
+// Parses a leg's body into a flight array. Returns { data } on success, or
+// { contractDetail } when the body itself isn't usable — a JSON/array-shape problem is a
+// contract failure regardless of which leg it came from.
+function parseLegBody(rawBody, label) {
+  let data;
+  try {
+    data = JSON.parse(rawBody);
+  } catch {
+    return { contractDetail: `${label}: response is not valid JSON:\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\`` };
+  }
+  if (!Array.isArray(data)) {
+    return { contractDetail: `${label}: response is not an array (got \`${typeof data}\`):\n\`\`\`json\n${JSON.stringify(data).slice(0, 400)}\n\`\`\`` };
+  }
+  return { data };
+}
+
+// Shared healthy-run summary label — both the GH-read-failed fallback log and the
+// steady-state healthy log report the same two counts (PR #84 review R3: departures is
+// fetched every run now but was never reported).
+function formatHealthyLabel(recordCount, departuresRecordCount) {
+  if (recordCount === null) return 'drill (probe skipped)';
+  const arrivalsLabel = recordCount === 0 ? '0 arrivals (off-peak window)' : `${recordCount} arrivals`;
+  const departuresLabel = departuresRecordCount === null
+    ? '0 departures (off-peak window)'
+    : `${departuresRecordCount} departures`;
+  return `${arrivalsLabel}, ${departuresLabel}, contract intact`;
 }
 
 async function run() {
   const date = getTaiwanDate();
   const now = new Date().toISOString();
 
-  // Probe the API.
+  // Probe the API — arrivals (AState=A) and departures (AState=D), same date, one
+  // browser session (see probe.mjs).
   let failureType = null;
   let failureDetail = null;
   let recordCount = null;
+  let departuresRecordCount = null;
 
-  const { status, body: rawBody, networkError } = IS_DRILL
-    ? { status: -1, body: '', networkError: null } // skip the real probe when simulating
-    : await probeWithRetry(date);
+  const drillPair = {
+    arrivals: { status: -1, body: '', networkError: null },
+    departures: { status: -1, body: '', networkError: null },
+  };
+  const { arrivals, departures } = IS_DRILL ? drillPair : await probeWithRetry(date);
 
   if (IS_DRILL) {
     failureType = SIMULATE;
     failureDetail = `**SIMULATED ${SIMULATE} failure** — manual alert-path test via workflow_dispatch. Not a real outage.`;
     console.log(`[canary] ⚙️  SIMULATE=${SIMULATE} — exercising the incident/Discord state machine`);
-  } else if (networkError || status === 0) {
-    failureType = 'availability';
-    failureDetail = `Network / browser failure: \`${networkError ?? 'unknown'}\``;
-  } else if (status === 403 && isChallengeHtml(rawBody)) {
-    failureType = 'canary-blocked';
-    failureDetail = [
-      'Cloudflare served a challenge to the canary browser instead of API data.',
-      'This is a **canary** problem — Cloudflare likely tightened and the stealth browser',
-      'needs updating — **not** necessarily an API outage. Verify the API in a real browser',
-      'before treating this as downtime.',
-    ].join('\n');
-  } else if (status !== 200) {
-    failureType = 'availability';
-    failureDetail = `HTTP \`${status}\` from Taoyuan Airport API\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``;
   } else {
-    let data;
-    try {
-      data = JSON.parse(rawBody);
-    } catch {
-      failureType = 'contract';
-      failureDetail = `Response is not valid JSON:\n\`\`\`\n${rawBody.slice(0, 300)}\n\`\`\``;
-    }
-    if (!failureType) {
-      if (!Array.isArray(data)) {
-        failureType = 'contract';
-        failureDetail = `Response is not an array (got \`${typeof data}\`):\n\`\`\`json\n${JSON.stringify(data).slice(0, 400)}\n\`\`\``;
+    const availabilityIssue =
+      classifyLegAvailability(arrivals, 'Arrivals (AState=A)') ??
+      classifyLegAvailability(departures, 'Departures (AState=D)');
+
+    if (availabilityIssue) {
+      failureType = availabilityIssue.failureType;
+      failureDetail = availabilityIssue.failureDetail;
+    } else {
+      const contractIssues = [];
+
+      const arrivalsParsed = parseLegBody(arrivals.body, 'Arrivals (AState=A)');
+      if (arrivalsParsed.contractDetail) {
+        contractIssues.push(arrivalsParsed.contractDetail);
       } else {
+        const data = arrivalsParsed.data;
         recordCount = data.length;
         // Empty array is legitimate during off-peak windows — not a failure.
         if (data.length > 0) {
@@ -287,16 +406,33 @@ async function run() {
             .filter(i => i < data.length);
           const shapeIssues = [...new Set(idxs.flatMap(i => checkRecordShape(data[i], i)))];
           if (shapeIssues.length > 0) {
-            failureType = 'contract';
             const liveKeys = Object.keys(data[0]).join(', ');
-            failureDetail = [
-              `Shape mismatch (${data.length} records; sampled indices ${idxs.join(', ')}):`,
+            contractIssues.push([
+              `Arrivals (AState=A): shape mismatch (${data.length} records; sampled indices ${idxs.join(', ')}):`,
               shapeIssues.map(s => `• ${s}`).join('\n'),
               ``,
               `Live record keys: \`${liveKeys}\``,
-            ].join('\n');
+            ].join('\n'));
           }
+          const stopCodeIssue = checkFieldPopulation(data, 'StopCode', 'A', 'Arrivals (AState=A)');
+          if (stopCodeIssue) contractIssues.push(stopCodeIssue);
         }
+      }
+
+      const departuresParsed = parseLegBody(departures.body, 'Departures (AState=D)');
+      if (departuresParsed.contractDetail) {
+        contractIssues.push(departuresParsed.contractDetail);
+      } else {
+        departuresRecordCount = departuresParsed.data.length;
+        if (departuresParsed.data.length > 0) {
+          const gateIssue = checkFieldPopulation(departuresParsed.data, 'Gate', 'D', 'Departures (AState=D)');
+          if (gateIssue) contractIssues.push(gateIssue);
+        }
+      }
+
+      if (contractIssues.length > 0) {
+        failureType = 'contract';
+        failureDetail = contractIssues.join('\n\n');
       }
     }
   }
@@ -319,9 +455,7 @@ async function run() {
       );
       process.exit(1);
     }
-    const ghLabel = recordCount === null
-      ? 'drill (probe skipped)'
-      : recordCount === 0 ? '0 records (off-peak window)' : `${recordCount} records, contract intact`;
+    const ghLabel = formatHealthyLabel(recordCount, departuresRecordCount);
     console.log(`[canary] ⚠️  GitHub API unavailable — state management skipped. Flight probe: ✅ ${ghLabel}`);
     return; // exit 0: flight API is healthy; don't turn a GitHub blip into a false red
   }
@@ -368,10 +502,7 @@ async function run() {
       }
     } else {
       // healthy → healthy: silent.
-      const label = recordCount === 0
-        ? '0 records (off-peak window)'
-        : `${recordCount} records, contract intact`;
-      console.log(`[canary] ✅ Healthy — ${label}`);
+      console.log(`[canary] ✅ Healthy — ${formatHealthyLabel(recordCount, departuresRecordCount)}`);
     }
   }
 }
