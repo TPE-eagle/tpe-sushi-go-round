@@ -996,6 +996,34 @@ body {
   .offcanvas-backdrop.fade {
     transition: none !important;
   }
+
+  /* Issue #98: #title's 2s dropShadowAnimation sweeps letter-spacing and
+   * rotates the text in 3D — squarely a vestibular trigger, the category
+   * prefers-reduced-motion exists for, and this app's users read it in
+   * transit. `text-shadow` is a static property on #title itself (not part
+   * of the keyframes), so the title still reads as intentionally styled,
+   * just without the sweep/rotation. */
+  #title {
+    animation: none !important;
+  }
+
+  /* The two infinite pulses lose their motion but keep a static "something
+   * is happening" cue instead of just going inert — dropping the signal
+   * entirely would leave the user with no indicator at all, not a calmer one. */
+  .blinking-text {
+    animation: none !important;
+    opacity: 1 !important;
+    font-weight: 600;
+  }
+
+  /* No extra static substitute needed here: triggerRefresh() (main.js)
+   * already sets an inline `opacity: 1` the instant `.refreshing` is added,
+   * and its halo box-shadow isn't part of the animation — so removing just
+   * the pulse leaves it fully visible and already distinct from the idle
+   * state, for free. */
+  #refresh-icon.refreshing {
+    animation: none !important;
+  }
 }
 
 .offcanvas-header {

@@ -225,3 +225,23 @@ test.describe('Toggle cluster layout (issue #66)', () => {
     })
   }
 })
+
+// Issue #98: the reduced-motion block only covered the About drawer's transition; #title's
+// 2s dropShadowAnimation (letter-spacing sweep + 3D rotation) ignored the setting entirely,
+// which is exactly the vestibular-trigger category prefers-reduced-motion exists for. This
+// guards against that drifting out of sync again as new animations get added.
+test.describe('prefers-reduced-motion honoured for long-running animations (issue #98)', () => {
+  test.beforeEach(async ({ page }) => {
+    await blockGoogleAnalytics(page)
+    await setupMockApiRoute(page)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+  })
+
+  test('#title has no running animation under reduced motion', async ({ page }) => {
+    await page.goto('/')
+    await waitForApiAndTable(page)
+
+    const animationCount = await page.locator('#title').evaluate(el => el.getAnimations().length)
+    expect(animationCount).toBe(0)
+  })
+})
