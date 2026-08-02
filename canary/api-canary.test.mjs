@@ -437,6 +437,14 @@ describe('run() — per-class incident state machine (issue #86)', () => {
     expect(issuePosted).toBe(false); // no duplicate incident for the same class
     expect(patched).toBe(false); // the still-open contract incident is untouched
     expect(process.exit).toHaveBeenCalledWith(1);
+
+    // gemini-code-assist review on #105 R2: the close loop now also sees incidents whose
+    // class failed this cycle, not just classes never evaluated — the audit log must say
+    // which, or it contradicts itself against the "already open, no new alert" line right
+    // after it. #42 (availability) failed THIS cycle; #41 (contract) was never reached.
+    const logs = console.log.mock.calls.map((args) => args[0]);
+    expect(logs.some((l) => l.includes('#42') && l.includes('still failing'))).toBe(true);
+    expect(logs.some((l) => l.includes('#41') && l.includes('not evaluated this cycle'))).toBe(true);
   });
 
   // Fixed reference instant + well-formed, well-populated records for both legs, so
@@ -672,8 +680,14 @@ describe('run() — per-class incident state machine (issue #86)', () => {
     // #41 (contract) failed to close, but #42 (availability) still did — the loop
     // continued past the failure instead of aborting.
     expect(patchedUrls).toEqual(['https://api.github.com/repos/TPE-eagle/tpe-sushi-go-round/issues/42']);
-    expect(discordPosts).toHaveLength(1);
-    expect(discordPosts[0].embeds[0].description).toContain('(availability)');
+    // Two Discord posts: #42's own recovery alert, plus a best-effort alert about #41's
+    // failed close (jonatw-eagle review on #105 R1) — the swallowed error must not be
+    // silent outside the Actions log, since the residue left behind (an incident that
+    // should have closed but didn't) is exactly the F4 failure mode this issue is about.
+    expect(discordPosts).toHaveLength(2);
+    const descriptions = discordPosts.map((p) => p.embeds[0].description);
+    expect(descriptions.some((d) => d.includes('(availability)'))).toBe(true);
+    expect(descriptions.some((d) => d.includes('issues/41') && d.includes('502'))).toBe(true);
     expect(process.exit).not.toHaveBeenCalled(); // both classes passed this cycle — still a healthy run
   });
 });

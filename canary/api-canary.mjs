@@ -624,11 +624,30 @@ async function run() {
         // issue #101 F1: GH_READ_FAILED already guards the read path (findOpenIncidents);
         // this write path performs N writes with no equivalent guard, so one transient
         // GitHub error mid-loop must not abort the remaining incidents in this loop, nor
-        // turn an otherwise-healthy run into a false non-zero exit.
+        // turn an otherwise-healthy run into a false non-zero exit. jonatw-eagle review on
+        // #105 R1: swallowing this into console.error alone converts a loud failure (pre-
+        // this-PR, the same 502 threw to the top-level handler, alerting + exiting 1) into
+        // a quiet one whose residue is exactly what #101 was filed about — the incident
+        // stays open, and the next real failure of this class dedupes against it silently.
+        // Not retried (writes are deliberately not auto-retried, unlike GH_READ_FAILED's
+        // read path), but not silent either: best-effort Discord alert so a human sees it
+        // outside the Actions log. sendDiscordAlert self-catches and never throws, so this
+        // is safe with no further nesting.
         console.error(`[canary] ⚠️  Failed to close incident #${incident.number} (${cls}): ${err.message}`);
+        await sendDiscordAlert(
+          'Incident close failed',
+          `Could not close a recovered ${cls} incident: ${incident.html_url}\n\nIt stays open, so the next ${cls} failure will dedupe against it and alert silently.\n\n\`${err.message.slice(0, 300)}\``,
+          false,
+        );
       }
     } else {
-      console.log(`[canary] ⏭️  Incident #${incident.number} (${cls ?? 'unknown'}) left open — not evaluated this cycle`);
+      // issue #101 F4 follow-up (gemini-code-assist review on #105): this loop now also
+      // sees incidents whose class failed this cycle (verdicts[cls] === 'fail'), not just
+      // classes never evaluated — "not evaluated this cycle" would be wrong for those; it
+      // was evaluated, and failed. Distinguishing them keeps the audit log from
+      // contradicting itself against the "❌ ... already open" log two branches below.
+      const reason = cls && verdicts[cls] === 'fail' ? 'still failing' : 'not evaluated this cycle';
+      console.log(`[canary] ⏭️  Incident #${incident.number} (${cls ?? 'unknown'}) left open — ${reason}`);
     }
   }
 
