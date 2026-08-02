@@ -464,11 +464,6 @@ async function run() {
         const departuresData = departuresParsed.data;
         departuresRecordCount = departuresData.length;
         if (departuresData.length > 0) {
-          // TEMP (issue #83 evidence gathering — remove before merge): print the live
-          // AState=D record's key set unconditionally, not just on a shape mismatch, so a
-          // workflow_dispatch run confirms the real departures payload shape regardless of
-          // whether the derived DEPARTURES_FIELDS lists happen to already be correct.
-          console.log(`[canary][TEMP #83] departures live record[0] keys: ${Object.keys(departuresData[0]).join(', ')}`);
           const shapeIssue = sampleAndCheckShape(departuresData, DEPARTURES_FIELDS, 'Departures (AState=D)');
           if (shapeIssue) contractIssues.push(shapeIssue);
           const gateIssue = checkFieldPopulation(departuresData, 'Gate', 'D', 'Departures (AState=D)');
