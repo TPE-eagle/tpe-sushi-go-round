@@ -165,33 +165,37 @@ describe('checkFieldPopulation', () => {
     );
   }
 
-  it('returns null when the ratio is at or above the 95% threshold', () => {
+  it('returns status "pass" when the ratio is at or above the 95% threshold', () => {
     const records = makeRecords(ARRIVAL_OTIME, 20, 1); // 19/20 = 95%
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
-  it('returns a detail string when both the ratio is below threshold and blanks clear the floor', () => {
+  it('returns status "fail" with a detail string when both the ratio is below threshold and blanks clear the floor', () => {
     const records = makeRecords(ARRIVAL_OTIME, 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
-    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).not.toBeNull();
-    expect(detail).toContain('StopCode');
-    expect(detail).toContain('14/20');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('StopCode');
+    expect(result.detail).toContain('14/20');
   });
 
-  it('does not fire when blanks are below the absolute floor, even below the ratio threshold', () => {
-    // 16/20 = 80%, below the 95% ratio threshold, but only 4 blanks — below the 5-blank floor.
+  it('passes (not skips) when blanks are below the absolute floor but n itself clears it', () => {
+    // 16/20 = 80%, below the 95% ratio threshold, but only 4 blanks — below the 5-blank
+    // floor. n=20 itself is well above the floor, so this is a real, meaningful pass —
+    // not the "n too small to ever fire" skip case below (issue #86 PR #99 review).
     const records = makeRecords(ARRIVAL_OTIME, 20, 4);
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
-  it('never fires when the rendered window has fewer rows than the absolute floor', () => {
-    const records = makeRecords(ARRIVAL_OTIME, 3, 3); // all 3 rows blank, window smaller than the floor
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+  it('returns status "skip" when the rendered window has fewer rows than the absolute floor (issue #86)', () => {
+    // n=3 rows, all blank — even 100% blank can't clear the 5-blank floor, so this
+    // sample is structurally incapable of failing and must not read as a pass either.
+    const records = makeRecords(ARRIVAL_OTIME, 3, 3);
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
   });
 
-  it('returns null (skips the check) when no rows fall in the rendered window', () => {
+  it('returns status "skip" when no rows fall in the rendered window', () => {
     const records = makeRecords('23:00:00', 20, 20); // all rows outside the window, none populated
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
   });
 
   it('treats "", whitespace-only, and "-" as unpopulated', () => {
@@ -206,37 +210,44 @@ describe('checkFieldPopulation', () => {
       makeRecord(ARRIVAL_OTIME, '-'),
     ];
     // 5 unpopulated of 8 clears the floor.
-    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).toContain('3/8');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('3/8');
   });
 
   it('excludes unsupported airlines and cancelled flights from the denominator', () => {
+    // 6 supported/populated rows + 5 excluded (unsupported airline / cancelled) rows that
+    // are all blank. If exclusion were broken, n=11, blanks=5 (>= floor), ratio=6/11=54.5%
+    // (< threshold) => 'fail'. With exclusion working, n=6, blanks=0 => 'pass' — the two
+    // outcomes are distinguishable, unlike a smaller fixture where both paths agree.
     const records = [
-      makeRecord(ARRIVAL_OTIME, '05'),
-      makeRecord(ARRIVAL_OTIME, '', { ACode: 'XX' }), // not a supported airline — excluded
+      ...Array.from({ length: 6 }, () => makeRecord(ARRIVAL_OTIME, '05')),
+      ...Array.from({ length: 5 }, () => makeRecord(ARRIVAL_OTIME, '', { ACode: 'XX' })), // unsupported — excluded
       makeRecord(ARRIVAL_OTIME, '', { Memo: '取消' }), // cancelled — excluded
     ];
-    // Only the first row counts; it's populated, so the ratio is 1/1 = 100%.
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toBeNull();
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
   it('uses the departure window and Gate field for mode D', () => {
     const records = makeRecords(DEPARTURE_OTIME, 20, 6, 'Gate'); // 14/20 = 70%, 6 blanks >= floor
-    const detail = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
-    expect(detail).not.toBeNull();
-    expect(detail).toContain('Gate');
-    expect(detail).toContain('14/20');
+    const result = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('Gate');
+    expect(result.detail).toContain('14/20');
   });
 
-  it('returns a contract-detail string instead of throwing when a record is malformed', () => {
+  it('returns status "fail" instead of throwing when a record is malformed', () => {
     // Memo missing — filterSupportedAirlines() calls flight.Memo.toLowerCase() unguarded
     // (PR #84 review R4); checkRecordShape's own contract treats null Memo as valid, so
-    // this must degrade to a reported detail, not crash the run.
+    // this must degrade to a reported detail, not crash the run. Status is 'fail', not
+    // 'skip' (issue #86 PR #99 review): a malformed record is a real contract problem,
+    // not an inconclusive sample.
     const records = [
       { ACode: 'BR', ODate: '2026/01/15', OTime: ARRIVAL_OTIME, StopCode: '05' },
     ];
-    const detail = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
-    expect(detail).toContain('row filtering threw');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('row filtering threw');
   });
 });
 
@@ -428,6 +439,28 @@ describe('run() — per-class incident state machine (issue #86)', () => {
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
+  // Fixed reference instant + well-formed, well-populated records for both legs, so
+  // *every* class — including contract — reaches a genuine 'pass' verdict this cycle,
+  // not just 'no failure'. (issue #86 PR #99 review: an empty/off-peak payload is
+  // healthy but 'skip', not 'pass' — see the dedicated test below for that case.)
+  const CONTRACT_HEALTHY_NOW = new Date('2026-01-15T04:00:00+08:00');
+  function makeHealthyArrivalsRecord(i) {
+    return {
+      ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${100 + i}`,
+      ODate: '2026/01/15', OTime: '04:00:00', // inside the arrivals render window
+      CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
+      BNO: i, StopCode: '05', Gate: 'C5', PlaneNo: 'B-18316', flightCode: `BR${100 + i}`,
+    };
+  }
+  function makeHealthyDeparturesRecord(i) {
+    return {
+      ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${200 + i}`,
+      ODate: '2026/01/15', OTime: '04:30:00', // inside the departures render window
+      CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
+      BNO: i, Gate: 'C5', PlaneNo: 'B-18316',
+    };
+  }
+
   it('a healthy run closes every open incident, each with its own class in the recovery detail', async () => {
     const contractIncident = {
       number: 41,
@@ -448,9 +481,16 @@ describe('run() — per-class incident state machine (issue #86)', () => {
       onPatch: (url) => patchedUrls.push(url),
       onDiscordPost: (b) => discordPosts.push(b),
     });
-    probeFlightApiPair.mockResolvedValue(HEALTHY_PROBE); // healthy on the first attempt — no retry wait
+    // n=6 on each leg, fully populated — clears the population floor with a genuine
+    // 100% ratio, so contract's verdict this cycle is 'pass', not merely 'not failing'.
+    probeFlightApiPair.mockResolvedValue({
+      arrivals: { status: 200, body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyArrivalsRecord(i))), networkError: null },
+      departures: { status: 200, body: JSON.stringify(Array.from({ length: 6 }, (_, i) => makeHealthyDeparturesRecord(i))), networkError: null },
+    });
 
-    await run();
+    vi.useFakeTimers();
+    vi.setSystemTime(CONTRACT_HEALTHY_NOW);
+    await run(); // healthy on the first probe attempt — no retry wait
 
     expect(patchedUrls).toHaveLength(2);
     expect(patchedUrls.some((u) => u.endsWith('/issues/41'))).toBe(true);
@@ -459,6 +499,32 @@ describe('run() — per-class incident state machine (issue #86)', () => {
     const descriptions = discordPosts.map((p) => p.embeds[0].description);
     expect(descriptions.some((d) => d.includes('(contract)'))).toBe(true);
     expect(descriptions.some((d) => d.includes('(availability)'))).toBe(true);
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  it('a contract incident stays open when this run\'s rendered window is empty — "no failure" is not "recovered" (issue #86 PR #99 review)', async () => {
+    const contractIncident = {
+      number: 41,
+      html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
+      labels: [{ name: 'status:incident' }, { name: 'canary:contract' }],
+    };
+    let patched = false;
+    let discordPosted = false;
+    mockFetchRouter({
+      openIncidents: [contractIncident],
+      onPatch: () => { patched = true; },
+      onDiscordPost: () => { discordPosted = true; },
+    });
+    // Empty arrays: availability/canary-blocked pass cleanly, but contract's own
+    // per-leg check never runs (empty payload is legitimate off-peak, but it means
+    // this cycle can't confirm the field-population regression that might have opened
+    // the incident is actually gone) — contract's verdict is 'skip', not 'pass'.
+    probeFlightApiPair.mockResolvedValue(HEALTHY_PROBE);
+
+    await run();
+
+    expect(patched).toBe(false); // the open contract incident is left exactly as it was
+    expect(discordPosted).toBe(false); // no false "API recovered"
     expect(process.exit).not.toHaveBeenCalled();
   });
 });
