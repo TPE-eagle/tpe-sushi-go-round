@@ -81,6 +81,17 @@ let returnLegFetchToken = 0;
 // resolves before the primary fetch (same fetchData() cycle) would render
 // the new mode's headers/columns against stale flightData.
 let mainDataReadyForToken = -1;
+// Issue #39 — mirrors returnLegFetchToken above, but guards fetchData()'s
+// own primary fetch instead of the return-leg pairing fetch. Bumped at the
+// top of every fetchData() call; a resolve whose captured token no longer
+// matches is a superseded response from before a mode/language toggle or
+// another refresh, and must not clobber flightData with the previous
+// cycle's records. A separate counter rather than reusing requestToken:
+// requestToken already has a job (fetchReturnLegArrivals()'s render gate),
+// so giving the primary fetch its own counter keeps this guard cleanly
+// separable if a future change wants to cancel only the pairing fetch
+// without invalidating the primary fetch.
+let mainFetchToken = 0;
 
 // About drawer — install prompt capture (issue #46). Non-null only between
 // a captured `beforeinstallprompt` and either a resolved `.userChoice` or an
@@ -905,6 +916,14 @@ function fetchData() {
     // flicker — worst case it briefly shows the prior cycle's pairing.
     returnLegFetchToken += 1;
     const requestToken = returnLegFetchToken;
+    // Issue #39 — bumped in the same block as returnLegFetchToken (not
+    // further down, next to the fetch it guards) so the two counters can't
+    // desynchronize: fetchReturnLegArrivals()'s render gate only holds if a
+    // superseded primary fetch always implies a superseded pairing fetch,
+    // and any future early return slipped between the two bumps would
+    // silently break that invariant while leaving the guard looking intact.
+    mainFetchToken += 1;
+    const mainRequestToken = mainFetchToken;
     // #40 item 2: mainDataReadyForToken was only ever assigned forward
     // (never reset), so a value left over from a previous token could
     // spuriously equal a later token and let a still-pending primary
@@ -977,7 +996,9 @@ function fetchData() {
     })
     .then(response => response.json())
     .then(data => {
-        // Store for offline fallback only; never served while online.
+        // Store for offline fallback only; never served while online. Kept
+        // unconditional (issue #39): a superseded response is still valid
+        // data for the offline cache, even though it must not render below.
         if (!isTestEnvironment) {
             setCachedFlightData(cacheKey, {
                 data: data,
@@ -985,11 +1006,21 @@ function fetchData() {
             });
         }
 
+        // Issue #39 — a newer fetchData() call has started since this fetch
+        // was issued (mode/language toggle, another refresh); rendering it
+        // now would clobber flightData with the previous cycle's records.
+        if (mainRequestToken !== mainFetchToken) return;
+
         hideOfflineBanner();
         processFetchedData(data);
         mainDataReadyForToken = requestToken;
     })
     .catch(error => {
+        // Issue #39 — same staleness guard as the success path: nobody is
+        // waiting on a superseded request, so it should not surface an
+        // error (or clear a banner) for one.
+        if (mainRequestToken !== mainFetchToken) return;
+
         // Offline without any cached data -> dedicated message.
         // Online but the request failed -> generic error. We intentionally do
         // NOT fall back to stale cache here: a working network connection with
