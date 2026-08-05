@@ -86,7 +86,11 @@ let mainDataReadyForToken = -1;
 // top of every fetchData() call; a resolve whose captured token no longer
 // matches is a superseded response from before a mode/language toggle or
 // another refresh, and must not clobber flightData with the previous
-// cycle's records.
+// cycle's records. A separate counter rather than reusing requestToken:
+// requestToken already has a job (fetchReturnLegArrivals()'s render gate),
+// so giving the primary fetch its own counter keeps this guard cleanly
+// separable if a future change wants to cancel only the pairing fetch
+// without invalidating the primary fetch.
 let mainFetchToken = 0;
 
 // About drawer — install prompt capture (issue #46). Non-null only between
@@ -912,6 +916,14 @@ function fetchData() {
     // flicker — worst case it briefly shows the prior cycle's pairing.
     returnLegFetchToken += 1;
     const requestToken = returnLegFetchToken;
+    // Issue #39 — bumped in the same block as returnLegFetchToken (not
+    // further down, next to the fetch it guards) so the two counters can't
+    // desynchronize: fetchReturnLegArrivals()'s render gate only holds if a
+    // superseded primary fetch always implies a superseded pairing fetch,
+    // and any future early return slipped between the two bumps would
+    // silently break that invariant while leaving the guard looking intact.
+    mainFetchToken += 1;
+    const mainRequestToken = mainFetchToken;
     // #40 item 2: mainDataReadyForToken was only ever assigned forward
     // (never reset), so a value left over from a previous token could
     // spuriously equal a later token and let a still-pending primary
@@ -922,11 +934,6 @@ function fetchData() {
     if (currentFlightMode === 'D') {
         fetchReturnLegArrivals(requestToken);
     }
-
-    // Issue #39 — guards this call's own primary fetch against a stale
-    // resolve; see mainFetchToken's declaration above.
-    mainFetchToken += 1;
-    const mainRequestToken = mainFetchToken;
 
     const postData = {
         "ODate": getUTC8Date(),

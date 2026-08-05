@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { blockGoogleAnalytics, waitForApiAndTable, getCurrentUTC8Date } from './test-helpers.js'
+import { blockGoogleAnalytics, waitForApiAndTable, getCurrentUTC8Date, requestAState } from './test-helpers.js'
 
 // Issue #39 — fetchData()'s primary fetch had no staleness token of its own,
 // unlike the returnLegFetchToken-guarded pairing fetch added for #33. A slow
@@ -9,6 +9,13 @@ import { blockGoogleAnalytics, waitForApiAndTable, getCurrentUTC8Date } from './
 // mode) fetch is held open, the user toggles to Departures before it
 // resolves, and once the stale Arrival response finally lands late, the
 // board must still be showing Departures data untouched.
+//
+// This spec deliberately stays out of playwright.prod.config.js's
+// testMatch (production.spec.js only), because the hardcoded 08:00/09:00
+// flight times below only survive unfiltered thanks to main.js skipping
+// filterFlightsByTime() on localhost. If that testMatch is ever widened to
+// include this file, it will fail against the live site for reasons that
+// look exactly like a staleness regression but aren't.
 test.describe('fetchData() staleness guard (issue #39)', () => {
   test.beforeEach(async ({ page }) => {
     await blockGoogleAnalytics(page)
@@ -64,10 +71,7 @@ test.describe('fetchData() staleness guard (issue #39)', () => {
     const staleResponseSettled = new Promise((resolve) => { resolveStaleResponse = resolve })
 
     await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
-      const request = route.request()
-      let body = {}
-      try { body = request.postDataJSON() || {} } catch (_) { /* empty body is fine */ }
-      const mode = body.AState === 'D' ? 'D' : 'A'
+      const mode = requestAState(route.request())
 
       // Only the very first Arrival request (the initial, pre-toggle board
       // fetch) is held open. A later Arrival request would be the
@@ -104,9 +108,14 @@ test.describe('fetchData() staleness guard (issue #39)', () => {
     // Let the held-open, superseded Arrival response resolve.
     await staleResponseSettled
 
-    // Give the (correctly-dropped) stale .then() a beat to have run if the
-    // staleness guard were absent, then assert the board is still
-    // Departures-only: no Arrival row, and the Departures row is unchanged.
+    // Without the mainFetchToken guard, the stale .then() would call
+    // processFetchedData() and repaint synchronously in the same task the
+    // response body lands in — there's no later microtask/macrotask gap to
+    // poll for instead. 300ms is generous headroom past that single task,
+    // enough that the toHaveCount(0) assertion below isn't just passing
+    // because the (hypothetical, unguarded) repaint hasn't run yet. This is
+    // the only hard sleep in e2e/ — every other spec relies on Playwright's
+    // auto-waiting instead.
     await page.waitForTimeout(300)
     await expect(page.locator('tbody tr', { hasText: 'BR900' })).toHaveCount(0)
     await expect(page.locator('tbody tr', { hasText: 'CI800' })).toBeVisible()
