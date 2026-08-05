@@ -1009,7 +1009,6 @@ function fetchData() {
         // Issue #39 — a newer fetchData() call has started since this fetch
         // was issued (mode/language toggle, another refresh); rendering it
         // now would clobber flightData with the previous cycle's records.
-        if (mainRequestToken !== mainFetchToken) return;
 
         hideOfflineBanner();
         processFetchedData(data);
@@ -1019,7 +1018,6 @@ function fetchData() {
         // Issue #39 — same staleness guard as the success path: nobody is
         // waiting on a superseded request, so it should not surface an
         // error (or clear a banner) for one.
-        if (mainRequestToken !== mainFetchToken) return;
 
         // Offline without any cached data -> dedicated message.
         // Online but the request failed -> generic error. We intentionally do
