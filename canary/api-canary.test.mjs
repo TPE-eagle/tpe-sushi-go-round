@@ -137,16 +137,14 @@ describe('incidentClass', () => {
 });
 
 describe('checkFieldPopulation', () => {
-  // Fixed reference instant so window math is deterministic. Arrival window for this
-  // `now` is 03:20:00-05:20:59; departure window is 04:00:00-06:00:59 (see
-  // getTimeWindowConfig in src/utils/flightUtils.js).
-  const NOW = new Date('2026-01-15T04:00:00+08:00');
-  const ARRIVAL_OTIME = '04:00:00'; // inside both windows' overlap, used for mode 'A' rows
-  const DEPARTURE_OTIME = '04:30:00'; // inside the departure window, used for mode 'D' rows
+  // Issue #115: scope is today's airline-filtered day pool, not a time-window slice —
+  // OTime is arbitrary here (any time of day) since it no longer affects the check.
+  const OTIME = '04:00:00';
 
   function makeRecord(otime, value, overrides = {}) {
     return {
       ACode: 'BR',
+      FlightNo: '100',
       Memo: '',
       ODate: '2026/01/15',
       OTime: otime,
@@ -166,13 +164,13 @@ describe('checkFieldPopulation', () => {
   }
 
   it('returns status "pass" when the ratio is at or above the 95% threshold', () => {
-    const records = makeRecords(ARRIVAL_OTIME, 20, 1); // 19/20 = 95%
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
+    const records = makeRecords(OTIME, 20, 1); // 19/20 = 95%
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'pass', detail: null });
   });
 
   it('returns status "fail" with a detail string when both the ratio is below threshold and blanks clear the floor', () => {
-    const records = makeRecords(ARRIVAL_OTIME, 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    const records = makeRecords(OTIME, 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('StopCode');
     expect(result.detail).toContain('14/20');
@@ -182,35 +180,46 @@ describe('checkFieldPopulation', () => {
     // 16/20 = 80%, below the 95% ratio threshold, but only 4 blanks — below the 5-blank
     // floor. n=20 itself is well above the floor, so this is a real, meaningful pass —
     // not the "n too small to ever fire" skip case below (issue #86 PR #99 review).
-    const records = makeRecords(ARRIVAL_OTIME, 20, 4);
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
+    const records = makeRecords(OTIME, 20, 4);
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'pass', detail: null });
   });
 
-  it('returns status "skip" when the rendered window has fewer rows than the absolute floor (issue #86)', () => {
+  it('returns status "skip" when the day pool has fewer rows than the absolute floor (issue #86)', () => {
     // n=3 rows, all blank — even 100% blank can't clear the 5-blank floor, so this
     // sample is structurally incapable of failing and must not read as a pass either.
-    const records = makeRecords(ARRIVAL_OTIME, 3, 3);
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
+    const records = makeRecords(OTIME, 3, 3);
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'skip', detail: null });
   });
 
-  it('returns status "skip" when no rows fall in the rendered window', () => {
-    const records = makeRecords('23:00:00', 20, 20); // all rows outside the window, none populated
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
+  it('returns status "skip" when the day pool is empty', () => {
+    expect(checkFieldPopulation([], 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'skip', detail: null });
+  });
+
+  it('counts rows regardless of time of day — the time-window narrowing was dropped (issue #115)', () => {
+    // Same fixture as the ratio-below-threshold 'fail' case above, but at a time of day
+    // that would have fallen outside the old ~2h rendered window (an overnight OTime is
+    // well outside both the arrival and departure windows in src/utils/flightUtils.js).
+    // Pre-#115 this returned 'skip' (n=0, nothing "rendered"); now it must still evaluate
+    // and fail — proof the guard is no longer blind outside the rendered window.
+    const records = makeRecords('02:00:00', 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    expect(result.status).toBe('fail');
+    expect(result.detail).toContain('14/20');
   });
 
   it('treats "", whitespace-only, and "-" as unpopulated', () => {
     const records = [
-      makeRecord(ARRIVAL_OTIME, '05'),
-      makeRecord(ARRIVAL_OTIME, '05'),
-      makeRecord(ARRIVAL_OTIME, '05'),
-      makeRecord(ARRIVAL_OTIME, ''),
-      makeRecord(ARRIVAL_OTIME, '   '),
-      makeRecord(ARRIVAL_OTIME, '-'),
-      makeRecord(ARRIVAL_OTIME, ''),
-      makeRecord(ARRIVAL_OTIME, '-'),
+      makeRecord(OTIME, '05'),
+      makeRecord(OTIME, '05'),
+      makeRecord(OTIME, '05'),
+      makeRecord(OTIME, ''),
+      makeRecord(OTIME, '   '),
+      makeRecord(OTIME, '-'),
+      makeRecord(OTIME, ''),
+      makeRecord(OTIME, '-'),
     ];
     // 5 unpopulated of 8 clears the floor.
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('3/8');
   });
@@ -221,19 +230,32 @@ describe('checkFieldPopulation', () => {
     // (< threshold) => 'fail'. With exclusion working, n=6, blanks=0 => 'pass' — the two
     // outcomes are distinguishable, unlike a smaller fixture where both paths agree.
     const records = [
-      ...Array.from({ length: 6 }, () => makeRecord(ARRIVAL_OTIME, '05')),
-      ...Array.from({ length: 5 }, () => makeRecord(ARRIVAL_OTIME, '', { ACode: 'XX' })), // unsupported — excluded
-      makeRecord(ARRIVAL_OTIME, '', { Memo: '取消' }), // cancelled — excluded
+      ...Array.from({ length: 6 }, () => makeRecord(OTIME, '05')),
+      ...Array.from({ length: 5 }, () => makeRecord(OTIME, '', { ACode: 'XX' })), // unsupported — excluded
+      makeRecord(OTIME, '', { Memo: '取消' }), // cancelled — excluded
     ];
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'pass', detail: null });
   });
 
-  it('uses the departure window and Gate field for mode D', () => {
-    const records = makeRecords(DEPARTURE_OTIME, 20, 6, 'Gate'); // 14/20 = 70%, 6 blanks >= floor
-    const result = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
+  it('uses the Gate field for mode D', () => {
+    const records = makeRecords(OTIME, 20, 6, 'Gate'); // 14/20 = 70%, 6 blanks >= floor
+    const result = checkFieldPopulation(records, 'Gate', 'D', 'Departures');
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('Gate');
     expect(result.detail).toContain('14/20');
+  });
+
+  it('logs blank row natural-key ids when blanks are present (issue #115)', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const records = [
+      makeRecord(OTIME, '05', { FlightNo: '101' }),
+      makeRecord(OTIME, '', { FlightNo: '102' }),
+    ];
+    checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    const idLog = logSpy.mock.calls.map(c => c[0]).find(msg => msg.includes('blank row ids'));
+    expect(idLog).toContain('20260115_A_BR102');
+    expect(idLog).not.toContain('BR101');
+    logSpy.mockRestore();
   });
 
   it('returns status "fail" instead of throwing when a record is malformed', () => {
@@ -243,9 +265,9 @@ describe('checkFieldPopulation', () => {
     // 'skip' (issue #86 PR #99 review): a malformed record is a real contract problem,
     // not an inconclusive sample.
     const records = [
-      { ACode: 'BR', ODate: '2026/01/15', OTime: ARRIVAL_OTIME, StopCode: '05' },
+      { ACode: 'BR', ODate: '2026/01/15', OTime: OTIME, StopCode: '05' },
     ];
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('row filtering threw');
   });
