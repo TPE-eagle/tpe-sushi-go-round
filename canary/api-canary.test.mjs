@@ -477,7 +477,7 @@ describe('run() — per-class incident state machine (issue #86)', () => {
   function makeHealthyArrivalsRecord(i) {
     return {
       ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${100 + i}`,
-      ODate: '2026/01/15', OTime: '04:00:00', // inside the arrivals render window
+      ODate: '2026/01/15', OTime: '04:00:00', // any time of day — no longer window-scoped (issue #115)
       CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
       BNO: i, StopCode: '05', Gate: 'C5', PlaneNo: 'B-18316', flightCode: `BR${100 + i}`,
     };
@@ -485,7 +485,7 @@ describe('run() — per-class incident state machine (issue #86)', () => {
   function makeHealthyDeparturesRecord(i) {
     return {
       ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${200 + i}`,
-      ODate: '2026/01/15', OTime: '04:30:00', // inside the departures render window
+      ODate: '2026/01/15', OTime: '04:30:00', // any time of day — no longer window-scoped (issue #115)
       CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
       BNO: i, Gate: 'C5', PlaneNo: 'B-18316',
     };
@@ -532,7 +532,7 @@ describe('run() — per-class incident state machine (issue #86)', () => {
     expect(process.exit).not.toHaveBeenCalled();
   });
 
-  it('a contract incident stays open when this run\'s rendered window is empty — "no failure" is not "recovered" (issue #86 PR #99 review)', async () => {
+  it('a contract incident stays open when this run\'s payload is empty — "no failure" is not "recovered" (issue #86 PR #99 review)', async () => {
     const contractIncident = {
       number: 41,
       html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
@@ -559,12 +559,12 @@ describe('run() — per-class incident state machine (issue #86)', () => {
   });
 
   // issue #101 F2: the discriminating test #99 was missing. The two existing tests above
-  // each cover one incident in isolation — "everything passes ⇒ close" and "empty window
+  // each cover one incident in isolation — "everything passes ⇒ close" and "empty payload
   // ⇒ contract stays open" — but neither proves the close loop tells the two classes
-  // *apart* within the same run. A regression such as an early return on an empty window
+  // *apart* within the same run. A regression such as an early return on an empty payload
   // would leave both of those tests green while wrongly stranding the availability
   // incident too; this is the one test that would catch it.
-  it('one empty-window run leaves a contract incident open while closing a separate availability incident (issue #101 F2)', async () => {
+  it('one empty-payload run leaves a contract incident open while closing a separate availability incident (issue #101 F2)', async () => {
     const contractIncident = {
       number: 41,
       html_url: 'https://github.com/TPE-eagle/tpe-sushi-go-round/issues/41',
