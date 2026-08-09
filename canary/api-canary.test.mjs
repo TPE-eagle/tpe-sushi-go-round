@@ -137,9 +137,13 @@ describe('incidentClass', () => {
 });
 
 describe('checkFieldPopulation', () => {
-  // Issue #115: scope is today's airline-filtered day pool, not a time-window slice —
-  // OTime is arbitrary here (any time of day) since it no longer affects the check.
+  // Issue #115 / PR #117 review F1: scope is today's airline-filtered rows that have
+  // already reached their scheduled time by `now` — not a rendered time-window slice,
+  // and not the whole day either. NOW is fixed well after OTIME so every fixture record
+  // below counts as "already operated" unless a test is specifically exercising the
+  // operated-or-now boundary.
   const OTIME = '04:00:00';
+  const NOW = new Date('2026-01-15T12:00:00+08:00');
 
   function makeRecord(otime, value, overrides = {}) {
     return {
@@ -165,12 +169,12 @@ describe('checkFieldPopulation', () => {
 
   it('returns status "pass" when the ratio is at or above the 95% threshold', () => {
     const records = makeRecords(OTIME, 20, 1); // 19/20 = 95%
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'pass', detail: null });
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
   it('returns status "fail" with a detail string when both the ratio is below threshold and blanks clear the floor', () => {
     const records = makeRecords(OTIME, 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('StopCode');
     expect(result.detail).toContain('14/20');
@@ -181,30 +185,51 @@ describe('checkFieldPopulation', () => {
     // floor. n=20 itself is well above the floor, so this is a real, meaningful pass —
     // not the "n too small to ever fire" skip case below (issue #86 PR #99 review).
     const records = makeRecords(OTIME, 20, 4);
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'pass', detail: null });
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
   it('returns status "skip" when the day pool has fewer rows than the absolute floor (issue #86)', () => {
     // n=3 rows, all blank — even 100% blank can't clear the 5-blank floor, so this
     // sample is structurally incapable of failing and must not read as a pass either.
     const records = makeRecords(OTIME, 3, 3);
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'skip', detail: null });
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
   });
 
   it('returns status "skip" when the day pool is empty', () => {
-    expect(checkFieldPopulation([], 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'skip', detail: null });
+    expect(checkFieldPopulation([], 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'skip', detail: null });
   });
 
-  it('counts rows regardless of time of day — the time-window narrowing was dropped (issue #115)', () => {
-    // Same fixture as the ratio-below-threshold 'fail' case above, but at a time of day
-    // that would have fallen outside the old ~2h rendered window (an overnight OTime is
-    // well outside both the arrival and departure windows in src/utils/flightUtils.js).
-    // Pre-#115 this returned 'skip' (n=0, nothing "rendered"); now it must still evaluate
-    // and fail — proof the guard is no longer blind outside the rendered window.
+  it('counts an already-operated row regardless of hour, including overnight — hour of day alone does not exclude it (issue #115)', () => {
+    // Same fixture as the ratio-below-threshold 'fail' case above, but at an overnight
+    // OTime that would have fallen outside the old ~2h rendered window (well outside
+    // both the arrival and departure windows in src/utils/flightUtils.js). It's still
+    // before NOW, so PR #117's operated-or-now scope counts it same as any other hour —
+    // proof the guard is no longer blind to off-window hours, just to the future.
     const records = makeRecords('02:00:00', 20, 6); // 14/20 = 70%, 6 blanks >= floor of 5
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('14/20');
+  });
+
+  it('excludes rows whose scheduled time is still in the future relative to `now` (PR #117 review F1)', () => {
+    // If the future rows counted: n=12, blanks=6 (>= floor), ratio=6/12=50% => 'fail'.
+    // Scoped to operated-or-now: n=6 (the already-operated rows only), blanks=0 => 'pass'.
+    // This is the F1 fix — a whole-day scope is dominated by not-yet-operated rows that
+    // are legitimately blank (this file's own 2.7%-on-a-future-date-payload drift case),
+    // which broke the 95%/floor-5 calibration measured on near-operation rows.
+    const now = new Date('2026-01-15T06:00:00+08:00');
+    const records = [
+      ...Array.from({ length: 6 }, () => makeRecord('04:00:00', '05')), // already operated
+      ...Array.from({ length: 6 }, () => makeRecord('18:00:00', '')), // not yet operated
+    ];
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', now)).toEqual({ status: 'pass', detail: null });
+  });
+
+  it('treats a row scheduled exactly at `now` as already operated (inclusive boundary)', () => {
+    const now = new Date('2026-01-15T04:00:00+08:00');
+    const records = makeRecords('04:00:00', 5, 5); // n=5 clears the floor only if this boundary row is included
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', now);
+    expect(result.status).toBe('fail');
   });
 
   it('treats "", whitespace-only, and "-" as unpopulated', () => {
@@ -219,7 +244,7 @@ describe('checkFieldPopulation', () => {
       makeRecord(OTIME, '-'),
     ];
     // 5 unpopulated of 8 clears the floor.
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('3/8');
   });
@@ -234,12 +259,12 @@ describe('checkFieldPopulation', () => {
       ...Array.from({ length: 5 }, () => makeRecord(OTIME, '', { ACode: 'XX' })), // unsupported — excluded
       makeRecord(OTIME, '', { Memo: '取消' }), // cancelled — excluded
     ];
-    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals')).toEqual({ status: 'pass', detail: null });
+    expect(checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).toEqual({ status: 'pass', detail: null });
   });
 
   it('uses the Gate field for mode D', () => {
     const records = makeRecords(OTIME, 20, 6, 'Gate'); // 14/20 = 70%, 6 blanks >= floor
-    const result = checkFieldPopulation(records, 'Gate', 'D', 'Departures');
+    const result = checkFieldPopulation(records, 'Gate', 'D', 'Departures', NOW);
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('Gate');
     expect(result.detail).toContain('14/20');
@@ -251,10 +276,27 @@ describe('checkFieldPopulation', () => {
       makeRecord(OTIME, '05', { FlightNo: '101' }),
       makeRecord(OTIME, '', { FlightNo: '102' }),
     ];
-    checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     const idLog = logSpy.mock.calls.map(c => c[0]).find(msg => msg.includes('blank row ids'));
     expect(idLog).toContain('20260115_A_BR102');
     expect(idLog).not.toContain('BR101');
+    logSpy.mockRestore();
+  });
+
+  it('does not throw when a blank row carries a non-string ODate (PR #117 review — Gemini finding, endorsed by jonatw-eagle)', () => {
+    // A non-string ODate that still stringifies to a valid date (so it clears
+    // hasOperated() and reaches flightId()) reproduces the exact TypeError Gemini
+    // found: the old flightId() called `.replaceAll()` directly on `record.ODate ?? ''`,
+    // which only guards null/undefined — a non-string value reaching that line threw,
+    // and a diagnostic log line must never be able to take down the run it instruments.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const records = [
+      makeRecord(OTIME, '05', { FlightNo: '101' }),
+      makeRecord(OTIME, '', { FlightNo: '102', ODate: ['2026/01/15'] }),
+    ];
+    expect(() => checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW)).not.toThrow();
+    const idLog = logSpy.mock.calls.map(c => c[0]).find(msg => msg.includes('blank row ids'));
+    expect(idLog).toContain('20260115_A_BR102');
     logSpy.mockRestore();
   });
 
@@ -267,7 +309,7 @@ describe('checkFieldPopulation', () => {
     const records = [
       { ACode: 'BR', ODate: '2026/01/15', OTime: OTIME, StopCode: '05' },
     ];
-    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals');
+    const result = checkFieldPopulation(records, 'StopCode', 'A', 'Arrivals', NOW);
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('row filtering threw');
   });
@@ -473,11 +515,13 @@ describe('run() — per-class incident state machine (issue #86)', () => {
   // *every* class — including contract — reaches a genuine 'pass' verdict this cycle,
   // not just 'no failure'. (issue #86 PR #99 review: an empty/off-peak payload is
   // healthy but 'skip', not 'pass' — see the dedicated test below for that case.)
-  const CONTRACT_HEALTHY_NOW = new Date('2026-01-15T04:00:00+08:00');
+  // Both records' OTime must be at-or-before this instant (issue #115 / PR #117 F1: scope
+  // is operated-or-now, not any time of day) — set an hour after the later of the two.
+  const CONTRACT_HEALTHY_NOW = new Date('2026-01-15T05:00:00+08:00');
   function makeHealthyArrivalsRecord(i) {
     return {
       ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${100 + i}`,
-      ODate: '2026/01/15', OTime: '04:00:00', // any time of day — no longer window-scoped (issue #115)
+      ODate: '2026/01/15', OTime: '04:00:00', // already operated by CONTRACT_HEALTHY_NOW
       CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
       BNO: i, StopCode: '05', Gate: 'C5', PlaneNo: 'B-18316', flightCode: `BR${100 + i}`,
     };
@@ -485,7 +529,7 @@ describe('run() — per-class incident state machine (issue #86)', () => {
   function makeHealthyDeparturesRecord(i) {
     return {
       ACode: 'BR', AName: 'EVA Air', FlightNo: `BR${200 + i}`,
-      ODate: '2026/01/15', OTime: '04:30:00', // any time of day — no longer window-scoped (issue #115)
+      ODate: '2026/01/15', OTime: '04:30:00', // already operated by CONTRACT_HEALTHY_NOW
       CityCode: 'NRT', CityEname: 'Tokyo Narita', CityName: '東京成田', Memo: '',
       BNO: i, Gate: 'C5', PlaneNo: 'B-18316',
     };
