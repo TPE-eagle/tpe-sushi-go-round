@@ -12,7 +12,7 @@
 //
 // Each class gets a per-run verdict of 'fail' / 'pass' / 'skip' (issue #86 PR #99
 // review), not just "did anything fail" — a class the probe didn't meaningfully exercise
-// this cycle (an empty rendered window, a too-small sample, or a class that was never
+// this cycle (an empty payload, a too-small sample, or a class that was never
 // reached because a different class short-circuited it) is 'skip', and an open incident
 // for a 'skip' class is left exactly as it is: not a failure, not a recovery. Only 'pass'
 // closes an open incident. Discord alerts fire only on state TRANSITIONS, not every run:
@@ -33,15 +33,19 @@
 // `StopCode`, the arrivals carousel), departures against the separately-derived
 // DEPARTURES_FIELDS (issue #83) — via the shared sampleAndCheckShape()/checkRecordShape();
 // rename / type-change is caught there with no threshold. `StopCode` (arrivals) and `Gate`
-// (departures) additionally get a population-ratio + absolute-floor check over the rows
-// the app actually renders (today, inside the mode's time window) — see
-// checkFieldPopulation — because both are legitimately empty on some rows even on a
-// healthy day, so full-payload / per-row assertions on "present but empty" would misfire
-// (issue #77 / #67 R13, PR #84 review R1).
+// (departures) additionally get a population-ratio + absolute-floor check over today's
+// airline-filtered, already-operated-or-now day pool — see checkFieldPopulation —
+// because both are legitimately empty on some rows even on a healthy day, so full-payload
+// / per-row assertions on "present but empty" would misfire (issue #77 / #67 R13, PR #84
+// review R1). That scope used to be narrowed to the app's rendered ~2h time window; issue
+// #115 dropped that narrowing after production logs showed it left the guard blind in
+// ~27% of cycles, then PR #117 review (F1) narrowed the replacement scope from the whole
+// day to rows that have already reached their scheduled time — a whole-day pool is
+// dominated by future rows that are legitimately unassigned, which broke the ratio.
 
 import { fileURLToPath } from 'url';
 import { probeFlightApiPair, isChallengeHtml } from './probe.mjs';
-import { filterSupportedAirlines, filterFlightsByTime } from '../src/utils/flightUtils.js';
+import { filterSupportedAirlines } from '../src/utils/flightUtils.js';
 
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -97,18 +101,46 @@ const DEPARTURES_FIELDS = {
 
 // Issue #77 / #67 R13: StopCode (arrivals carousel) and Gate (departures boarding gate)
 // are populated well below 100% even on a healthy day, so a per-row hard fail would page
-// on normal rows. A population ratio over the rows the app actually renders — today's
-// payload, filtered the same way main.js filters it, inside the mode's configured time
-// window — catches a real regression (upstream returning it empty) while tolerating
-// legitimate per-row gaps. Measured healthy-day ratios inside the rendered window: 98.5%
-// (StopCode, 132/134) and 100% (Gate, 151/151); a real drift case (Gate on a future-date
-// payload) measured 2.7%. 95% leaves headroom on both sides.
+// on normal rows. A population ratio over today's airline-filtered day pool — the same
+// rows main.js keeps after `filterSupportedAirlines` (supported carriers, cancellations
+// dropped) — catches a real regression (upstream returning it empty) while tolerating
+// legitimate per-row gaps. Measured healthy-day ratios: 98.5% (StopCode, 132/134) and
+// 100% (Gate, 151/151), both measured inside the app's old ~2h rendered window (now
+// retired, see below); a real drift case (Gate on a future-date payload) measured 2.7%.
+// 95% leaves headroom on both sides of the calibration sample.
 //
-// A ratio alone isn't enough at the rendered window's size (~2h, n≈15-34 rows per PR #84
-// review R1): at n≈34, two legitimate gaps is already 94.1% — below threshold, on a normal
-// day. MIN_BLANKS_TO_FIRE is an absolute floor alongside the ratio, not instead of it, so
-// one or a few legitimately-unassigned rows can never page; a real regression (rename,
-// emptying, type change) is still ~100% blank and clears the floor on the first run.
+// Issue #115: this guard used to narrow further, to the ~2h window the app actually
+// renders (via `filterFlightsByTime`). A week of production logs (91 cycles,
+// 2026-08-02..2026-08-09) showed that window's `n` at min 0 / median 22 (arrivals) / 13
+// (departures), below the 5-blank floor in ~27% of cycles — dark in both overnight *and*
+// morning hours, not just off-peak. #115 was corrected after filing: the full 330+ raw
+// payload never dropping does NOT establish the dark window was self-inflicted rather
+// than a genuine traffic trough — that count is pre-airline-filter, a different pool than
+// the one this check draws on, and nobody measured the airline-filtered count inside the
+// old window. Per leg, unproven either way: departures dark at TPE 00-04 is plausibly
+// genuine absence of flights; arrivals dark at TPE 07-10 is harder to explain that way,
+// and more suspicious, but still not proven.
+//
+// PR #117 review (F1): the first attempt at #115 dropped the time-window narrowing
+// entirely, scoping to the whole airline-filtered day. That broke the calibration above,
+// which was measured on rows near their scheduled time (gate/carousel assigned close to
+// operation) — a whole day's pool is dominated by rows whose scheduled time hasn't come
+// yet, and this file's own drift-case sample (2.7%, a *future-date* payload) is direct
+// evidence that not-yet-operated rows are mostly, legitimately blank. Scope is now rows
+// whose scheduled time (ODate+OTime) is at-or-before the probe's `now` — see
+// `hasOperated()` — dropping the arbitrary ~2h ceiling (so `n` still grows through the
+// day and #115's dark-window problem is still fixed) while keeping the "near/at
+// operation" population characteristic the calibration was measured against. This is
+// inference, not measurement: the API is Cloudflare-gated with no external observation
+// point, so nobody has directly sampled the operated-or-now population's legitimate blank
+// rate (PR #117 F3) — if that turns out meaningfully different from the old
+// rendered-window sample, these two constants need re-deriving against it, same as they
+// would for any other scope change.
+//
+// MIN_BLANKS_TO_FIRE is an absolute floor alongside the ratio, not instead of it, so one
+// or a few legitimately-unassigned rows can never page; a real regression (rename,
+// emptying, type change) is still ~100% blank and clears the floor on the first run. The
+// floor's value (5) is unchanged here; retuning it is #85's settled decision, out of scope.
 const POPULATION_RATIO_THRESHOLD = 0.95;
 const POPULATION_MIN_BLANKS_TO_FIRE = 5;
 
@@ -121,10 +153,35 @@ function isPopulated(value) {
   return s !== '' && s !== '-';
 }
 
+// Natural key for a flight row (issue #115) — `YYYYMMDD_<AState>_<ACode><FlightNo>`.
+// Used only to log which specific rows were blank, so a future "do blanks cluster?"
+// question is answerable from logs instead of re-litigating #85's unsupported claim.
+// `String(... ?? '')`, not bare `?? ''` (PR #117 review, Gemini + jonatw-eagle): `??`
+// only guards null/undefined, so a non-string ODate would reach `.replaceAll()` and throw
+// — a diagnostic log line must not be able to take down the run it's instrumenting.
+function flightId(record, mode) {
+  const ymd = String(record.ODate ?? '').replaceAll('/', '');
+  return `${ymd}_${mode}_${record.ACode ?? '?'}${record.FlightNo ?? '?'}`;
+}
+
+// Issue #115 / PR #117 review F1: whether a row's scheduled time (ODate+OTime) is at or
+// before `now`. Same +08:00 local-time parsing as filterFlightsByTime() in
+// src/utils/flightUtils.js — Taoyuan's schedule lives in local time, not UTC (issue #115
+// constraint 2). A row whose OTime fails to parse (Invalid Date) reads as not-yet-operated
+// and is silently excluded from the pool rather than throwing; sampleAndCheckShape only
+// samples, so an isolated malformed OTime elsewhere in the payload isn't guaranteed to be
+// caught there either — same class of gap the pre-#115 code already had, not new here.
+function hasOperated(record, now) {
+  const scheduled = new Date(`${String(record.ODate ?? '').replace(/\//g, '-')}T${record.OTime}+08:00`);
+  return !Number.isNaN(scheduled.getTime()) && scheduled <= now;
+}
+
 // Population-ratio guard, shared by the arrivals/StopCode and departures/Gate call
-// sites. `records` is the full-day payload for one AState; `mode` picks the matching
-// time window ('A' or 'D'). `now` defaults to the real clock; tests pass a fixed instant
-// for determinism.
+// sites. `records` is the full-day payload for one AState; `mode` ('A' or 'D') is used
+// only to label logged row ids, not to narrow the scope. `now` defaults to the real clock
+// and exists so tests can pin it — scope is today's airline-filtered rows whose scheduled
+// time has already arrived (see `hasOperated()` and the constants' comment above for why,
+// PR #117 review F1).
 //
 // Returns `{ status, detail }`, not a bare string|null (issue #86 PR #99 review): a run()
 // that only sees "no issue" can't tell a genuine pass apart from a sample too small to have
@@ -134,33 +191,37 @@ function isPopulated(value) {
 //   'fail' — either populated below both the ratio and blank-count thresholds, or row
 //            filtering itself threw on a malformed record (PR #84 review R4 — that's a
 //            real contract problem, not an inconclusive sample); `detail` is set.
-//   'skip' — the rendered window was empty, OR (below) the window was too small for the
-//            floor to ever have fired even at 0% populated — neither says anything about
-//            the field's real health, so this cycle can't confirm it either way.
-//   'pass' — evaluated on a window large enough that the floor *could* have fired, and it
+//   'skip' — today's operated-or-now day pool was empty, OR (below) it was too small for
+//            the floor to ever have fired even at 0% populated — neither says anything
+//            about the field's real health, so this cycle can't confirm it either way.
+//   'pass' — evaluated on a pool large enough that the floor *could* have fired, and it
 //            didn't.
 //
-// Every call logs n/blanks/ratio, healthy or not (PR #84 review R3) — the rendered window
-// is small (~2h) and its per-hour row count is otherwise never observed in production, so
-// POPULATION_MIN_BLANKS_TO_FIRE can only be retuned from real logged data, not from a
-// single measurement run.
+// Every call logs n/blanks/ratio, healthy or not (PR #84 review R3), plus the day-pool
+// size itself (issue #115) — the airline-filtered, operated-or-now count was never
+// directly measured before this change (PR #117 F1/F3), only inferred.
 export function checkFieldPopulation(records, field, mode, label, now = new Date()) {
-  let rendered;
+  let scoped;
   try {
-    rendered = filterFlightsByTime(filterSupportedAirlines(records), mode, now);
+    scoped = filterSupportedAirlines(records).filter(r => hasOperated(r, now));
   } catch (err) {
     return { status: 'fail', detail: `${label}: \`${field}\` check — row filtering threw on a malformed record: ${err.message}` };
   }
-  if (rendered.length === 0) {
-    console.log(`[canary] ${label} \`${field}\`: rendered window empty (n=0) — check skipped`);
-    return { status: 'skip', detail: null }; // nothing in the rendered window right now
+  console.log(`[canary] ${label} \`${field}\`: day pool (airline-filtered, operated-or-now) n=${scoped.length}`);
+  if (scoped.length === 0) {
+    console.log(`[canary] ${label} \`${field}\`: day pool empty (n=0) — check skipped`);
+    return { status: 'skip', detail: null }; // nothing operated-or-now in today's pool yet
   }
-  const populated = rendered.filter(r => isPopulated(r[field])).length;
-  const n = rendered.length;
-  const blanks = n - populated;
+  const blankRows = scoped.filter(r => !isPopulated(r[field]));
+  const populated = scoped.length - blankRows.length;
+  const n = scoped.length;
+  const blanks = blankRows.length;
   const ratio = populated / n;
   const pct = (ratio * 100).toFixed(1);
   console.log(`[canary] ${label} \`${field}\`: n=${n} blanks=${blanks} ratio=${pct}%`);
+  if (blanks > 0) {
+    console.log(`[canary] ${label} \`${field}\`: blank row ids: ${blankRows.map(r => flightId(r, mode)).join(', ')}`);
+  }
   // issue #86 PR #99 review, case 2: at n < the blank floor, even a 100%-blank sample can't
   // clear POPULATION_MIN_BLANKS_TO_FIRE — the check is structurally incapable of failing,
   // so a "no issue" result here is not evidence of health, real or otherwise.
@@ -171,7 +232,7 @@ export function checkFieldPopulation(records, field, mode, label, now = new Date
   if (blanks < POPULATION_MIN_BLANKS_TO_FIRE || ratio >= POPULATION_RATIO_THRESHOLD) return { status: 'pass', detail: null };
   return {
     status: 'fail',
-    detail: `${label}: \`${field}\` populated in only ${populated}/${n} (${pct}%) of rendered-window rows (${blanks} blanks) — below both the ${POPULATION_RATIO_THRESHOLD * 100}% threshold and the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor.`,
+    detail: `${label}: \`${field}\` populated in only ${populated}/${n} (${pct}%) of today's day-pool rows (${blanks} blanks) — below both the ${POPULATION_RATIO_THRESHOLD * 100}% threshold and the ${POPULATION_MIN_BLANKS_TO_FIRE}-blank floor.`,
   };
 }
 
@@ -486,7 +547,7 @@ function formatHealthyLabel(recordCount, departuresRecordCount) {
 // parsed (including 'skip' on an empty array) — null only when parsing itself failed, in
 // which case `verdict` is 'fail' and `failureType` ends up set, so formatHealthyLabel's
 // null-means-drill branch is never actually reached with this kind of null.
-function evaluateLegContract(rawBody, fields, popField, mode, label) {
+function evaluateLegContract(rawBody, fields, popField, mode, label, now) {
   const parsed = parseLegBody(rawBody, label);
   if (parsed.contractDetail) {
     return { verdict: 'fail', issues: [parsed.contractDetail], recordCount: null };
@@ -501,7 +562,7 @@ function evaluateLegContract(rawBody, fields, popField, mode, label) {
   const issues = [];
   const shapeIssue = sampleAndCheckShape(data, fields, label);
   if (shapeIssue) issues.push(shapeIssue);
-  const popResult = checkFieldPopulation(data, popField, mode, label);
+  const popResult = checkFieldPopulation(data, popField, mode, label, now);
   if (popResult.status === 'fail') issues.push(popResult.detail);
   if (issues.length > 0) return { verdict: 'fail', issues, recordCount };
   if (popResult.status === 'skip') return { verdict: 'skip', issues: [], recordCount };
@@ -554,8 +615,13 @@ async function run() {
       verdicts.availability = 'pass';
       verdicts['canary-blocked'] = 'pass';
 
-      const arrivalsResult = evaluateLegContract(arrivals.body, ARRIVALS_FIELDS, 'StopCode', 'A', 'Arrivals (AState=A)');
-      const departuresResult = evaluateLegContract(departures.body, DEPARTURES_FIELDS, 'Gate', 'D', 'Departures (AState=D)');
+      // `now` above is an ISO string (used for the issue/Discord timestamps below);
+      // checkFieldPopulation's operated-or-now scope (issue #115 / PR #117 F1) needs a
+      // Date to compare against, parsed once so both legs' population checks agree on
+      // the same instant.
+      const probeInstant = new Date(now);
+      const arrivalsResult = evaluateLegContract(arrivals.body, ARRIVALS_FIELDS, 'StopCode', 'A', 'Arrivals (AState=A)', probeInstant);
+      const departuresResult = evaluateLegContract(departures.body, DEPARTURES_FIELDS, 'Gate', 'D', 'Departures (AState=D)', probeInstant);
       recordCount = arrivalsResult.recordCount;
       departuresRecordCount = departuresResult.recordCount;
 
@@ -603,7 +669,7 @@ async function run() {
   // "nothing failed" branch missed the same-cycle mixed case — e.g. availability recovers
   // while contract starts failing — leaving a genuinely-recovered class's incident open
   // until its *next* failure silently reuses the stale one (no new alert, wrong duration).
-  // A 'skip' class (empty rendered window, or a sample too small to re-check) still leaves
+  // A 'skip' class (empty payload, or a sample too small to re-check) still leaves
   // its incident exactly as it is: not a failure, not a recovery (issue #86 PR #99 review).
   for (const incident of incidents) {
     const cls = incidentClass(incident);

@@ -9,10 +9,16 @@
 // This is evidence for whoever is deriving or reviewing api-canary.mjs's field-list
 // contracts (ARRIVALS_FIELDS / DEPARTURES_FIELDS): a standing log line here means
 // the next field-list change gets a real sample for free instead of needing its own
-// one-off dispatch. Pass/fail stays arrivals-reachability-only (below) — departures
-// is log-only and never fails this job, including when it comes back empty (0
-// records is a legitimate off-peak result, not a probe failure).
+// one-off dispatch. Also logs the population guard's real n/blanks/ratio for both
+// legs (issue #115 / PR #117 merge precondition) by importing and calling
+// checkFieldPopulation directly, so the same day-pool population the canary will
+// measure gets observed here first, on real data, with no incident/Discord path.
+// Pass/fail stays arrivals-reachability-only (below) — departures and all
+// population output are log-only and never fail this job, including when a leg
+// comes back empty (0 records is a legitimate off-peak result, not a probe
+// failure) or a population check throws on a malformed payload.
 import { probeFlightApiPair, isChallengeHtml } from './probe.mjs';
+import { checkFieldPopulation } from './api-canary.mjs';
 
 function getTaiwanDate() {
   const tw = new Date(Date.now() + 8 * 60 * 60 * 1000);
@@ -63,6 +69,22 @@ function logLeg(label, { status, body, networkError }) {
 const { arrivals, departures } = await probeFlightApiPair(getTaiwanDate());
 logLeg('arrivals', arrivals);
 logLeg('departures', departures);
+
+// Population is measurement, not a gate — never let it fail this job. Field/mode
+// pairs mirror run()'s own call sites in api-canary.mjs (StopCode/A for arrivals,
+// Gate/D for departures); both legs share one instant so they can't disagree about
+// "now", same as probeInstant in run().
+const popInstant = new Date();
+for (const [label, leg, field, mode] of [
+  ['Arrivals (AState=A)', arrivals, 'StopCode', 'A'],
+  ['Departures (AState=D)', departures, 'Gate', 'D'],
+]) {
+  try {
+    checkFieldPopulation(JSON.parse(leg.body), field, mode, label, popInstant);
+  } catch (err) {
+    console.log(`[probe] ${label} population: not measurable this run — ${err.message}`);
+  }
+}
 
 const { status, body } = arrivals;
 const head = (body || '').trimStart();
