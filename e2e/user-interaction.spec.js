@@ -145,7 +145,7 @@ test.describe('User Interaction Tests', () => {
     await expect(page.locator('table')).toContainText('Tokyo')
   })
 
-  test('should handle empty search results gracefully', async ({ page }) => {
+  test('should handle empty API response gracefully', async ({ page }) => {
     // Mock empty API response
     await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
       await route.fulfill({

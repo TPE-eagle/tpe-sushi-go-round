@@ -107,6 +107,32 @@ let mainDataReadyForToken = -1;
 // without invalidating the primary fetch.
 let mainFetchToken = 0;
 
+// Issue #130 — quick-dial flight-number search. fullDayByState keeps BOTH
+// directions' full-day, group-filtered records (cancelled rows RETAINED —
+// searching a cancelled flight must answer "cancelled", never "no such
+// flight"), so search ignores the 2-hour display window and the current
+// mode. null = that direction's store hasn't been fetched yet. The current
+// mode's slot is assigned inside processFetchedData; the arrivals slot is
+// also fed by fetchReturnLegArrivals() in departures mode; the departures
+// slot gets a mirror lazy fetch (fetchSearchDepartures) while in arrivals
+// mode with search open.
+let fullDayByState = { A: null, D: null };
+let searchOpen = false;
+// Guards the lazy reverse-direction (AState=D) fetch that feeds the search
+// store while in arrivals mode — same supersession pattern as returnLegFetchToken.
+let searchDepFetchToken = 0;
+// Set when the lazy departures fetch fails (offline with no cache, or the
+// request errored) so the status line says "unavailable" instead of an
+// endless "loading". Reset on the next fetch attempt.
+let searchDepUnavailable = false;
+// sessionStorage key for { open, q } — survives the visibilitychange reload;
+// per-tab and session-scoped, deliberately NOT a cookie (issue #130 D3).
+const SEARCH_SESSION_KEY = 'tpe_flight_search';
+// Per-direction display cap: a one-digit query could otherwise put hundreds
+// of rows in the board slot. Exact matches sort first, so a fully typed
+// flight number is never hidden by the cap.
+const SEARCH_RESULT_CAP = 20;
+
 // About drawer — install prompt capture (issue #46). Non-null only between
 // a captured `beforeinstallprompt` and either a resolved `.userChoice` or an
 // `appinstalled` event; the drawer only ever shows a real Install button
@@ -165,6 +191,25 @@ const translations = {
             "ReturnGate": "回程登機門",
             "ReturnGateShort": "回程門"
         },
+        "search": {
+            "open": "搜尋航班",
+            "close": "關閉搜尋",
+            "label": "搜尋航班",
+            "clear": "清除",
+            "placeholder": "輸入班號，例如 BR178 或 178",
+            "countOne": "找到 {n} 班",
+            "countBoth": "到達 {a} 班、出發 {d} 班",
+            "noMatch": "今天（{date}）沒有 {query} 這班。只查得到當天航班。",
+            "pinHint": "已釘選 {aname}，{query} 不在其中",
+            "showAllAirlines": "顯示全部航空公司",
+            "departuresPending": "出發資料載入中…",
+            "departuresUnavailable": "出發資料暫時無法取得",
+            "tooMany": "還有 {n} 班未顯示，請多輸入一位數字",
+            "cancelled": "已取消",
+            "gateTba": "未定",
+            "headingArrivals": "到達",
+            "headingDepartures": "出發"
+        },
         "drawer": {
             "aboutDrawerTitle": "關於",
             "closeLabel": "關閉",
@@ -188,7 +233,8 @@ const translations = {
                 "body": [
                     "現在前後約兩小時：出發往後兩小時，到達從 40 分鐘前算起。",
                     "確切的日期和時段寫在表格下面那行。",
-                    "每次載入都重抓資料。出境過了移民官，再開一次看登機門有沒有換。"
+                    "每次載入都重抓資料。出境過了移民官，再開一次看登機門有沒有換。",
+                    "按 🔍 輸入航班編號，可查當天任何一班，不受時段限制。"
                 ]
             },
             "install": {
@@ -266,6 +312,25 @@ const translations = {
             "ReturnGate": "Return Gate",
             "ReturnGateShort": "Return"
         },
+        "search": {
+            "open": "Search flights",
+            "close": "Close search",
+            "label": "Search flights",
+            "clear": "Clear",
+            "placeholder": "Flight number, e.g. BR178 or 178",
+            "countOne": "{n} flight(s) found",
+            "countBoth": "{a} arrival(s), {d} departure(s)",
+            "noMatch": "No {query} today ({date}). Search covers today's flights only.",
+            "pinHint": "{aname} is pinned, {query} is another airline",
+            "showAllAirlines": "Show all airlines",
+            "departuresPending": "Loading departures…",
+            "departuresUnavailable": "Departures unavailable right now",
+            "tooMany": "{n} more not shown, type another digit",
+            "cancelled": "Cancelled",
+            "gateTba": "TBA",
+            "headingArrivals": "Arrivals",
+            "headingDepartures": "Departures"
+        },
         "drawer": {
             "aboutDrawerTitle": "About",
             "closeLabel": "Close",
@@ -289,7 +354,8 @@ const translations = {
                 "body": [
                     "About two hours around now: departures two hours ahead, arrivals from 40 minutes ago.",
                     "The exact date and range are in the line under the table.",
-                    "Every load fetches fresh data. Once you're through immigration outbound, open it again and re-check your gate."
+                    "Every load fetches fresh data. Once you're through immigration outbound, open it again and re-check your gate.",
+                    "Tap 🔍 and type a flight number to look up any flight today, outside the two-hour window."
                 ]
             },
             "install": {
@@ -367,6 +433,25 @@ const translations = {
             "ReturnGate": "復路ゲート",
             "ReturnGateShort": "復路"
         },
+        "search": {
+            "open": "フライト検索",
+            "close": "検索を閉じる",
+            "label": "フライト検索",
+            "clear": "クリア",
+            "placeholder": "便名を入力（例：BR178 / 178）",
+            "countOne": "{n} 便見つかりました",
+            "countBoth": "到着 {a} 便・出発 {d} 便",
+            "noMatch": "{query} は本日（{date}）の便にありません。検索できるのは当日の便だけです。",
+            "pinHint": "{aname} を固定中。{query} は別の航空会社です",
+            "showAllAirlines": "全航空会社を表示",
+            "departuresPending": "出発便を読み込み中…",
+            "departuresUnavailable": "出発便のデータを取得できません",
+            "tooMany": "ほか {n} 便。もう1桁入力してください",
+            "cancelled": "欠航",
+            "gateTba": "未定",
+            "headingArrivals": "到着",
+            "headingDepartures": "出発"
+        },
         "drawer": {
             "aboutDrawerTitle": "このアプリについて",
             "closeLabel": "閉じる",
@@ -390,7 +475,8 @@ const translations = {
                 "body": [
                     "今を中心に約2時間。出発は2時間先まで、到着は40分前からです。",
                     "表の下に実際の日付と時間帯が出ます。",
-                    "開くたびにデータを取り直します。出発時は出国審査を抜けたら、もう一度開いてゲートを確認してください。"
+                    "開くたびにデータを取り直します。出発時は出国審査を抜けたら、もう一度開いてゲートを確認してください。",
+                    "🔍 をタップして便名を入力すると、時間帯に関係なく当日のどの便でも調べられます。"
                 ]
             },
             "install": {
@@ -444,6 +530,12 @@ function renderApp() {
             <div class="theme-buttons-container">
                 <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
                 <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
+                <div id="search-toggle" role="button" class="flight-toggle-btn" aria-label="Search flights" tabindex="0">
+                    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                        <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+                        <line x1="12.8" y1="12.8" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                    </svg>
+                </div>
                 <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">
                     <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                         <rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor"></rect>
@@ -453,6 +545,14 @@ function renderApp() {
                 </div>
             </div>
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
+            <div id="search-bar" class="search-bar" hidden>
+                <form id="search-form" role="search" class="search-form">
+                    <label for="search-input" class="visually-hidden search-label"></label>
+                    <input id="search-input" type="search" class="search-input" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search" autocapitalize="characters" placeholder="">
+                    <button type="button" id="search-clear" class="search-clear" aria-label="" hidden>✕</button>
+                </form>
+                <p id="search-status" class="search-status" role="status" hidden></p>
+            </div>
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
             <div id="planeTypeButtons" class="d-flex justify-content-center flex-wrap mb-2"></div>
             <!-- Issue #88 — time-window selector: cycles +2/+4/+6/+8h. Label is a
@@ -462,7 +562,8 @@ function renderApp() {
                 <button type="button" id="time-window-toggle" class="btn btn-sm btn-outline-secondary btn-no-hover m-1">+2h</button>
             </div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
-            <div id="output" class="container"></div>
+            <div id="search-results" class="flight-board search-results" hidden></div>
+            <div id="output" class="container flight-board"></div>
             <div id="footer">
                 <div class="lang-links d-flex justify-content-center mb-1">
                     <a href="#" data-lang="zh">🇹🇼 繁體中文</a> 
@@ -511,6 +612,7 @@ function updateLanguageText() {
 
     const title = translations[currentLanguage][titleKey];
     const description = translations[currentLanguage][descriptionKey];
+    updateSearchText();
 
     document.title = title;
     updateMetaTag('meta[name="description"]', description);
@@ -971,6 +1073,11 @@ function fetchData() {
     // and any future early return slipped between the two bumps would
     // silently break that invariant while leaving the guard looking intact.
     mainFetchToken += 1;
+    // Issue #130 review F2 — invalidate any in-flight lazy departures store
+    // fetch (mirror of the bumps above): a lazy fetch issued in arrivals mode
+    // must not land after a newer fetchData() cycle and overwrite
+    // fullDayByState.D with stale/wrong-language rows.
+    searchDepFetchToken += 1;
     const mainRequestToken = mainFetchToken;
     // #40 item 2: mainDataReadyForToken was only ever assigned forward
     // (never reset), so a value left over from a previous token could
@@ -981,6 +1088,10 @@ function fetchData() {
     mainDataReadyForToken = -1;
     if (currentFlightMode === 'D') {
         fetchReturnLegArrivals(requestToken);
+    } else if (searchOpen) {
+        // Issue #130 — arrivals mode keeps the departures search store fresh
+        // while the takeover is active (mirror of the pairing fetch above).
+        fetchSearchDepartures();
     }
 
     const postData = {
@@ -1077,9 +1188,14 @@ function fetchData() {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["offlineNoCache"]}</div>`;
             updateOfflineBanner(null);
+            // Issue #130 review F1: the search takeover hides #output, so the
+            // error must surface on the status line too — stale-looking rows
+            // with no indication are exactly what this branch exists to prevent.
+            if (searchOpen) setStatusLine(translations[currentLanguage]["offlineNoCache"]);
         } else {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["error"]}</div>`;
+            if (searchOpen) setStatusLine(translations[currentLanguage]["error"]);
         }
     });
 }
@@ -1104,9 +1220,11 @@ function fetchReturnLegArrivals(token) {
     const applyResult = (data) => {
         if (token !== returnLegFetchToken) return; // superseded — drop silently
         const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+        // Issue #130 — feed the search store's arrivals slot with the
+        // pre-cancelled-drop list (search must see cancelled flights).
+        fullDayByState.A = data.filter(flight => allGroupCodes.includes(flight.ACode));
         returnLegArrivals = data.filter(flight =>
-            allGroupCodes.includes(flight.ACode) &&
-            (!flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
+            allGroupCodes.includes(flight.ACode) && !isCancelledFlight(flight)
         );
         // Only re-render here if the primary fetch for this same token has
         // already rendered — otherwise flightData still holds the previous
@@ -1117,6 +1235,7 @@ function fetchReturnLegArrivals(token) {
         if (currentFlightMode === 'D' && mainDataReadyForToken === token) {
             renderFilteredView();
         }
+        if (searchOpen) renderSearchResults();
     };
 
     // Item 1 (#40) keeps the previous returnLegArrivals array across a
@@ -1175,6 +1294,72 @@ function fetchReturnLegArrivals(token) {
     });
 }
 
+// Issue #130 — mirror of fetchReturnLegArrivals(): while the app is in
+// arrivals mode with search open, fetch the full-day departures store so a
+// departure flight number is searchable without leaving arrivals. Own token
+// (searchDepFetchToken); deliberately silent on failure — the status line
+// switches to "departures unavailable" instead of an endless "loading".
+function fetchSearchDepartures() {
+    const token = ++searchDepFetchToken;
+    searchDepUnavailable = false;
+    const postData = {
+        "ODate": getUTC8Date(),
+        "OTimeOpen": null,
+        "OTimeClose": null,
+        "BNO": null,
+        "AState": "D",
+        "language": currentLanguage === "zh" ? "ch" : currentLanguage,
+        "keyword": ""
+    };
+
+    const applyResult = (data) => {
+        if (token !== searchDepFetchToken) return; // superseded — drop silently
+        const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+        fullDayByState.D = data.filter(flight => allGroupCodes.includes(flight.ACode));
+        searchDepUnavailable = false;
+        renderSearchResults();
+    };
+
+    const cacheKey = `flight_data_${JSON.stringify(postData)}`;
+    const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    if (!isTestEnvironment && !isOnline()) {
+        const cachedData = getCachedFlightData(cacheKey);
+        if (cachedData) {
+            applyResult(cachedData.data);
+        } else {
+            searchDepUnavailable = true;
+            renderSearchResults();
+        }
+        return;
+    }
+
+    fetch(API_URL, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": currentLanguage === 'zh' ? 'zh-TW,zh;q=0.9'
+                : currentLanguage === 'jp' ? 'ja-JP,ja;q=0.9'
+                : 'en-US,en;q=0.9',
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(postData),
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!isTestEnvironment) {
+            setCachedFlightData(cacheKey, { data: data, timestamp: Date.now() });
+        }
+        applyResult(data);
+    })
+    .catch(() => {
+        if (token !== searchDepFetchToken) return;
+        searchDepUnavailable = true;
+        renderSearchResults();
+    });
+}
+
 function isOnline() {
     return typeof navigator === 'undefined' || navigator.onLine !== false;
 }
@@ -1218,6 +1403,14 @@ function isTestHostname() {
     return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 }
 
+// Null-safe cancelled check shared by the board filter, the pairing fetch
+// and the search presentation (issue #130: Memo can be null in the wild —
+// the old inline Memo.toLowerCase() would throw on it).
+function isCancelledFlight(flight) {
+    const memo = String(flight?.Memo ?? '').toLowerCase();
+    return memo.includes('取消') || memo.includes('cancelled');
+}
+
 function processFetchedData(data) {
     data.sort((a, b) => {
         if (a.ACode < b.ACode) return -1;
@@ -1228,10 +1421,16 @@ function processFetchedData(data) {
     });
 
     const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
-    flightData = data.filter(flight =>
-        allGroupCodes.includes(flight.ACode) &&
-        (!flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
-    );
+    const groupFiltered = data.filter(flight => allGroupCodes.includes(flight.ACode));
+
+    // Issue #130 — the search store for the current direction: the same
+    // records as the board but WITHOUT the cancelled drop and WITHOUT the
+    // time window. Assigned here — not in the fetch callback — so the
+    // staleness guard, the offline cache path and the localhost skip all
+    // stay correct by construction.
+    fullDayByState[currentFlightMode] = groupFiltered;
+
+    flightData = groupFiltered.filter(flight => !isCancelledFlight(flight));
 
     // Issue #88 — keep the pre-time-filter copy for window re-filtering:
     // cycling the selector re-runs the pure filter on this array instead of
@@ -1444,6 +1643,12 @@ function renderFilteredView() {
         }
         displayFlights(currentFilteredFlights, currentACode);
     }
+
+    // Issue #130 — single refresh hook for the search takeover: every board
+    // write path (refresh, language, mode toggle, pin taps, the pairing
+    // back-fill) funnels through here, so the results stay in lockstep with
+    // the data without each writer needing to know search exists.
+    if (searchOpen) renderSearchResults();
 }
 
 // Narrow flights to the selected airline group, or all when no pin is set.
@@ -1777,6 +1982,366 @@ function filterFlightByNumber(flightNumber, ACode) {
     displayFlights(filteredFlight, ACode);
 }
 
+// ---------------------------------------------------------------------------
+// Issue #130 — quick-dial flight-number search (board takeover)
+// ---------------------------------------------------------------------------
+
+// The matching helpers live in src/utils/flightUtils.js (mirrored here per
+// the dual-copy rule): normalizeFlightQuery + matchFlights.
+
+function normalizeFlightQuery(query) {
+    return String(query ?? '')
+        .normalize('NFKC')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+}
+
+function matchFlights(flights, query, todayStr) {
+    const q = normalizeFlightQuery(query);
+    if (!q) return [];
+    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+
+    let prefix = null;
+    let rest = q;
+    if (q.length >= 2 && allGroupCodes.includes(q.slice(0, 2))) {
+        prefix = q.slice(0, 2);
+        rest = q.slice(2);
+    } else if (/^[A-Z]/.test(q)) {
+        const letters = q.match(/^[A-Z]+/)[0];
+        if (letters.length >= 2) return [];
+        rest = q.slice(1);
+    }
+    const queryDigits = rest.replace(/[^0-9]/g, '').replace(/^0+/, '');
+    if (!queryDigits && !prefix) return [];
+    const scope = prefix ? (Object.values(AIRLINE_GROUPS).find(g => g.includes(prefix)) ?? null) : null;
+
+    const digitsOf = (flight) => {
+        const m = String(flight.FlightNo ?? '').match(/\d+/);
+        return (m ? m[0] : '').replace(/^0+/, '');
+    };
+
+    return flights
+        .filter(flight => flight.ODate === todayStr)
+        .filter(flight => !scope || scope.includes(flight.ACode))
+        .filter(flight => !queryDigits || digitsOf(flight).startsWith(queryDigits))
+        .sort((a, b) => {
+            const score = (flight) => {
+                const full = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
+                if (full === q) return 0;
+                if (queryDigits && digitsOf(flight) === queryDigits) return 1;
+                return 2;
+            };
+            const diff = score(a) - score(b);
+            if (diff !== 0) return diff;
+            if (a.ACode !== b.ACode) return a.ACode < b.ACode ? -1 : 1;
+            return (parseInt(digitsOf(a), 10) || 0) - (parseInt(digitsOf(b), 10) || 0);
+        });
+}
+
+// D-A: the airline pin scopes the search — normalized to the GROUP level
+// (BR covers B7, CI covers AE) because displayFlights overwrites currentACode
+// with a tapped flight's own code (e.g. 'B7') and the pin must not silently
+// narrow to a member code. Returns the member list or null for no pin.
+function searchScopeGroup() {
+    if (currentACode === null) return null;
+    for (const members of Object.values(AIRLINE_GROUPS)) {
+        if (members.includes(currentACode)) return members;
+    }
+    return null;
+}
+
+function toggleSearch() {
+    if (searchOpen) closeSearch();
+    else openSearch();
+}
+
+function openSearch() {
+    searchOpen = true;
+    document.getElementById('search-bar').hidden = false;
+    document.getElementById('search-toggle').classList.add('active');
+    updateSearchText();
+    // Feed the departures store when searching from arrivals — one extra
+    // request per refresh while search is open, the cost the owner accepted.
+    if (currentFlightMode === 'A' && !fullDayByState.D && !searchDepUnavailable) {
+        fetchSearchDepartures();
+    }
+    renderSearchResults();
+    // Synchronous focus inside the click handler so iOS opens the keyboard.
+    document.getElementById('search-input').focus();
+    setSearchSession();
+}
+
+function closeSearch() {
+    searchOpen = false;
+    document.getElementById('search-bar').hidden = true;
+    document.getElementById('search-toggle').classList.remove('active');
+    document.getElementById('search-input').value = '';
+    // Unhide the board — deliberately NO renderFilteredView() here: during a
+    // mode-toggle fetch flight, flightData still holds the old mode's rows
+    // and a re-render would pair them with the new mode's headers. The board
+    // is already whatever it should be, loading text included.
+    ['output', 'planeTypeButtons', 'flightButtons', 'timeWindowButtons'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.hidden = false;
+    });
+    const results = document.getElementById('search-results');
+    results.hidden = true;
+    results.innerHTML = '';
+    const status = document.getElementById('search-status');
+    status.hidden = true;
+    status.textContent = '';
+    setSearchSession();
+}
+
+function onSearchInput() {
+    const input = document.getElementById('search-input');
+    document.getElementById('search-clear').hidden = input.value === '';
+    setSearchSession();
+    renderSearchResults();
+}
+
+function setSearchSession() {
+    try {
+        if (!searchOpen) {
+            sessionStorage.removeItem(SEARCH_SESSION_KEY);
+        } else {
+            sessionStorage.setItem(SEARCH_SESSION_KEY, JSON.stringify({
+                open: true,
+                q: document.getElementById('search-input').value,
+            }));
+        }
+    } catch { /* sessionStorage unavailable (privacy mode) — search still works */ }
+}
+
+// Restores { open, q } after the visibilitychange reload. Called between
+// setupEventListeners() and detectLanguage(): the DOM exists, the mode is
+// still A, and the open flag is set BEFORE fetchData decides whether to
+// start the departures store fetch. Deliberately does NOT render results —
+// the stores are empty until the fetch lands, and renderFilteredView's hook
+// paints them then. No race.
+function restoreSearchSession() {
+    let saved = null;
+    try {
+        saved = JSON.parse(sessionStorage.getItem(SEARCH_SESSION_KEY) ?? 'null');
+    } catch {
+        return;
+    }
+    if (!saved?.open) return;
+    searchOpen = true;
+    document.getElementById('search-bar').hidden = false;
+    document.getElementById('search-toggle').classList.add('active');
+    const input = document.getElementById('search-input');
+    input.value = String(saved.q ?? '');
+    document.getElementById('search-clear').hidden = input.value === '';
+}
+
+// Localized placeholder / labels — language changes refetch and re-render
+// the results, but the static bar attributes need their own update.
+function updateSearchText() {
+    const t = translations[currentLanguage].search;
+    const label = document.querySelector('#search-bar .search-label');
+    if (label) label.textContent = t.label;
+    const input = document.getElementById('search-input');
+    if (input) input.placeholder = t.placeholder;
+    const toggle = document.getElementById('search-toggle');
+    if (toggle) toggle.setAttribute('aria-label', t.open);
+    const clear = document.getElementById('search-clear');
+    if (clear) clear.setAttribute('aria-label', t.clear);
+}
+
+// Muted second line in the flight cell: scheduled time, actual time only
+// when it differs (date prefix when the actual landing/departure date
+// differs from the scheduled one). RTime can be null — guarded.
+function buildSearchTimeSub(flight) {
+    let text = String(flight.OTime ?? '').slice(0, 5);
+    const rTime = flight.RTime ? String(flight.RTime).slice(0, 5) : '';
+    if (rTime && rTime !== text) {
+        const datePrefix = flight.RDate && flight.RDate !== flight.ODate ? `${flight.RDate.slice(5)} ` : '';
+        text += ` [${datePrefix}${rTime}]`;
+    }
+    return text;
+}
+
+function setStatusLine(text) {
+    const status = document.getElementById('search-status');
+    if (!status) return;
+    status.textContent = text;
+    status.hidden = text === '';
+}
+
+// Board takeover: results render into #search-results while the query is
+// non-empty; the board element and the two filter rows are hidden but keep
+// receiving their normal writes from all seven existing writers. Closing
+// search just unhides them — no re-render (see closeSearch).
+function renderSearchResults() {
+    const container = document.getElementById('search-results');
+    if (!container || !searchOpen) return;
+
+    const query = document.getElementById('search-input').value;
+    const normalized = normalizeFlightQuery(query);
+    const takeover = normalized.length > 0;
+
+    document.getElementById('output').hidden = takeover;
+    document.getElementById('planeTypeButtons').hidden = takeover;
+    document.getElementById('flightButtons').hidden = takeover;
+    // The window selector is meaningless during search (search ignores the
+    // window by design).
+    const timeWindowRow = document.getElementById('timeWindowButtons');
+    if (timeWindowRow) timeWindowRow.hidden = takeover;
+
+    if (!takeover) {
+        container.hidden = true;
+        container.innerHTML = '';
+        setStatusLine('');
+        return;
+    }
+
+    const t = translations[currentLanguage];
+    const today = getUTC8Date();
+    const arrivals = fullDayByState.A ?? [];
+    const departures = fullDayByState.D ?? [];
+    const store = [...arrivals, ...departures];
+
+    const scopeGroup = searchScopeGroup();
+    const scopedStore = scopeGroup ? store.filter(f => scopeGroup.includes(f.ACode)) : store;
+    const matches = matchFlights(scopedStore, query, today);
+    const arrMatches = matches.filter(f => f.AState === 'A');
+    const depMatches = matches.filter(f => f.AState === 'D');
+    const capArr = arrMatches.slice(0, SEARCH_RESULT_CAP);
+    const capDep = depMatches.slice(0, SEARCH_RESULT_CAP);
+
+    const isSmall = isSmallScreen();
+    let html = '';
+    if (capArr.length) html += buildSearchTable(capArr, 'A', isSmall);
+    if (capDep.length) html += buildSearchTable(capDep, 'D', isSmall);
+
+    const overflow = (arrMatches.length - capArr.length) + (depMatches.length - capDep.length);
+    if (overflow > 0) {
+        html += `<p class="search-note">${escapeHtml(t.search.tooMany.replace('{n}', overflow))}</p>`;
+    }
+
+    // Issue #130 review F3 — distinguish "stores not fetched yet" from a
+    // successful-but-empty day: length checks would show an eternal loading
+    // status for a genuinely empty day.
+    const storesPending = fullDayByState.A === null && fullDayByState.D === null;
+
+    // Nothing matched — distinguish "the pin is hiding it" from "genuinely
+    // not flying today" by re-running the match without the pin.
+    if (matches.length === 0 && !storesPending) {
+        if (scopeGroup) {
+            const unscoped = matchFlights(store, query, today);
+            if (unscoped.length > 0) {
+                const pinnedName = currentACode;
+                html += `<div class="search-empty">`
+                    + `<div>${escapeHtml(t.search.pinHint.replace('{aname}', pinnedName).replace('{query}', normalized))}</div>`
+                    + `<button type="button" id="search-show-all" class="btn btn-sm btn-outline-secondary mt-2">${escapeHtml(t.search.showAllAirlines)}</button>`
+                    + `</div>`;
+            }
+        }
+        if (!html) {
+            html += `<div class="search-empty">${escapeHtml(t.search.noMatch
+                .replace('{query}', normalized)
+                .replace('{date}', today))}</div>`;
+        }
+    }
+
+    container.innerHTML = html;
+    container.hidden = html === '';
+    const showAll = document.getElementById('search-show-all');
+    if (showAll) {
+        showAll.addEventListener('click', () => {
+            applyAirlineFilter(null);
+        });
+    }
+
+    // Status line: counts, pending/unavailable notes for the departures store.
+    let statusText = '';
+    if (storesPending) {
+        statusText = t.loading;
+    } else if (matches.length > 0) {
+        statusText = (arrMatches.length && depMatches.length)
+            ? t.search.countBoth.replace('{a}', arrMatches.length).replace('{d}', depMatches.length)
+            : t.search.countOne.replace('{n}', matches.length);
+    } else if (html.includes('search-empty')) {
+        statusText = '';
+    }
+    if (currentFlightMode === 'A' && !fullDayByState.D) {
+        statusText = statusText
+            ? `${statusText} · ${searchDepUnavailable ? t.search.departuresUnavailable : t.search.departuresPending}`
+            : (searchDepUnavailable ? t.search.departuresUnavailable : t.search.departuresPending);
+    }
+    setStatusLine(statusText);
+}
+
+// One table per direction, mirroring displayFlights' column set exactly so
+// the nth-child styling and the crew's muscle memory both carry over:
+//   A: flight, origin, terminal, Gate, Carousel
+//   D: flight, destination, terminal, Gate, ReturnGate
+function buildSearchTable(rows, direction, isSmall) {
+    const t = translations[currentLanguage];
+    const headers = t.tableHeaders;
+    const flightNumberHeader = isSmall ? headers["FlightNumberShort"] : headers["FlightNumber"];
+    const cityHeader = direction === 'A'
+        ? (isSmall ? headers["DepartureShort"] : headers["Departure"])
+        : (isSmall ? headers["DestinationShort"] : headers["Destination"]);
+    const terminalHeader = isSmall ? headers["TerminalShort"] : headers["Terminal"];
+    const returnGateHeader = isSmall ? headers["ReturnGateShort"] : headers["ReturnGate"];
+    const heading = direction === 'A' ? t.search.headingArrivals : t.search.headingDepartures;
+    // thead tint follows the pin, same as the board. Allowlist against the
+    // supported codes (issue #130 review F4): currentACode is cookie- and
+    // API-derived, never interpolate it into markup unvalidated.
+    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+    const theadClass = currentACode && allGroupCodes.includes(currentACode)
+        ? `table-${currentACode.toLowerCase()}`
+        : (currentTheme === 'dark' ? 'table-secondary' : 'table-dark');
+    // Return-gate pool: the full-day arrivals store minus cancelled rows,
+    // NOT returnLegArrivals (which only exists in departures mode).
+    const returnPool = (fullDayByState.A ?? []).filter(flight => !isCancelledFlight(flight));
+
+    let table = `
+    <table class="table table-sm table-striped table-borderless search-table">
+        <caption class="caption-top">${escapeHtml(heading)}</caption>
+        <thead class="${theadClass}">
+            <tr>
+                <th>${flightNumberHeader}</th>
+                <th ${isSmall ? 'class="text-center"' : ''}>${cityHeader}</th>
+                <th class="text-center">${terminalHeader}</th>
+                <th class="text-center">${headers["Gate"]}</th>
+                ${direction === 'A' ? `<th class="text-center">${headers["Carousel"]}</th>` : `<th class="text-center">${returnGateHeader}</th>`}
+            </tr>
+        </thead>
+        <tbody>`;
+
+    rows.forEach(flight => {
+        const cancelled = isCancelledFlight(flight);
+        const cityDisplay = isSmall ? flight.CityCode : (currentLanguage === 'zh' ? flight.CityName : flight.CityEname);
+        const terminalDisplay = flight.BNO ? `T${flight.BNO}` : '';
+        const displayFlightNo = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
+        const logoImg = hasVendoredLogo(flight.ACode)
+            ? `<img alt="" width="28" height="20" src="${LOGO_BASE_URL}${flight.ACode}.gif">`
+            : '';
+        const tba = `<span class="gate-tba">${escapeHtml(t.search.gateTba)}</span>`;
+        const gateCell = cancelled ? '' : (flight.Gate ? escapeHtml(flight.Gate) : tba);
+        const carouselCell = cancelled ? '' : (flight.StopCode ? escapeHtml(flight.StopCode) : tba);
+        const returnCell = direction === 'D' && !cancelled
+            ? buildReturnGateCellFrom(flight, returnPool, isSmall)
+            : '';
+        const chip = cancelled ? `<span class="status-chip">${escapeHtml(t.search.cancelled)}</span>` : '';
+
+        table += `
+            <tr class="${cancelled ? 'row-cancelled' : ''}">
+                <td>${logoImg}${escapeHtml(displayFlightNo)}${chip}<span class="flight-sub">${escapeHtml(buildSearchTimeSub(flight))}</span></td>
+                <td ${isSmall ? 'class="text-center"' : ''}>${escapeHtml(cityDisplay)}</td>
+                <td class="text-center">${escapeHtml(terminalDisplay)}</td>
+                <td class="text-center">${gateCell}</td>
+                ${direction === 'A' ? `<td class="text-center">${carouselCell}</td>` : `<td class="text-center">${returnCell}</td>`}
+            </tr>`;
+    });
+
+    table += `</tbody></table>`;
+    return table;
+}
+
 function isSmallScreen() {
     return window.innerWidth <= 768;
 }
@@ -1809,9 +2374,17 @@ function formatReturnGateCell(returnFlightNo, gate, isSmall) {
 }
 
 function buildReturnGateCell(departureFlight, isSmall) {
-    if (!returnLegArrivals) return '';
+    return buildReturnGateCellFrom(departureFlight, returnLegArrivals, isSmall);
+}
+
+// Issue #130 — parameterized variant: the board passes returnLegArrivals;
+// the search table passes the full-day arrivals store (cancelled rows
+// dropped, matching the pairing fetch's pool) so the column stays live in
+// BOTH modes. Blank when no pool has arrived yet.
+function buildReturnGateCellFrom(departureFlight, arrivalsPool, isSmall) {
+    if (!arrivalsPool) return '';
     if (!dayReturn(departureFlight.ACode, departureFlight.CityCode)) return '';
-    const returnLeg = findReturnLeg(departureFlight, returnLegArrivals);
+    const returnLeg = findReturnLeg(departureFlight, arrivalsPool);
     if (!returnLeg || !returnLeg.Gate) return '';
 
     const returnFlightNo = `${returnLeg.ACode}${returnLeg.FlightNo}`.replace(/\s+/g, '');
@@ -1955,11 +2528,39 @@ function setupEventListeners() {
     // Issue #88 — time-window selector
     document.getElementById('time-window-toggle')?.addEventListener('click', cycleTimeWindow);
 
+    // Issue #130 — quick-dial search wiring.
+    const searchToggle = document.getElementById('search-toggle');
+    searchToggle.addEventListener('click', () => toggleSearch());
+    searchToggle.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            toggleSearch();
+        }
+    });
+    document.getElementById('search-input').addEventListener('input', onSearchInput);
+    document.getElementById('search-form').addEventListener('submit', (event) => {
+        // Enter on a bare form navigates; blur instead — it just dismisses
+        // the keyboard, which is all a search "submit" means here.
+        event.preventDefault();
+        document.getElementById('search-input').blur();
+    });
+    document.getElementById('search-clear').addEventListener('click', () => {
+        const input = document.getElementById('search-input');
+        input.value = '';
+        onSearchInput();
+        input.focus();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && searchOpen) closeSearch();
+    });
+
     window.addEventListener('resize', () => {
         if (currentFilteredFlights.length > 0 && currentACode) {
             displayFlights(currentFilteredFlights, currentACode);
         }
         handleViewportChange();
+        // Short/long headers flip with the breakpoint — re-render the tables.
+        if (searchOpen) renderSearchResults();
     });
 
     window.addEventListener('orientationchange', () => {
@@ -2054,6 +2655,9 @@ function setupEventListeners() {
     const refreshIcon = document.getElementById('refresh-icon');
 
     document.addEventListener('touchstart', (event) => {
+        // Issue #130 — a drag inside the search input places the text cursor;
+        // it must not arm the pull-to-refresh pill.
+        if (event.target.closest('#search-bar')) return;
         if (window.scrollY === 0) {
             startY = event.touches[0].clientY;
             isPulling = true;
@@ -2212,6 +2816,11 @@ function initApp() {
     if (navigator.storage?.persist) navigator.storage.persist();
     renderApp();
     setupEventListeners();
+    // Issue #130 — restore { open, q } AFTER the listeners exist and BEFORE
+    // detectLanguage() (which triggers the first fetch): state only, no
+    // render — renderFilteredView's hook paints the results when the data
+    // lands. The visibilitychange reload re-enters through this same path.
+    restoreSearchSession();
     detectLanguage();
     initTheme();
     updateLanguageLinks();
