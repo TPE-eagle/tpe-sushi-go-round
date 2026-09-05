@@ -46,7 +46,7 @@ test.describe('About drawer', () => {
     await expect(page.locator('#about-drawer-toggle')).toBeVisible()
     // The theme toggle sits in the closed drawer — attached, but not visible
     // until the drawer opens (Bootstrap keeps the offcanvas subtree hidden).
-    await expect(page.locator('#about-drawer-header #theme-toggle')).toHaveCount(1)
+    await expect(page.locator('#about-drawer #theme-toggle')).toHaveCount(1)
   })
 
   test('the worked return-gate example renders as a real table row', async ({ page }) => {
