@@ -456,7 +456,7 @@ function renderApp() {
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
             <div id="planeTypeButtons" class="d-flex justify-content-center flex-wrap mb-2"></div>
             <!-- Issue #88 — time-window selector: cycles +2/+4/+6/+8h. Label is a
-                 language-neutral `+Nh`; aria-label/title are translated in
+                 language-neutral +Nh; aria-label/title are translated in
                  updateTimeWindowButton(). -->
             <div id="timeWindowButtons" class="d-flex justify-content-center mb-2">
                 <button type="button" id="time-window-toggle" class="btn btn-sm btn-outline-secondary btn-no-hover m-1">+2h</button>
