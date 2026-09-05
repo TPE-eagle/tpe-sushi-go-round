@@ -6,7 +6,23 @@ export default defineConfig({
   base: '/tpe-sushi-go-round/',
   root: resolve(__dirname, '.'),
   build: {
-    outDir: './dist'
+    outDir: './dist',
+    // Issue #122: Vite 8 minifies CSS with lightningcss by default, and
+    // lightningcss collapses an authored backdrop-filter /
+    // -webkit-backdrop-filter pair down to the -webkit- form regardless of
+    // the CSS target (upstream parcel-bundler/lightningcss#695, fix pending
+    // in #1259). Firefox never supported the -webkit- form (MDN BCD lists
+    // no prefix entry for Firefox), so every liquid-glass surface
+    // (.theme-toggle-btn, .flight-toggle-btn, .offcanvas-backdrop) lost its
+    // frost on Firefox in the built stylesheet, even though the unprefixed
+    // declaration is right there in style.scss. Raising build.cssTarget does
+    // not control this: verified against lightningcss 1.32.0, the pair is
+    // collapsed for every targets value including safari18. esbuild's CSS
+    // minifier preserves authored prefixed/unprefixed pairs under every
+    // target, so pin the CSS minifier to esbuild. The -webkit- lines stay in
+    // style.scss for Safari <= 17; the JS minifier (oxc) and build.target
+    // are untouched.
+    cssMinify: 'esbuild'
   },
   server: {
     port: 8080
