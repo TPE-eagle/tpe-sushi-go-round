@@ -991,6 +991,39 @@ body {
   height: 100dvh;
 }
 
+/* Issue #71 — the backdrop was the one surface still painted instead of
+ * built from blur + translucency: Bootstrap's offcanvas mixin hardcodes
+ * background-color: #000 with .show at element opacity .5 — a flat 50% dim,
+ * no frost. Reuse the toggle buttons' liquid-glass recipe (blur(12px)
+ * saturate(140%), same order and both prefixes) at full-screen scale, with
+ * the dim moved into a 12% black tint — an alpha already in the app's
+ * neutral ramp (.theme-toggle-btn:hover shadow) and far under the old 50%,
+ * so the page behind reads as frosted rather than dimmed.
+ *
+ * .show is pinned to opacity: 1 (same specificity as Bootstrap's own
+ * .offcanvas-backdrop.show, later in this file so it wins the cascade):
+ * element opacity would otherwise halve the frost as well. The value still
+ * rides Bootstrap's .fade/.show transition (transitions.scss import at the
+ * top of this file), so the frost fades in and out with the same 150 ms
+ * fade as before, and the prefers-reduced-motion guard below still covers
+ * .offcanvas-backdrop.fade.
+ *
+ * Perf: a full-screen backdrop-filter is the expensive case. The radius is
+ * the buttons' 12px on purpose (cost scales with filtered area, not
+ * radius), the backdrop element only exists while the drawer is open, and
+ * the page under it is scroll-locked — but mid-range phone jank is not
+ * measurable in this environment. If it stutters on device, drop the
+ * blur+saturation lines and keep the 12% tint; do not ship a stutter. */
+.offcanvas-backdrop {
+  background-color: rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+
+  &.show {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #about-drawer,
   .offcanvas-backdrop.fade {
@@ -1031,7 +1064,14 @@ body {
   gap: 0.75rem;
 }
 
+/* Issue #71 — level 1 of the drawer's three-level type scale (panel title
+ * 1.25rem → section heading 1.125rem → body 1rem; fuller rationale on
+ * .drawer-section-title below). Size step + the app's standard 600 heading
+ * weight. Bootstrap's h5 default was 1.25rem at weight 500 — lighter than
+ * the 700 section headings under it, so the hierarchy read inverted. */
 .offcanvas-title {
+  font-size: 1.25rem;
+  font-weight: 600;
   color: var(--text-color);
 }
 
@@ -1064,10 +1104,30 @@ body {
 
 .drawer-section {
   margin-bottom: 1.5rem;
+
+  /* Issue #71 — sections divide with the app's existing separator idiom
+   * (same recipe as .drawer-disclaimer below: 1px solid --border-color plus
+   * padding), so structure no longer rests on spacing alone now that the
+   * settings list (#70) will add more groups to this panel. The first
+   * section sits directly under the header and carries no rule. */
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
 }
 
+/* Issue #71 — level 2 of the type scale: 1.125rem is the size the app
+ * already uses for emphasis (the gate columns), 600 is its standard
+ * emphasis weight (footer brand, plane-type links, table identifiers); the
+ * old 700 was the only differentiator from body text, which is why six
+ * sections read as one undifferentiated column. Body (level 3) is
+ * deliberately unchanged at 1rem/400. */
 .drawer-section-title {
-  font-weight: 700;
+  font-size: 1.125rem;
+  font-weight: 600;
   margin-bottom: 0.5rem;
   color: var(--text-color);
 }
