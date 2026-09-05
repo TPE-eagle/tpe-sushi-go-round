@@ -37,10 +37,11 @@ test.describe('About drawer', () => {
     await page.goto('/')
     await page.waitForSelector('#theme-toggle', { timeout: 8000 })
 
-    // The theme-buttons cluster goes from 2 buttons to 3; nothing else about
+    // The theme-buttons cluster goes from 3 buttons to 4 (theme, flight mode,
+    // search #130, about); nothing else about
     // the header/footer/table structure should be touched by this feature.
     const clusterChildren = await page.locator('.theme-buttons-container').locator('> *').count()
-    expect(clusterChildren).toBe(3)
+    expect(clusterChildren).toBe(4)
     await expect(page.locator('#about-drawer-toggle')).toBeVisible()
   })
 

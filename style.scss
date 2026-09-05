@@ -379,15 +379,15 @@ body {
  * are the two values a crew member actually came here to read. Flight code
  * column also goes tabular-nums + 600 so "BR35" reads as an identifier, not
  * prose. */
-#output table {
+.flight-board table {
   font-size: 1.0625rem;
 }
-#output table tbody td:first-child {
+.flight-board table tbody td:first-child {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
-#output table tbody td:nth-child(4),
-#output table tbody td:nth-child(5) {
+.flight-board table tbody td:nth-child(4),
+.flight-board table tbody td:nth-child(5) {
   font-size: 1.125rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -418,7 +418,7 @@ body {
 /* Also targets the drawer's worked-example table (.drawer-example-table),
  * which lives outside #output — same rule, not a separate copy, so the two
  * can't drift out of sync. */
-#output table tbody td:nth-child(5) .return-gate-cell,
+.flight-board table tbody td:nth-child(5) .return-gate-cell,
 .drawer-example-table .return-gate-cell {
   font-size: 1rem;
   font-weight: 400;
@@ -462,24 +462,24 @@ body {
  * 5-character flight codes like B7681 already push the 5-column layout
  * to the limit on a 393 px viewport. */
 @media (min-width: 769px) {
-  #output table tbody td:first-child,
-  #output table thead th:first-child {
+  .flight-board table tbody td:first-child,
+  .flight-board table thead th:first-child {
     padding-left: 0.75rem;
   }
-  #output table tbody td:last-child,
-  #output table thead th:last-child {
+  .flight-board table tbody td:last-child,
+  .flight-board table thead th:last-child {
     padding-right: 0.75rem;
   }
 }
 /* Keep logo and flight code on one line even when the cell is narrow
  * (happens on mobile when a 5-char code like B7681 is the longest one). */
-#output table tbody td:first-child {
+.flight-board table tbody td:first-child {
   white-space: nowrap;
 }
 /* Gap between the airline logo and the flight code, plus optical
  * vertical centering (default inline alignment leaves the logo sitting
  * slightly below the text cap line). */
-#output table tbody td:first-child img {
+.flight-board table tbody td:first-child img {
   margin-right: 0.5em;
   vertical-align: middle;
 }
@@ -489,7 +489,7 @@ body {
  * that haloes slightly against the pure dark background. Trimming
  * brightness and saturation a touch takes the edge off without
  * muddying the brand colour. */
-[data-bs-theme="dark"] #output table img,
+[data-bs-theme="dark"] .flight-board table img,
 [data-bs-theme="dark"] .airline-link img {
   filter: brightness(0.92) saturate(0.95);
 }
@@ -1170,5 +1170,112 @@ body {
   margin-top: 1.5rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+/* ---------------------------------------------------------------------------
+ * Issue #130 — quick-dial flight-number search (board takeover).
+ * Results render into #search-results, which carries the shared
+ * .flight-board class so every board table rule applies unchanged. The
+ * muted treatments below follow the return-gate precedent: color-mix toward
+ * --background-color, not alpha, so daylight readability keeps a 4.5:1
+ * floor in both themes (70/30 mix measured 5.1-6.2:1 on the four
+ * theme/backdrop combinations; see the return-gate table above).
+ * ------------------------------------------------------------------------- */
+#search-toggle.active {
+  background: color-mix(in srgb, var(--text-color) 12%, var(--background-color));
+  border-radius: 50%;
+}
+
+.search-bar {
+  margin: 0 auto 0.75rem;
+  max-width: 30rem;
+}
+
+.search-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.search-input {
+  /* 16px floor: iOS Safari auto-zooms the page on focus for inputs below it. */
+  font-size: 1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--background-color);
+  color: var(--text-color);
+}
+
+.search-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--text-color) 55%, var(--background-color));
+  outline-offset: 1px;
+}
+
+.search-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.search-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: color-mix(in srgb, var(--text-color) 70%, var(--background-color));
+  text-align: center;
+}
+
+/* Muted scheduled/actual time under the flight code — a second line, NOT a
+ * sixth column: five columns are already the 393px floor's limit and the
+ * Gate/Carousel emphasis is indexed by column position. */
+.flight-sub {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--text-color) 70%, var(--background-color));
+}
+
+.status-chip {
+  display: inline-block;
+  margin-left: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: color-mix(in srgb, #dc3545 15%, var(--background-color));
+  color: color-mix(in srgb, #dc3545 75%, var(--text-color));
+}
+
+tr.row-cancelled td {
+  color: color-mix(in srgb, var(--text-color) 55%, var(--background-color));
+}
+
+.gate-tba {
+  color: color-mix(in srgb, var(--text-color) 55%, var(--background-color));
+}
+
+.search-note,
+.search-empty {
+  margin: 0.75rem 0;
+  text-align: center;
+  font-size: 0.9375rem;
+  color: color-mix(in srgb, var(--text-color) 70%, var(--background-color));
+}
+
+/* Bootstrap's reboot puts captions at the bottom; the direction heading
+ * (到達 / 出發) must read as a table title. */
+.search-table caption.caption-top {
+  caption-side: top;
+  text-align: center;
+  font-weight: 600;
+  padding-bottom: 0.375rem;
   color: var(--text-color);
 }
