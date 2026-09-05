@@ -1731,6 +1731,13 @@ function cycleTimeWindow() {
 
     if (!isTestHostname()) {
         flightData = filterFlightsByTime(allSupportedFlights);
+        // Review F1 (PR #131): the airline row is built from the
+        // time-filtered list at fetch time, so it must be rebuilt for the new
+        // window too — otherwise an airline that only appears in the wider
+        // window has table rows but no pin button. Listeners are delegated,
+        // so rebuilding is safe (same pattern as every fetch);
+        // renderFilteredView()'s updateAirlineLinks() re-applies active state.
+        generateAirlineLinks(flightData);
     }
     updateApiParams();
     renderFilteredView();
