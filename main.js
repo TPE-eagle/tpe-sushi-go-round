@@ -154,63 +154,63 @@ const translations = {
             "aboutDrawerTitle": "關於",
             "closeLabel": "關閉",
             "whatItDoes": {
-                "heading": "這個 App 可以幫你什麼",
+                "heading": "這是什麼",
                 "body": [
-                    "給長榮、華航、星宇（含立榮、華信）組員的桃園機場航班板。出發看登機門，到達看行李轉盤。",
-                    "可以裝到手機主畫面當 App 用，不必經過 App Store。"
+                    "長榮、華航、星宇（含立榮、華信）組員的桃園機場航班看板。出發看登機門，到達看行李轉盤。",
+                    "裝到主畫面就能當 App 用，不用上 App Store。"
                 ]
             },
             "opensOnArrival": {
                 "heading": "打開就是到達",
                 "body": [
-                    "預設顯示到達（行李轉盤）—— 回來已經很累了，打開就看得到。",
-                    "要看出發按右上角 🛫。出發時還有力氣，多按一顆沒關係。",
-                    "這是唯一我們刻意不記住的選擇。"
+                    "預設是到達（行李轉盤）。飛回來都累了，打開直接看就好。",
+                    "要看出發，按右上角 🛫。去程還有精神，多按一下沒差。",
+                    "只有這一個設定是故意不記的。"
                 ]
             },
             "whichFlights": {
-                "heading": "你會看到哪些班機",
+                "heading": "顯示哪些班機",
                 "body": [
-                    "現在前後大約兩小時：出發往後兩小時，到達從 40 分鐘前算起。",
-                    "最下面那行會寫出實際的日期和時間範圍。",
-                    "每次載入都重抓最新資料。出發過了移民官，建議再開一次確認登機門。"
+                    "現在前後約兩小時：出發往後兩小時，到達從 40 分鐘前算起。",
+                    "確切的日期和時段寫在表格下面那行。",
+                    "每次載入都重抓資料。出境過了移民官，再開一次看登機門有沒有換。"
                 ]
             },
             "install": {
                 "heading": "裝成 App",
                 "iosSteps": "iPhone／iPad（Safari）：分享 → 加入主畫面 → 新增",
-                "iosFallback": "找不到「分享」就先點網址列旁的 ⋯；面板裡沒有「加入主畫面」，滑到底點「編輯動作」打開。",
+                "iosFallback": "找不到「分享」，點網址列旁的 ⋯。面板裡沒有「加入主畫面」，滑到底點「編輯動作」打開。",
                 "installButtonLabel": "安裝",
-                "offlineNote": "裝好之後沒網路也開得起來，會顯示上次的資料和時間。"
+                "offlineNote": "裝好後沒網路也能開，會顯示上次的資料和時間。"
             },
             "share": {
                 "heading": "分享給同事",
-                "body": "按「分享」，會跳出你手機原本的分享面板。",
+                "body": "按「分享」會跳出手機本身的分享面板。",
                 "shareButtonLabel": "分享",
                 "copyLinkLabel": "複製連結",
                 "copiedConfirmation": "已複製連結"
             },
             "remembers": {
-                "heading": "它記得你的選擇",
+                "heading": "會記住的設定",
                 "body": [
-                    "航空公司、機型、主題、語言 —— 選過就記住，每開一次重新計時。",
-                    "語言沒選過時跟著系統走。"
+                    "航空公司、機型、主題、語言，選過就記住，每次打開重新計時。",
+                    "語言沒選過就跟系統走。"
                 ]
             },
             "returnGateColumn": {
-                "heading": "出發板最右邊那一欄",
-                "bodyBefore": "同一天回程班機回到桃園的到達登機門。",
+                "heading": "「回程登機門」那欄",
+                "bodyBefore": "同一天飛回桃園那班停的登機門。",
                 "bodyAfter": [
-                    "只在符合條件時顯示，留白不代表沒有回程。以下不顯示：過夜班或長程、回程換機型（就不是同一組人）、班號或時間對不上。",
-                    "當日來回是程式依我們設定的規則判斷，各家班型安排不同。",
-                    "你對顯示邏輯有想法，非常歡迎告訴我。"
+                    "符合條件才顯示，空白不代表沒回程。這些情況不顯示：過夜班或長程、回程換機型（就不是同一組人）、班號或時間對不上。",
+                    "當日來回是照我訂的規則判斷，各家排班方式不一樣。",
+                    "對判斷邏輯有想法，歡迎跟我說。"
                 ]
             },
             "feedback": {
-                "heading": "覺得哪裡怪怪的",
+                "heading": "哪裡怪怪的",
                 "body": [
-                    "看到本人直接跟我說最快，想留紀錄就開 GitHub issue。",
-                    "別貼班表細節或個資 —— 那邊是公開的。"
+                    "當面跟我講最快，想留紀錄就開 GitHub issue。",
+                    "別貼班表細節或個資，那邊是公開的。"
                 ]
             }
         }
@@ -254,63 +254,63 @@ const translations = {
             "aboutDrawerTitle": "About",
             "closeLabel": "Close",
             "whatItDoes": {
-                "heading": "What this app does for you",
+                "heading": "What this is",
                 "body": [
-                    "A Taoyuan Airport flight board for crew on EVA Air, China Airlines and STARLUX (including UNI Air and Mandarin). Departures show your gate, arrivals show your carousel.",
-                    "You can install it to your home screen and use it like any other app — no App Store needed."
+                    "A Taoyuan Airport flight board for EVA Air, China Airlines and STARLUX crew, UNI Air and Mandarin included. Departures show your gate, arrivals your carousel.",
+                    "Add it to your home screen and it behaves like an app. No App Store involved."
                 ]
             },
             "opensOnArrival": {
-                "heading": "It opens on arrivals",
+                "heading": "Opens on arrivals",
                 "body": [
-                    "Arrivals — your baggage carousel — is what you see first. You're tired coming home; it should just be there.",
-                    "For departures, tap 🛫 top right. You've got energy on the way out, one more tap is fine.",
-                    "It's the one choice we deliberately don't remember."
+                    "Arrivals, with your carousel, is what comes up first. You're tired coming home, so it's just there.",
+                    "For departures, tap 🛫 top right. You're fresh on the way out, one more tap won't hurt.",
+                    "The one setting it never remembers, on purpose."
                 ]
             },
             "whichFlights": {
-                "heading": "Which flights you'll see",
+                "heading": "Which flights show up",
                 "body": [
-                    "Roughly two hours around now: departures two hours ahead, arrivals from 40 minutes ago.",
-                    "The line under the table tells you the exact date and range.",
-                    "Every load pulls fresh data. Once you're through immigration outbound, open it again and check your gate hasn't moved."
+                    "About two hours around now: departures two hours ahead, arrivals from 40 minutes ago.",
+                    "The exact date and range are in the line under the table.",
+                    "Every load fetches fresh data. Once you're through immigration outbound, open it again and re-check your gate."
                 ]
             },
             "install": {
                 "heading": "Install it",
                 "iosSteps": "iPhone / iPad (Safari): Share → Add to Home Screen → Add",
-                "iosFallback": "Can't find Share? Tap ⋯ next to the address bar. No \"Add to Home Screen\" in the sheet? Scroll to the bottom and tap Edit Actions to switch it on.",
+                "iosFallback": "No Share button? Tap ⋯ next to the address bar. No \"Add to Home Screen\" in the sheet? Scroll to the bottom and turn it on under Edit Actions.",
                 "installButtonLabel": "Install",
-                "offlineNote": "Once installed it opens without a connection, showing the last data it pulled and when."
+                "offlineNote": "Once installed it opens offline, showing the last data it fetched and when."
             },
             "share": {
-                "heading": "Share it with your colleagues",
-                "body": "Tap Share — your phone's own share sheet opens.",
+                "heading": "Share it with colleagues",
+                "body": "Tap Share to open your phone's share sheet.",
                 "shareButtonLabel": "Share",
                 "copyLinkLabel": "Copy link",
                 "copiedConfirmation": "Link copied"
             },
             "remembers": {
-                "heading": "It remembers what you picked",
+                "heading": "What it remembers",
                 "body": [
-                    "Airline, aircraft type, theme, language — picked once, kept, and the clock resets every time you open it.",
-                    "Language follows your system until you choose one yourself."
+                    "Airline, aircraft type, theme and language. Set once, kept, and the clock restarts each time you open it.",
+                    "Language follows your system setting until you pick one."
                 ]
             },
             "returnGateColumn": {
-                "heading": "That last column on the departures board",
-                "bodyBefore": "The arrival gate of the return leg, back at Taoyuan the same day.",
+                "heading": "The Return Gate column",
+                "bodyBefore": "The arrival gate of the same-day return leg, back at Taoyuan.",
                 "bodyAfter": [
-                    "It only appears when the conditions are met, and blank doesn't mean there's no return. We don't show it when: it's a night stop or long haul, the return is a different aircraft type (so not the same crew), or the flight numbers or timings don't line up.",
-                    "Same-day returns are worked out by rules we set, and every airline schedules differently.",
-                    "If you've got a better idea about the logic, I'd really like to hear it."
+                    "It only shows when the rules match, so blank doesn't mean no return. It's left out for night stops and long haul, when the return is a different aircraft type (so not the same crew), or when flight numbers or timings don't line up.",
+                    "Same-day returns are worked out by rules I wrote, and each airline schedules differently.",
+                    "If you think the logic should work differently, tell me."
                 ]
             },
             "feedback": {
-                "heading": "If something looks off",
+                "heading": "Something looks off?",
                 "body": [
-                    "Easiest is to tell me in person; open a GitHub issue if you'd rather it were written down.",
-                    "Please don't post roster details or personal information — that side is public."
+                    "Quickest is to tell me in person. Open a GitHub issue if you want it on record.",
+                    "Don't post roster details or personal information there. It's public."
                 ]
             }
         }
@@ -354,66 +354,66 @@ const translations = {
             "aboutDrawerTitle": "このアプリについて",
             "closeLabel": "閉じる",
             "whatItDoes": {
-                "heading": "このアプリでできること",
+                "heading": "何をするアプリか",
                 "body": [
-                    "エバー航空・チャイナエアライン・スターラックス航空（ユニー航空、マンダリン航空を含む）の乗務員向け、桃園空港のフライトボードです。出発は搭乗ゲート、到着は荷物回転台。",
-                    "App Store を通さずに、ホーム画面に追加してアプリのように使えます。"
+                    "エバー航空・チャイナエアライン・スターラックス（ユニー航空・マンダリン航空を含む）の乗務員向け、桃園空港のフライトボードです。出発はゲート、到着は荷物回転台が出ます。",
+                    "ホーム画面に追加すればアプリとして使えます。App Store は不要です。"
                 ]
             },
             "opensOnArrival": {
-                "heading": "開くと到着が出ます",
+                "heading": "開くとまず到着",
                 "body": [
-                    "最初に出るのは到着 ＝ 荷物回転台です。帰りは疲れています。開いてすぐ見えるべきだと思っています。",
-                    "出発を見るときは右上の 🛫 を。行きはまだ元気なので、ひとつ多く押しても大丈夫です。",
+                    "最初に出るのは到着（荷物回転台）です。帰りは疲れているので、開いてすぐ見えるようにしました。",
+                    "出発は右上の 🛫 をタップ。行きはまだ元気なので、一回多く押すくらいは大丈夫です。",
                     "これだけは、あえて覚えないようにしています。"
                 ]
             },
             "whichFlights": {
                 "heading": "表示される便",
                 "body": [
-                    "現在の前後およそ2時間。出発は2時間先まで、到着は40分前から。",
-                    "表の下の行に、実際の日付と時間帯が出ます。",
-                    "開くたびに最新のデータを取り直します。出発時は出国審査を通ったあと、もう一度開いてゲートの変更をご確認ください。"
+                    "今を中心に約2時間。出発は2時間先まで、到着は40分前からです。",
+                    "表の下に実際の日付と時間帯が出ます。",
+                    "開くたびにデータを取り直します。出発時は出国審査を抜けたら、もう一度開いてゲートを確認してください。"
                 ]
             },
             "install": {
                 "heading": "インストール",
                 "iosSteps": "iPhone / iPad（Safari）：共有 → ホーム画面に追加 → 追加",
-                "iosFallback": "「共有」が見つからないときは、アドレスバー横の ⋯ をタップ。共有シートに「ホーム画面に追加」がないときは、一番下の「アクションを編集」から有効にしてください。",
+                "iosFallback": "「共有」が見当たらなければ、アドレスバー横の ⋯ をタップ。シートに「ホーム画面に追加」がなければ、一番下の「アクションを編集」でオンにしてください。",
                 "installButtonLabel": "インストール",
-                "offlineNote": "インストール後は通信がなくても開けます。最後に取得したデータと、その時刻を表示します。"
+                "offlineNote": "インストール後はオフラインでも開けます。最後に取得したデータと、その時刻を表示します。"
             },
             "share": {
                 "heading": "同僚に教える",
-                "body": "「共有」をタップすると、お使いのスマートフォンの共有画面が開きます。",
+                "body": "「共有」をタップすると、スマホの共有シートが開きます。",
                 "shareButtonLabel": "共有",
                 "copyLinkLabel": "リンクをコピー",
                 "copiedConfirmation": "リンクをコピーしました"
             },
             "remembers": {
-                "heading": "選んだ設定は覚えています",
+                "heading": "覚えている設定",
                 "body": [
-                    "航空会社・機材・テーマ・言語 — 一度選べばそのまま。開くたびに期限がリセットされます。",
-                    "言語は、ご自身で選ぶまではシステム設定に従います。"
+                    "航空会社・機種・テーマ・言語は一度選べばそのまま。期限は開くたびにリセットされます。",
+                    "言語は選ぶまでシステム設定に従います。"
                 ]
             },
             "returnGateColumn": {
-                "heading": "出発ボードの一番右の列",
-                "bodyBefore": "同じ日に桃園へ戻ってくる、帰り便の到着ゲートです。",
+                "heading": "「復路ゲート」の列",
+                "bodyBefore": "同じ日に桃園へ戻る復路便の到着ゲートです。",
                 "bodyAfter": [
-                    "条件を満たしたときだけ表示されます。空欄は「帰り便がない」という意味ではありません。次の場合は表示しません：ステイや長距離線、帰り便の機材が違う（＝同じ乗務員ではない）、便名や時刻が合わない。",
-                    "日帰りかどうかは私たちが決めた規則で判定しています。航空会社ごとにスケジュールの組み方は異なります。",
-                    "表示の考え方について何かお気づきの点があれば、ぜひ教えてください。"
+                    "条件が合うときだけ出ます。空欄でも復路がないとは限りません。ステイや長距離線、復路の機種が違う（＝同じ乗務員ではない）、便名や時刻が合わない場合は表示しません。",
+                    "日帰りかどうかは私が決めたルールで判定しています。スケジュールの組み方は会社ごとに違います。",
+                    "判定の仕方に意見があれば教えてください。"
                 ]
             },
             "feedback": {
                 "heading": "おかしいと思ったら",
                 "body": [
-                    "本人に直接言っていただくのが一番早いです。記録に残したい場合は GitHub の issue をどうぞ。",
-                    "乗務スケジュールの詳細や個人情報は書かないでください。公開されている場所です。"
+                    "直接言ってもらうのが一番早いです。記録に残したければ GitHub の issue をどうぞ。",
+                    "公開の場なので、乗務スケジュールの詳細や個人情報は書かないでください。"
                 ]
             },
-            "disclaimer": "※ この日本語は AI による自動翻訳です。作者は日本語が読めないため、不自然な表現が残っているかもしれません。おかしいと感じた箇所は英語版をご参照いただけますと幸いです。ご不便をおかけして、大変申し訳ございません。"
+            "disclaimer": "※ この日本語は AI 翻訳です。作者は日本語が読めないので、おかしな表現があるかもしれません。変だと思ったら英語版を見てください。申し訳ありません。"
         }
     }
 };

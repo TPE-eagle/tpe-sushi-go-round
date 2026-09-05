@@ -16,7 +16,7 @@ test.describe('About drawer', () => {
 
     await page.click('#about-drawer-toggle')
     await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
-    await expect(page.locator('#about-drawer-body')).toContainText('What this app does for you')
+    await expect(page.locator('#about-drawer-body')).toContainText('What this is')
 
     await page.click('#about-drawer-close')
     await expect(page.locator('#about-drawer')).not.toHaveClass(/\bshow\b/)
