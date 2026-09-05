@@ -32,4 +32,4 @@ jobs:
   tick:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "scheduled run present — counted for #116"
+      - run: echo "scheduled run present"  # counted for #116 — the reference lives in this YAML comment; a bare # inside an unquoted scalar gets stripped as a comment start (issue #135)
