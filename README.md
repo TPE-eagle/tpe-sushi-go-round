@@ -10,9 +10,18 @@ A mobile-first web app for Taoyuan International Airport flight information. Bui
 <p align="center">
   <img src="docs/screenshots/arrivals.png" alt="Arrivals — gate, baggage carousel & aircraft" width="270" />
   &nbsp;&nbsp;
-  <img src="docs/screenshots/departures.png" alt="Departures — gate & aircraft" width="270" />
+  <img src="docs/screenshots/departures.png" alt="Departures — gate, same-day return-leg gate & aircraft" width="270" />
 </p>
 <p align="center"><sub>Arrivals &amp; departures at a glance — pin your airline, then filter by aircraft family. Traditional Chinese / English / 日本語, dark &amp; light.</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/return-gate-light.png" alt="Departures board, 375 px, light theme — return-gate column showing the same-day return leg's arrival gate" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/return-gate-dark.png" alt="Departures board, 375 px, dark theme — return-gate column" width="200" />
+  &nbsp;
+  <img src="docs/screenshots/return-gate-filtered.png" alt="Single-flight filtered view — the ← return-gate cell is self-describing with no neighbouring row" width="200" />
+</p>
+<p align="center"><sub>Departures board's return-gate column (← flight · gate) at 375 px — light, dark, and the single-flight filtered view.</sub></p>
 
 ## Features
 
