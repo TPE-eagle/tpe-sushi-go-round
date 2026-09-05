@@ -229,4 +229,27 @@ test.describe('User Interaction Tests', () => {
     await expect(btn).toHaveText('+2h')
     await expect(btn).not.toHaveClass(/active/)
   })
+
+  // PR #133 review note 2 — pin the boot restore path: the drawer markup
+  // hardcodes "+2h", so only a real initApp() restore (cookie read before the
+  // first paint of the selector) can produce "+4h" here. Seeding via
+  // addInitScript runs before any app script, matching how the cookie got
+  // there on a real device (written by a previous session's cycle).
+  test('a persisted ForwardHours cookie is restored on boot: button label and active fill follow the cookie, not the markup hardcode', async ({ page }) => {
+    await page.addInitScript(() => {
+      document.cookie = 'ForwardHours=4; path=/; max-age=34560000'
+    })
+    await page.goto('/')
+    await page.waitForSelector('#apiParams')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+
+    const btn = page.locator('#time-window-toggle')
+    await expect(btn).toHaveText('+4h')
+    await expect(btn).toHaveClass(/active/)
+
+    // A later cycle continues from the restored value, not from +2h.
+    await btn.click()
+    await expect(btn).toHaveText('+6h')
+  })
 })
