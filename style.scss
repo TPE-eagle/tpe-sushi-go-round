@@ -1313,7 +1313,7 @@ tr.row-cancelled td {
 }
 
 /* The window value is DATA the user reads, not an icon — text in the same
- * 38px circle, at .flight-sub's readable-data floor. Must stay AFTER the
+ * 38px circle, at a readable-data floor. Must stay AFTER the
  * ≤768px .flight-toggle-btn re-declaration above (same specificity, later
  * source order wins). */
 .window-toggle-btn {
