@@ -1073,6 +1073,11 @@ function fetchData() {
     // and any future early return slipped between the two bumps would
     // silently break that invariant while leaving the guard looking intact.
     mainFetchToken += 1;
+    // Issue #130 review F2 — invalidate any in-flight lazy departures store
+    // fetch (mirror of the bumps above): a lazy fetch issued in arrivals mode
+    // must not land after a newer fetchData() cycle and overwrite
+    // fullDayByState.D with stale/wrong-language rows.
+    searchDepFetchToken += 1;
     const mainRequestToken = mainFetchToken;
     // #40 item 2: mainDataReadyForToken was only ever assigned forward
     // (never reset), so a value left over from a previous token could
@@ -1183,9 +1188,14 @@ function fetchData() {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["offlineNoCache"]}</div>`;
             updateOfflineBanner(null);
+            // Issue #130 review F1: the search takeover hides #output, so the
+            // error must surface on the status line too — stale-looking rows
+            // with no indication are exactly what this branch exists to prevent.
+            if (searchOpen) setStatusLine(translations[currentLanguage]["offlineNoCache"]);
         } else {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["error"]}</div>`;
+            if (searchOpen) setStatusLine(translations[currentLanguage]["error"]);
         }
     });
 }
@@ -2070,7 +2080,7 @@ function closeSearch() {
     // mode-toggle fetch flight, flightData still holds the old mode's rows
     // and a re-render would pair them with the new mode's headers. The board
     // is already whatever it should be, loading text included.
-    ['output', 'planeTypeButtons', 'flightButtons'].forEach((id) => {
+    ['output', 'planeTypeButtons', 'flightButtons', 'timeWindowButtons'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.hidden = false;
     });
@@ -2174,6 +2184,10 @@ function renderSearchResults() {
     document.getElementById('output').hidden = takeover;
     document.getElementById('planeTypeButtons').hidden = takeover;
     document.getElementById('flightButtons').hidden = takeover;
+    // The window selector is meaningless during search (search ignores the
+    // window by design).
+    const timeWindowRow = document.getElementById('timeWindowButtons');
+    if (timeWindowRow) timeWindowRow.hidden = takeover;
 
     if (!takeover) {
         container.hidden = true;
@@ -2206,9 +2220,14 @@ function renderSearchResults() {
         html += `<p class="search-note">${escapeHtml(t.search.tooMany.replace('{n}', overflow))}</p>`;
     }
 
+    // Issue #130 review F3 — distinguish "stores not fetched yet" from a
+    // successful-but-empty day: length checks would show an eternal loading
+    // status for a genuinely empty day.
+    const storesPending = fullDayByState.A === null && fullDayByState.D === null;
+
     // Nothing matched — distinguish "the pin is hiding it" from "genuinely
     // not flying today" by re-running the match without the pin.
-    if (matches.length === 0 && (arrivals.length || departures.length)) {
+    if (matches.length === 0 && !storesPending) {
         if (scopeGroup) {
             const unscoped = matchFlights(store, query, today);
             if (unscoped.length > 0) {
@@ -2237,7 +2256,7 @@ function renderSearchResults() {
 
     // Status line: counts, pending/unavailable notes for the departures store.
     let statusText = '';
-    if (!arrivals.length && !departures.length) {
+    if (storesPending) {
         statusText = t.loading;
     } else if (matches.length > 0) {
         statusText = (arrMatches.length && depMatches.length)
@@ -2268,10 +2287,11 @@ function buildSearchTable(rows, direction, isSmall) {
     const terminalHeader = isSmall ? headers["TerminalShort"] : headers["Terminal"];
     const returnGateHeader = isSmall ? headers["ReturnGateShort"] : headers["ReturnGate"];
     const heading = direction === 'A' ? t.search.headingArrivals : t.search.headingDepartures;
-    // thead tint follows the pin, same as the board (currentACode is the
-    // pin's own value here — displayFlights' overwrite doesn't apply while
-    // the board is hidden).
-    const theadClass = currentACode
+    // thead tint follows the pin, same as the board. Allowlist against the
+    // supported codes (issue #130 review F4): currentACode is cookie- and
+    // API-derived, never interpolate it into markup unvalidated.
+    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+    const theadClass = currentACode && allGroupCodes.includes(currentACode)
         ? `table-${currentACode.toLowerCase()}`
         : (currentTheme === 'dark' ? 'table-secondary' : 'table-dark');
     // Return-gate pool: the full-day arrivals store minus cancelled rows,
