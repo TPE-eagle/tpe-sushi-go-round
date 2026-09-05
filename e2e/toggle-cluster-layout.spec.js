@@ -67,6 +67,10 @@ test.describe('Toggle cluster layout (issue #66)', () => {
       for (const mode of ['arrivals', 'departures']) {
         test(`cluster does not cover header content — ${viewport.width}x${viewport.height}, ${theme}, ${mode}`, async ({ page }) => {
           await page.setViewportSize(viewport)
+          // The theme toggle lives in the About drawer now (issue #130
+          // follow-up), so dark mode comes from emulation + reload instead of
+          // clicking a control behind the drawer.
+          await page.emulateMedia({ colorScheme: theme === 'dark' ? 'dark' : 'light' })
           await page.goto('/')
           // waitForSelector('.theme-buttons-container') alone resolves at
           // first render, before the mocked API response has been turned
@@ -76,11 +80,7 @@ test.describe('Toggle cluster layout (issue #66)', () => {
           await page.waitForSelector('.theme-buttons-container', { timeout: 8000 })
 
           if (theme === 'dark') {
-            const html = page.locator('html')
-            if (await html.getAttribute('data-bs-theme') !== 'dark') {
-              await page.click('#theme-toggle')
-              await expect(html).toHaveAttribute('data-bs-theme', 'dark')
-            }
+            await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
           }
 
           if (mode === 'departures') {

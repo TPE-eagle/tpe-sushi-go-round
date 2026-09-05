@@ -8,7 +8,7 @@ const YESTERDAY = '2026/09/04'
 // cancelled BR881 row is present exactly as processFetchedData stores it.
 const store = [
     { ACode: 'BR', FlightNo: '178', AState: 'D', ODate: TODAY, OTime: '08:30:00', Gate: 'C5', StopCode: '', Terminal: '2', BNO: 2, CityCode: 'KIX', Memo: '' },
-    { ACode: 'BR', FlightNo: '881', AState: 'D', ODate: TODAY, OTime: '09:15:00', Gate: '', Memo: '取消', AState_: undefined },
+    { ACode: 'BR', FlightNo: '881', AState: 'D', ODate: TODAY, OTime: '09:15:00', Gate: '', Memo: '取消' },
     { ACode: 'B7', FlightNo: '681', AState: 'D', ODate: TODAY, OTime: '07:00:00', Gate: 'A2', Memo: null },
     { ACode: 'CI', FlightNo: '810', AState: 'A', ODate: TODAY, OTime: '12:05:00', Gate: 'B3', StopCode: '12', Memo: '' },
     { ACode: 'JX', FlightNo: '810', AState: 'A', ODate: TODAY, OTime: '13:40:00', Gate: 'D4', StopCode: '5', Memo: '' },
@@ -17,41 +17,35 @@ const store = [
     { ACode: 'CI', FlightNo: '150', AState: 'A', ODate: YESTERDAY, OTime: '23:30:00', Gate: 'A1', StopCode: '3', Memo: '' },
 ]
 
-describe('normalizeFlightQuery', () => {
-    it('uppercases and strips separators', () => {
-        expect(normalizeFlightQuery('br-178')).toBe('BR178')
-        expect(normalizeFlightQuery(' br 178 ')).toBe('BR178')
-        expect(normalizeFlightQuery('Br178')).toBe('BR178')
+describe('normalizeFlightQuery (digits-only quick dial)', () => {
+    it('strips letters and separators — the digits are the query', () => {
+        expect(normalizeFlightQuery('BR178')).toBe('178')
+        expect(normalizeFlightQuery('br-178')).toBe('178')
+        expect(normalizeFlightQuery(' br 178 ')).toBe('178')
     })
 
-    it('folds full-width IME input via NFKC', () => {
-        expect(normalizeFlightQuery('ＢＲ１７８')).toBe('BR178')
+    it('folds full-width IME digits via NFKC', () => {
+        expect(normalizeFlightQuery('１７８')).toBe('178')
+        expect(normalizeFlightQuery('ＢＲ１７８')).toBe('178')
     })
 
-    it('keeps bare digits', () => {
-        expect(normalizeFlightQuery('178')).toBe('178')
-    })
-
-    it('returns empty for empty input', () => {
+    it('returns empty for empty or letter-only input', () => {
         expect(normalizeFlightQuery('')).toBe('')
-        expect(normalizeFlightQuery('   ')).toBe('')
+        expect(normalizeFlightQuery('BR')).toBe('')
         expect(normalizeFlightQuery(null)).toBe('')
     })
 })
 
 describe('matchFlights', () => {
     it('finds flights by digit prefix across all airlines', () => {
-        const q = '810'
-        const codes = matchFlights(store, q, TODAY).map(f => `${f.ACode}${f.FlightNo}`)
-        expect(codes).toContain('CI810')
-        expect(codes).toContain('JX810')
+        const codes = matchFlights(store, '810', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
+        expect(codes).toEqual(['CI810', 'JX810'])
     })
 
     it('matches by PREFIX, not substring', () => {
         // "81" must hit 810 but not 881
         const codes = matchFlights(store, '81', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
-        expect(codes).toContain('CI810')
-        expect(codes).not.toContain('BR881')
+        expect(codes).toEqual(['CI810', 'JX810'])
     })
 
     it('exact flight number sorts before prefix hits', () => {
@@ -62,33 +56,18 @@ describe('matchFlights', () => {
     })
 
     it('strips leading zeros from the query', () => {
-        const codes = matchFlights(store, 'BR035', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
+        const codes = matchFlights(store, '035', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
         expect(codes[0]).toBe('BR35')
     })
 
-    it('resolves a two-character airline prefix including the digit-carrying B7', () => {
-        const codes = matchFlights(store, 'B7681', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
-        expect(codes).toEqual(['B7681'])
+    it('letters are ignored entirely — "BR178" searches "178"', () => {
+        const codes = matchFlights(store, 'BR178', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
+        expect(codes).toEqual(['BR178'])
     })
 
-    it('applies the airline prefix at GROUP level — BR covers B7', () => {
-        const codes = matchFlights(store, 'BR681', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
-        expect(codes).toEqual(['B7681'])
-    })
-
-    it('letters-only query lists that group for the whole day', () => {
-        const codes = matchFlights(store, 'BR', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
-        expect(codes).toEqual(['B7681', 'BR35', 'BR178', 'BR350', 'BR881'])
-    })
-
-    it('returns nothing for airlines outside the five supported groups', () => {
-        expect(matchFlights(store, 'UA178', TODAY)).toEqual([])
-    })
-
-    it('ignores a single stray letter and searches the digits', () => {
-        const codes = matchFlights(store, 'B810', TODAY).map(f => `${f.ACode}${f.FlightNo}`)
-        // "B8" is not a code; single letter ignored → digits 810
-        expect(codes).toEqual(['CI810', 'JX810'])
+    it('all-zeros query matches nothing', () => {
+        expect(matchFlights(store, '0', TODAY)).toEqual([])
+        expect(matchFlights(store, '000', TODAY)).toEqual([])
     })
 
     it('excludes rows from another operating day', () => {
@@ -108,7 +87,7 @@ describe('matchFlights', () => {
         expect(codes).toEqual(['BR350'])
     })
 
-    it('returns empty for empty or unusable queries', () => {
+    it('returns empty for empty queries', () => {
         expect(matchFlights(store, '', TODAY)).toEqual([])
         expect(matchFlights(store, '   ', TODAY)).toEqual([])
         expect(matchFlights(store, '今日', TODAY)).toEqual([])

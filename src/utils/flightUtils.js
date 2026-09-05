@@ -200,51 +200,32 @@ export function filterByPlaneType(flights, family) {
 // Issue #130 — quick-dial flight-number search. Mirrored inline in main.js
 // (same dual-copy convention as the functions above).
 
-// Normalize user input: NFKC (full-width IME forms), uppercase, then strip
-// everything outside A-Z 0-9. "ｂｒ－１７８", "br 178" and "Br178" all become
-// "BR178".
+// Normalize user input: owner decision (issue #130) is digits-only quick
+// dial - NFKC folds full-width IME forms, then everything that is not a
+// digit is stripped. Letters are ignored entirely ("BR178" searches "178");
+// the airline pin does the carrier scoping.
 export function normalizeFlightQuery(query) {
     return String(query ?? '')
         .normalize('NFKC')
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, '');
+        .replace(/[^0-9]/g, '');
 }
 
 // Match the full-day search store against a raw query string.
 //
 // Rules (issue #130):
-// - optional airline prefix resolved at GROUP level — "BR" covers B7, "CI"
-//   covers AE — so BR681 finds a UNI Air flight (same semantics as the pin);
-// - unknown airline prefixes ("UA178") match nothing;
-// - digits match by PREFIX with leading zeros stripped; exact matches sort
+// - digit PREFIX match with leading zeros stripped; exact matches sort
 //   FIRST, so a fully typed flight number always surfaces above vague hits
 //   and the caller's display cap can never hide it;
 // - rows from another operating day are excluded (full-day pulls may carry
-//   them — see returnleg.test.js);
-// - cancelled rows are NOT dropped here — the presentation layer flags them.
+//   them - see returnleg.test.js);
+// - cancelled rows are NOT dropped here - the presentation layer flags them.
 //
 // Returns every match sorted; the caller applies the display cap.
 export function matchFlights(flights, query, todayStr) {
     const q = normalizeFlightQuery(query);
     if (!q) return [];
-    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
-
-    // Split an optional airline prefix from the digits. Check the first two
-    // characters against the known codes first so "B7681" resolves to B7 +
-    // 681 ("B" alone is not a code).
-    let prefix = null;
-    let rest = q;
-    if (q.length >= 2 && allGroupCodes.includes(q.slice(0, 2))) {
-        prefix = q.slice(0, 2);
-        rest = q.slice(2);
-    } else if (/^[A-Z]/.test(q)) {
-        const letters = q.match(/^[A-Z]+/)[0];
-        if (letters.length >= 2) return []; // a code we don't cover
-        rest = q.slice(1); // single stray letter: ignore it, search the digits
-    }
-    const queryDigits = rest.replace(/[^0-9]/g, '').replace(/^0+/, '');
-    if (!queryDigits && !prefix) return []; // nothing usable to match on
-    const scope = prefix ? (Object.values(AIRLINE_GROUPS).find(g => g.includes(prefix)) ?? null) : null;
+    const queryDigits = q.replace(/^0+/, '');
+    if (!queryDigits) return []; // all zeros - nothing usable
 
     const digitsOf = (flight) => {
         const m = String(flight.FlightNo ?? '').match(/\d+/);
@@ -253,15 +234,9 @@ export function matchFlights(flights, query, todayStr) {
 
     return flights
         .filter(flight => flight.ODate === todayStr)
-        .filter(flight => !scope || scope.includes(flight.ACode))
-        .filter(flight => !queryDigits || digitsOf(flight).startsWith(queryDigits))
+        .filter(flight => digitsOf(flight).startsWith(queryDigits))
         .sort((a, b) => {
-            const score = (flight) => {
-                const full = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
-                if (full === q) return 0;
-                if (queryDigits && digitsOf(flight) === queryDigits) return 1;
-                return 2;
-            };
+            const score = (flight) => (digitsOf(flight) === queryDigits ? 0 : 1);
             const diff = score(a) - score(b);
             if (diff !== 0) return diff;
             if (a.ACode !== b.ACode) return a.ACode < b.ACode ? -1 : 1;

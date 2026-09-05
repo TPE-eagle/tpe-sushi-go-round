@@ -33,16 +33,20 @@ test.describe('About drawer', () => {
     await expect(page.locator('#about-drawer')).not.toHaveClass(/\bshow\b/)
   })
 
-  test('the existing UI is unchanged apart from the new ☰ button and drawer markup', async ({ page }) => {
+  test('the existing UI is unchanged apart from the header cluster and drawer markup', async ({ page }) => {
     await page.goto('/')
     await page.waitForSelector('#theme-toggle', { timeout: 8000 })
 
-    // The theme-buttons cluster goes from 3 buttons to 4 (theme, flight mode,
-    // search #130, about); nothing else about
-    // the header/footer/table structure should be touched by this feature.
+    // The header cluster is 3 buttons (flight mode, search #130, about);
+    // the time-window (#88) and theme toggles live in the drawer header
+    // (issue #130 follow-up). Nothing else about the header/footer/table
+    // structure should be touched.
     const clusterChildren = await page.locator('.theme-buttons-container').locator('> *').count()
-    expect(clusterChildren).toBe(4)
+    expect(clusterChildren).toBe(3)
     await expect(page.locator('#about-drawer-toggle')).toBeVisible()
+    // The theme toggle sits in the closed drawer — attached, but not visible
+    // until the drawer opens (Bootstrap keeps the offcanvas subtree hidden).
+    await expect(page.locator('#about-drawer-header #theme-toggle')).toHaveCount(1)
   })
 
   test('the worked return-gate example renders as a real table row', async ({ page }) => {
@@ -99,14 +103,11 @@ test.describe('About drawer', () => {
     // test-results/ would not otherwise leave the runner.
     await testInfo.attach('drawer-375-light', { body: await page.screenshot(), contentType: 'image/png' })
 
-    // At 375px the offcanvas panel (400px wide) covers the whole viewport,
-    // so #theme-toggle (top-right of the page, behind the drawer) is in the
-    // DOM but not reachable by a real pointer — the offcanvas subtree
-    // intercepts the click, same as it would for an actual user. `initTheme()`
-    // (main.js) only falls back to `prefers-color-scheme` when no `theme`
-    // cookie is set, and a fresh context has none — so emulate a dark-mode
-    // device instead of seeding a cookie that never took effect for the
-    // in-app theme state.
+    // At 375px the offcanvas panel (400px wide) covers the whole viewport.
+    // `initTheme()` (main.js) only falls back to `prefers-color-scheme` when
+    // no `theme` cookie is set, and a fresh context has none — so emulate a
+    // dark-mode device instead of seeding a cookie that never took effect
+    // for the in-app theme state.
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto('/')
     await page.click('#about-drawer-toggle')

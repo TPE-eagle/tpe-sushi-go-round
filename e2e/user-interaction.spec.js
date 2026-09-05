@@ -47,9 +47,12 @@ test.describe('User Interaction Tests', () => {
 
   test('should save and restore theme with cookies', async ({ page }) => {
     await page.goto('/')
-    
-    // Default should be light theme
+
+    // Default should be light theme. The theme toggle lives in the About
+    // drawer header (issue #130 follow-up) — open the drawer to reach it.
     await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'light')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
     await expect(page.locator('#theme-toggle')).toContainText('🌙')
 
     // Switch to dark theme
@@ -67,9 +70,10 @@ test.describe('User Interaction Tests', () => {
 
     // Reload page, should maintain dark theme
     await page.reload()
-    await page.waitForSelector('#theme-toggle')
-    
+
     await expect(page.locator('html')).toHaveAttribute('data-bs-theme', 'dark')
+    // The toggle is inside the closed drawer — toContainText works on the
+    // attached-but-hidden element.
     await expect(page.locator('#theme-toggle')).toContainText('☀️')
   })
 
@@ -184,5 +188,32 @@ test.describe('User Interaction Tests', () => {
     // Should display current time range
     const timeInfo = await page.locator('#apiParams').textContent()
     expect(timeInfo).toMatch(/Date: \d{4}\/\d{2}\/\d{2}, Range: \d{2}:\d{2} - \d{2}:\d{2} \(UTC\+8\)/)
+  })
+
+  // Issue #88/#130 — the header-cluster window selector cycles +2/+4/+6/+8h
+  // and wraps back to +2h; the footer Range line follows every step.
+  test('time-window selector cycles the display window and wraps back to +2h', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForSelector('#apiParams')
+    // The selector lives in the About drawer header (issue #130 follow-up).
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+    const btn = page.locator('#time-window-toggle')
+    await expect(btn).toHaveText('+2h')
+    const rangeBefore = await page.locator('#apiParams').textContent()
+
+    await btn.click()
+    await expect(btn).toHaveText('+4h')
+    await expect(btn).toHaveClass(/active/)
+    const rangeAfter = await page.locator('#apiParams').textContent()
+    expect(rangeAfter).not.toBe(rangeBefore)
+
+    await btn.click() // +6h
+    await expect(btn).toHaveText('+6h')
+    await btn.click() // +8h
+    await expect(btn).toHaveText('+8h')
+    await btn.click() // wraps back to the default
+    await expect(btn).toHaveText('+2h')
+    await expect(btn).not.toHaveClass(/active/)
   })
 })
