@@ -45,20 +45,24 @@ export function formatToUTC8_HHMM(dateObj) {
 }
 
 /**
- * Get time window configuration based on flight mode
+ * Get time window configuration based on flight mode.
+ * `forwardHours` (issue #88) is how many hours the window reaches forward
+ * from its start; it replaces the old fixed `durationMinutes: 120` as the
+ * single source of truth for window length (120 minutes == the historical
+ * +2h). Default 2 keeps every existing 1-argument call at the old behavior.
  */
-export function getTimeWindowConfig(mode) {
+export function getTimeWindowConfig(mode, forwardHours = 2) {
     if (mode === 'A') { // Arrival
         return {
             roundingStepMinutes: 10,
             offsetFromRoundedMinutes: -40,
-            durationMinutes: 120
+            forwardHours
         };
     } else { // Departure
         return {
             roundingStepMinutes: 10,
             offsetFromRoundedMinutes: 0,
-            durationMinutes: 120
+            forwardHours
         };
     }
 }
@@ -75,22 +79,43 @@ export function roundDownToStep(date, stepMinutes) {
 }
 
 /**
- * Calculate time window based on configuration and current time
+ * Last millisecond (23:59:59.999) of the UTC+8 calendar day that `now`
+ * falls in, as an absolute instant (issue #88). Taipei is a fixed +8
+ * offset with no DST, so Taipei midnight is always UTC 16:00.
+ */
+export function endOfUTC8Day(now = new Date()) {
+    const utc8 = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    return new Date(Date.UTC(
+        utc8.getUTCFullYear(), utc8.getUTCMonth(), utc8.getUTCDate(),
+        15, 59, 59, 999
+    ));
+}
+
+/**
+ * Calculate time window based on configuration and current time.
+ * Issue #88: the forward edge is `forwardHours` past the window start,
+ * truncated so the window never reaches past the end of `initialNow`'s own
+ * UTC+8 day. The anchor is the day of `now`, not of `windowStart` — the
+ * arrivals −40 min backward component legally places windowStart on the
+ * previous day around Taipei midnight; truncation only ever bites
+ * windowEnd, never windowStart.
  */
 export function getTimeWindow(config, initialNow = new Date()) {
     const roundedLocalNow = roundDownToStep(initialNow, config.roundingStepMinutes);
     
     const windowStart = new Date(roundedLocalNow.getTime() + (config.offsetFromRoundedMinutes * 60 * 1000));
-    const windowEnd = new Date(windowStart.getTime() + (config.durationMinutes * 60 * 1000));
+    const windowEnd = new Date(windowStart.getTime() + (config.forwardHours * 60 * 60 * 1000));
     windowEnd.setSeconds(59, 999);
+    const endOfDay = endOfUTC8Day(initialNow); // Issue #88 — truncate at the end of now's UTC+8 day
+    if (windowEnd > endOfDay) windowEnd.setTime(endOfDay.getTime());
     return { windowStart, windowEnd };
 }
 
 /**
  * Filter flights by time window
  */
-export function filterFlightsByTime(flights, mode = 'A', now = new Date()) {
-    const config = getTimeWindowConfig(mode);
+export function filterFlightsByTime(flights, mode = 'A', now = new Date(), forwardHours = 2) {
+    const config = getTimeWindowConfig(mode, forwardHours);
     const { windowStart, windowEnd } = getTimeWindow(config, now);
 
     return flights.filter(flight => {
@@ -174,7 +199,7 @@ export function filterByPlaneType(flights, family) {
 /**
  * Parse API response and apply all filtering logic
  */
-export function parseApiResponse(apiData, flightMode = 'A', currentTime = new Date()) {
+export function parseApiResponse(apiData, flightMode = 'A', currentTime = new Date(), forwardHours = 2) {
     // 1. Sort flights
     const sortedFlights = apiData.sort((a, b) => {
         if (a.ACode < b.ACode) return -1;
@@ -188,7 +213,7 @@ export function parseApiResponse(apiData, flightMode = 'A', currentTime = new Da
     const supportedFlights = filterSupportedAirlines(sortedFlights);
 
     // 3. Filter by time
-    const timeFilteredFlights = filterFlightsByTime(supportedFlights, flightMode, currentTime);
+    const timeFilteredFlights = filterFlightsByTime(supportedFlights, flightMode, currentTime, forwardHours);
 
     return timeFilteredFlights;
 }
