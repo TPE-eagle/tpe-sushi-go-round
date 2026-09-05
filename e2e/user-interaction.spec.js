@@ -190,9 +190,10 @@ test.describe('User Interaction Tests', () => {
     expect(timeInfo).toMatch(/Date: \d{4}\/\d{2}\/\d{2}, Range: \d{2}:\d{2} - \d{2}:\d{2} \(UTC\+8\)/)
   })
 
-  // Issue #88/#130 — the header-cluster window selector cycles +2/+4/+6/+8h
-  // and wraps back to +2h; the footer Range line follows every step.
-  test('time-window selector cycles the display window and wraps back to +2h', async ({ page }) => {
+  // Issue #88/#130 follow-up — the drawer-header window selector cycles
+  // +2/+4/+6/+8h and wraps back to +2h; the footer Range line follows every
+  // step, and the ForwardHours cookie survives the visibilitychange reload.
+  test('time-window selector cycles the display window, survives a reload, and wraps back to +2h', async ({ page }) => {
     await page.goto('/')
     await page.waitForSelector('#apiParams')
     // The selector lives in the About drawer header (issue #130 follow-up).
@@ -207,6 +208,18 @@ test.describe('User Interaction Tests', () => {
     await expect(btn).toHaveClass(/active/)
     const rangeAfter = await page.locator('#apiParams').textContent()
     expect(rangeAfter).not.toBe(rangeBefore)
+
+    // PR #136 review R3 — the headline: the ForwardHours cookie survives the
+    // visibilitychange auto-reload. Reload and confirm +4h stuck (drawer
+    // closed after reload; text/class assertions work on the hidden element).
+    await page.reload()
+    await page.waitForSelector('#apiParams')
+    await expect(btn).toHaveText('+4h')
+    await expect(btn).toHaveClass(/active/)
+
+    // Re-open the drawer to continue cycling from the restored value.
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await btn.click() // +6h
     await expect(btn).toHaveText('+6h')
