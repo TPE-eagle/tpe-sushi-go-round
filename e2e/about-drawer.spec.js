@@ -35,7 +35,7 @@ test.describe('About drawer', () => {
 
   test('the existing UI is unchanged apart from the header cluster and drawer markup', async ({ page }) => {
     await page.goto('/')
-    await page.waitForSelector('#theme-toggle', { timeout: 8000 })
+    await page.waitForSelector('#about-drawer-toggle', { timeout: 8000 })
 
     // The header cluster is 3 buttons (flight mode, search #130, about);
     // the time-window (#88) and theme toggles live in the drawer header
