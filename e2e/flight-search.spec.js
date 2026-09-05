@@ -33,16 +33,21 @@ test.describe('Quick-dial flight search', () => {
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
   })
 
-  test('searching a flight number takes over the board and shows gate + carousel', async ({ page }) => {
+  test('opening search collapses the flight-number row; a query takes over the board', async ({ page }) => {
     await openSearch(page)
+    // Owner feedback: the plane-type and flight-number rows collapse the
+    // moment search is open — quick dial replaces them (query not even
+    // needed).
+    await expect(page.locator('#flightButtons')).toBeHidden()
+    await expect(page.locator('#planeTypeButtons')).toBeHidden()
+
     await searchFor(page, '35')
 
-    // Takeover: the board and the filter rows are hidden, results are shown
-    // in the board's slot as a real table.
+    // Takeover: the board is hidden, results are shown in the board's slot
+    // as a real table.
     await expect(page.locator('#output')).toBeHidden()
-    await expect(page.locator('#flightButtons')).toBeHidden()
+    await expect(page.locator('#planeTypeButtons')).toBeHidden()
 
-    // BR35 arrival: carousel 05, and the board's Gate column also renders.
     const table = page.locator('#search-results table').first()
     await expect(table).toContainText('BR35')
     await expect(table).toContainText('05')
@@ -64,6 +69,7 @@ test.describe('Quick-dial flight search', () => {
     await page.click('#search-toggle') // close
     await expect(page.locator('#output')).toBeVisible()
     await expect(page.locator('#search-results')).toBeHidden()
+    await expect(page.locator('#flightButtons')).toBeVisible()
     // The BR pin survived the takeover.
     await expect(page.locator('#output')).toContainText('BR35')
     await expect(page.locator('a[data-airline="BR"].active')).toBeVisible()
@@ -147,6 +153,6 @@ test.describe('Quick-dial flight search', () => {
     await page.waitForSelector('#search-results table', { timeout: 15000 })
     // Still searching, now in Chinese: the direction caption is localized.
     await expect(page.locator('#search-results table caption').first()).toContainText('到達')
-    await expect(page.locator('#search-input')).toHaveAttribute('placeholder', /BR178/)
+    await expect(page.locator('#search-input')).toHaveAttribute('placeholder', /178/)
   })
 })

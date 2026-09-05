@@ -1181,11 +1181,6 @@ body {
  * floor in both themes (70/30 mix measured 5.1-6.2:1 on the four
  * theme/backdrop combinations; see the return-gate table above).
  * ------------------------------------------------------------------------- */
-#search-toggle.active {
-  background: color-mix(in srgb, var(--text-color) 12%, var(--background-color));
-  border-radius: 50%;
-}
-
 .search-bar {
   margin: 0 auto 0.75rem;
   max-width: 30rem;
@@ -1230,21 +1225,10 @@ body {
   text-align: center;
 }
 
-/* Muted scheduled/actual time under the flight code — a second line, NOT a
- * sixth column: five columns are already the 393px floor's limit and the
- * Gate/Carousel emphasis is indexed by column position. */
-.flight-sub {
-  display: block;
-  font-size: 0.8125rem;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  color: color-mix(in srgb, var(--text-color) 70%, var(--background-color));
-}
-
 .status-chip {
-  display: inline-block;
-  margin-left: 0.375rem;
+  display: block;
+  width: fit-content;
+  margin-top: 2px;
   padding: 0 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.6875rem;
@@ -1262,7 +1246,6 @@ tr.row-cancelled td {
   color: color-mix(in srgb, var(--text-color) 55%, var(--background-color));
 }
 
-.search-note,
 .search-empty {
   margin: 0.75rem 0;
   text-align: center;
@@ -1278,4 +1261,36 @@ tr.row-cancelled td {
   font-weight: 600;
   padding-bottom: 0.375rem;
   color: var(--text-color);
+}
+
+/* Issue #130 follow-up — shared cluster states.
+ * The window selector's non-default fill (the +4h/+6h/+8h state) and the
+ * search toggle's active state share one recipe; the drawer-header theme
+ * toggle and the disabled window button need their own rules because the
+ * cluster buttons set their own background/colour, overriding the browser's
+ * native greying. */
+.flight-toggle-btn.active,
+#search-toggle.active {
+  background: color-mix(in srgb, var(--text-color) 12%, var(--background-color));
+}
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.drawer-header-actions .theme-toggle-btn {
+  font-size: 1.125rem;
+}
+
+/* The window value is DATA the user reads, not an icon — text in the same
+ * 38px circle, at .flight-sub's readable-data floor. Must stay AFTER the
+ * ≤768px .flight-toggle-btn re-declaration above (same specificity, later
+ * source order wins). */
+.window-toggle-btn {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }

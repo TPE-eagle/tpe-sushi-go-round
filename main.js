@@ -28,6 +28,10 @@ const COOKIE_NAME = 'ACode';
 const PLANE_TYPE_COOKIE_NAME = 'PlaneType';
 const REFRESH_DELAY = 1500;
 const THEME_COOKIE_NAME = 'theme';
+// Issue #130 follow-up — the window selection is cookie-persisted (owner
+// decision 2026-09-05, superseding #88's in-memory-only D3) so it survives
+// the visibilitychange auto-reload, like every other setting.
+const FORWARD_HOURS_COOKIE_NAME = 'ForwardHours';
 const LANGUAGE_COOKIE_NAME = 'lang';
 const LIGHT_THEME_COLOR = '#ffffff';
 const DARK_THEME_COLOR = '#212529';
@@ -196,7 +200,7 @@ const translations = {
             "close": "關閉搜尋",
             "label": "搜尋航班",
             "clear": "清除",
-            "placeholder": "輸入班號，例如 BR178 或 178",
+            "placeholder": "輸入班號數字，例如 178",
             "countOne": "找到 {n} 班",
             "countBoth": "到達 {a} 班、出發 {d} 班",
             "noMatch": "今天（{date}）沒有 {query} 這班。只查得到當天航班。",
@@ -204,7 +208,6 @@ const translations = {
             "showAllAirlines": "顯示全部航空公司",
             "departuresPending": "出發資料載入中…",
             "departuresUnavailable": "出發資料暫時無法取得",
-            "tooMany": "還有 {n} 班未顯示，請多輸入一位數字",
             "cancelled": "已取消",
             "gateTba": "未定",
             "headingArrivals": "到達",
@@ -317,7 +320,7 @@ const translations = {
             "close": "Close search",
             "label": "Search flights",
             "clear": "Clear",
-            "placeholder": "Flight number, e.g. BR178 or 178",
+            "placeholder": "Flight number digits, e.g. 178",
             "countOne": "{n} flight(s) found",
             "countBoth": "{a} arrival(s), {d} departure(s)",
             "noMatch": "No {query} today ({date}). Search covers today's flights only.",
@@ -325,7 +328,6 @@ const translations = {
             "showAllAirlines": "Show all airlines",
             "departuresPending": "Loading departures…",
             "departuresUnavailable": "Departures unavailable right now",
-            "tooMany": "{n} more not shown, type another digit",
             "cancelled": "Cancelled",
             "gateTba": "TBA",
             "headingArrivals": "Arrivals",
@@ -438,7 +440,7 @@ const translations = {
             "close": "検索を閉じる",
             "label": "フライト検索",
             "clear": "クリア",
-            "placeholder": "便名を入力（例：BR178 / 178）",
+            "placeholder": "便名の数字を入力（例：178）",
             "countOne": "{n} 便見つかりました",
             "countBoth": "到着 {a} 便・出発 {d} 便",
             "noMatch": "{query} は本日（{date}）の便にありません。検索できるのは当日の便だけです。",
@@ -446,7 +448,6 @@ const translations = {
             "showAllAirlines": "全航空会社を表示",
             "departuresPending": "出発便を読み込み中…",
             "departuresUnavailable": "出発便のデータを取得できません",
-            "tooMany": "ほか {n} 便。もう1桁入力してください",
             "cancelled": "欠航",
             "gateTba": "未定",
             "headingArrivals": "到着",
@@ -528,7 +529,6 @@ function renderApp() {
         <div id="offline-banner" class="offline-banner" hidden></div>
         <div class="container position-relative">
             <div class="theme-buttons-container">
-                <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
                 <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
                 <div id="search-toggle" role="button" class="flight-toggle-btn" aria-label="Search flights" tabindex="0">
                     <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
@@ -555,12 +555,6 @@ function renderApp() {
             </div>
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
             <div id="planeTypeButtons" class="d-flex justify-content-center flex-wrap mb-2"></div>
-            <!-- Issue #88 — time-window selector: cycles +2/+4/+6/+8h. Label is a
-                 language-neutral +Nh; aria-label/title are translated in
-                 updateTimeWindowButton(). -->
-            <div id="timeWindowButtons" class="d-flex justify-content-center mb-2">
-                <button type="button" id="time-window-toggle" class="btn btn-sm btn-outline-secondary btn-no-hover m-1">+2h</button>
-            </div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
             <div id="search-results" class="flight-board search-results" hidden></div>
             <div id="output" class="container flight-board"></div>
@@ -586,7 +580,14 @@ function renderApp() {
         <div class="offcanvas offcanvas-end" tabindex="-1" id="about-drawer" aria-labelledby="about-drawer-title">
             <div class="offcanvas-header">
                 <h5 class="offcanvas-title" id="about-drawer-title"></h5>
-                <button type="button" id="about-drawer-close" class="drawer-close-btn" data-bs-dismiss="offcanvas" aria-label="Close">✕</button>
+                <!-- Issue #88/#130 — the window selector and theme toggle live
+                     in the drawer (the app's settings surface); handlers are
+                     delegated on document, so the element's position is free. -->
+                <div class="drawer-header-actions">
+                    <button type="button" id="time-window-toggle" class="flight-toggle-btn window-toggle-btn" aria-label="">+2h</button>
+                    <div id="theme-toggle" role="button" class="theme-toggle-btn" aria-label="Toggle theme" tabindex="0">🌙</div>
+                    <button type="button" id="about-drawer-close" class="drawer-close-btn" data-bs-dismiss="offcanvas" aria-label="Close">✕</button>
+                </div>
             </div>
             <div class="offcanvas-body" id="about-drawer-body"></div>
         </div>
@@ -1931,6 +1932,9 @@ function filterFlightsByTime(flights) {
 function cycleTimeWindow() {
     const idx = FORWARD_HOURS_OPTIONS.indexOf(currentForwardHours);
     currentForwardHours = FORWARD_HOURS_OPTIONS[(idx + 1) % FORWARD_HOURS_OPTIONS.length];
+    // Issue #130 follow-up — cookie-persisted (owner decision), 400-day
+    // sliding like every other setting; survives the visibilitychange reload.
+    setCookie(FORWARD_HOURS_COOKIE_NAME, String(currentForwardHours), 400);
 
     updateTimeWindowButton();
 
@@ -1952,6 +1956,9 @@ function updateTimeWindowButton() {
     const btn = document.getElementById('time-window-toggle');
     if (!btn) return;
     btn.textContent = `+${currentForwardHours}h`; // Language-neutral value; copy below is translated
+    // Non-default window gets the cluster's active fill — the button's own
+    // text IS the state, the fill makes "not +2h" visible at a glance.
+    btn.classList.toggle('active', currentForwardHours !== FORWARD_HOURS_OPTIONS[0]);
     const label = translations[currentLanguage]['timeWindowTooltip'].replace('{h}', currentForwardHours);
     btn.setAttribute('aria-label', label);
     btn.setAttribute('title', label);
@@ -1988,32 +1995,21 @@ function filterFlightByNumber(flightNumber, ACode) {
 
 // The matching helpers live in src/utils/flightUtils.js (mirrored here per
 // the dual-copy rule): normalizeFlightQuery + matchFlights.
-
+// Owner decision (issue #130): digits-only quick dial. NFKC folds full-width
+// IME forms, then everything that is not a digit is stripped — letters are
+// ignored entirely ("BR178" searches "178"), the airline pin does the
+// carrier scoping.
 function normalizeFlightQuery(query) {
     return String(query ?? '')
         .normalize('NFKC')
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, '');
+        .replace(/[^0-9]/g, '');
 }
 
 function matchFlights(flights, query, todayStr) {
     const q = normalizeFlightQuery(query);
     if (!q) return [];
-    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
-
-    let prefix = null;
-    let rest = q;
-    if (q.length >= 2 && allGroupCodes.includes(q.slice(0, 2))) {
-        prefix = q.slice(0, 2);
-        rest = q.slice(2);
-    } else if (/^[A-Z]/.test(q)) {
-        const letters = q.match(/^[A-Z]+/)[0];
-        if (letters.length >= 2) return [];
-        rest = q.slice(1);
-    }
-    const queryDigits = rest.replace(/[^0-9]/g, '').replace(/^0+/, '');
-    if (!queryDigits && !prefix) return [];
-    const scope = prefix ? (Object.values(AIRLINE_GROUPS).find(g => g.includes(prefix)) ?? null) : null;
+    const queryDigits = q.replace(/^0+/, '');
+    if (!queryDigits) return []; // all zeros — nothing usable
 
     const digitsOf = (flight) => {
         const m = String(flight.FlightNo ?? '').match(/\d+/);
@@ -2022,15 +2018,11 @@ function matchFlights(flights, query, todayStr) {
 
     return flights
         .filter(flight => flight.ODate === todayStr)
-        .filter(flight => !scope || scope.includes(flight.ACode))
-        .filter(flight => !queryDigits || digitsOf(flight).startsWith(queryDigits))
+        .filter(flight => digitsOf(flight).startsWith(queryDigits))
         .sort((a, b) => {
-            const score = (flight) => {
-                const full = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
-                if (full === q) return 0;
-                if (queryDigits && digitsOf(flight) === queryDigits) return 1;
-                return 2;
-            };
+            // Exact hits (the whole flight number equals the query) float
+            // above mere prefix matches.
+            const score = (flight) => (digitsOf(flight) === queryDigits ? 0 : 1);
             const diff = score(a) - score(b);
             if (diff !== 0) return diff;
             if (a.ACode !== b.ACode) return a.ACode < b.ACode ? -1 : 1;
@@ -2080,7 +2072,7 @@ function closeSearch() {
     // mode-toggle fetch flight, flightData still holds the old mode's rows
     // and a re-render would pair them with the new mode's headers. The board
     // is already whatever it should be, loading text included.
-    ['output', 'planeTypeButtons', 'flightButtons', 'timeWindowButtons'].forEach((id) => {
+    ['output', 'planeTypeButtons', 'flightButtons'].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.hidden = false;
     });
@@ -2149,19 +2141,6 @@ function updateSearchText() {
     if (clear) clear.setAttribute('aria-label', t.clear);
 }
 
-// Muted second line in the flight cell: scheduled time, actual time only
-// when it differs (date prefix when the actual landing/departure date
-// differs from the scheduled one). RTime can be null — guarded.
-function buildSearchTimeSub(flight) {
-    let text = String(flight.OTime ?? '').slice(0, 5);
-    const rTime = flight.RTime ? String(flight.RTime).slice(0, 5) : '';
-    if (rTime && rTime !== text) {
-        const datePrefix = flight.RDate && flight.RDate !== flight.ODate ? `${flight.RDate.slice(5)} ` : '';
-        text += ` [${datePrefix}${rTime}]`;
-    }
-    return text;
-}
-
 function setStatusLine(text) {
     const status = document.getElementById('search-status');
     if (!status) return;
@@ -2181,13 +2160,13 @@ function renderSearchResults() {
     const normalized = normalizeFlightQuery(query);
     const takeover = normalized.length > 0;
 
+    // Owner feedback: the plane-type and flight-number rows collapse whenever
+    // search is open — quick dial replaces them (query not even needed), and
+    // they come back on close. The board hides only while a query is active.
+    // (The window selector lives in the drawer now — search ignores it.)
+    document.getElementById('flightButtons').hidden = true;
+    document.getElementById('planeTypeButtons').hidden = true;
     document.getElementById('output').hidden = takeover;
-    document.getElementById('planeTypeButtons').hidden = takeover;
-    document.getElementById('flightButtons').hidden = takeover;
-    // The window selector is meaningless during search (search ignores the
-    // window by design).
-    const timeWindowRow = document.getElementById('timeWindowButtons');
-    if (timeWindowRow) timeWindowRow.hidden = takeover;
 
     if (!takeover) {
         container.hidden = true;
@@ -2214,11 +2193,6 @@ function renderSearchResults() {
     let html = '';
     if (capArr.length) html += buildSearchTable(capArr, 'A', isSmall);
     if (capDep.length) html += buildSearchTable(capDep, 'D', isSmall);
-
-    const overflow = (arrMatches.length - capArr.length) + (depMatches.length - capDep.length);
-    if (overflow > 0) {
-        html += `<p class="search-note">${escapeHtml(t.search.tooMany.replace('{n}', overflow))}</p>`;
-    }
 
     // Issue #130 review F3 — distinguish "stores not fetched yet" from a
     // successful-but-empty day: length checks would show an eternal loading
@@ -2330,7 +2304,7 @@ function buildSearchTable(rows, direction, isSmall) {
 
         table += `
             <tr class="${cancelled ? 'row-cancelled' : ''}">
-                <td>${logoImg}${escapeHtml(displayFlightNo)}${chip}<span class="flight-sub">${escapeHtml(buildSearchTimeSub(flight))}</span></td>
+                <td>${logoImg}${escapeHtml(displayFlightNo)}${chip}</td>
                 <td ${isSmall ? 'class="text-center"' : ''}>${escapeHtml(cityDisplay)}</td>
                 <td class="text-center">${escapeHtml(terminalDisplay)}</td>
                 <td class="text-center">${gateCell}</td>
@@ -2492,7 +2466,7 @@ function checkCookie(name) {
 // and having a test (src/test/cookie.test.js) assert every setCookie() call site's
 // cookie-name constant is covered by it means a persisted cookie added without also
 // registering it for renewal is a failing test, not a silent 400-day-later expiry.
-const PERSISTED_COOKIE_NAMES = [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME, LANGUAGE_COOKIE_NAME];
+const PERSISTED_COOKIE_NAMES = [COOKIE_NAME, PLANE_TYPE_COOKIE_NAME, THEME_COOKIE_NAME, LANGUAGE_COOKIE_NAME, FORWARD_HOURS_COOKIE_NAME];
 
 function renewPins() {
     PERSISTED_COOKIE_NAMES.forEach(name => {
@@ -2820,6 +2794,14 @@ function initApp() {
     // detectLanguage() (which triggers the first fetch): state only, no
     // render — renderFilteredView's hook paints the results when the data
     // lands. The visibilitychange reload re-enters through this same path.
+    // Issue #130 follow-up — the window selection is cookie-persisted
+    // (owner decision, superseding #88's in-memory D3): restore before the
+    // first fetch so the boot board and the footer Range line match the
+    // cookie. Invalid values fall back to +2.
+    const savedHours = parseInt(getCookie(FORWARD_HOURS_COOKIE_NAME) ?? '', 10);
+    if (FORWARD_HOURS_OPTIONS.includes(savedHours)) {
+        currentForwardHours = savedHours;
+    }
     restoreSearchSession();
     detectLanguage();
     initTheme();
