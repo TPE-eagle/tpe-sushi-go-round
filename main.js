@@ -234,10 +234,10 @@ const translations = {
             "whichFlights": {
                 "heading": "顯示哪些班機",
                 "body": [
-                    "現在前後約兩小時：出發往後兩小時，到達從 40 分鐘前算起。",
+                    "預設顯示前後約兩小時：出發往後兩小時，到達從 40 分鐘前算起。要看得更遠，上面的 +2h 鈕可切 +4／+6／+8 小時。",
                     "確切的日期和時段寫在表格下面那行。",
                     "每次載入都重抓資料。出境過了移民官，再開一次看登機門有沒有換。",
-                    "按 🔍 輸入航班編號，可查當天任何一班，不受時段限制。"
+                    "按 🔍 輸入班號數字，可查當天任何一班，不受時段限制。"
                 ]
             },
             "install": {
@@ -257,7 +257,7 @@ const translations = {
             "remembers": {
                 "heading": "會記住的設定",
                 "body": [
-                    "航空公司、機型、主題、語言，選過就記住，每次打開重新計時。",
+                    "航空公司、機型、主題、語言、顯示時間範圍，選過就記住，每次打開重新計時。",
                     "語言沒選過就跟系統走。"
                 ]
             },
@@ -354,10 +354,10 @@ const translations = {
             "whichFlights": {
                 "heading": "Which flights show up",
                 "body": [
-                    "About two hours around now: departures two hours ahead, arrivals from 40 minutes ago.",
+                    "By default, about two hours around now: departures two hours ahead, arrivals from 40 minutes ago. The +2h button above extends it to +4/+6/+8 hours.",
                     "The exact date and range are in the line under the table.",
                     "Every load fetches fresh data. Once you're through immigration outbound, open it again and re-check your gate.",
-                    "Tap 🔍 and type a flight number to look up any flight today, outside the two-hour window."
+                    "Tap 🔍 and type a flight number's digits to look up any flight today, outside the selected window."
                 ]
             },
             "install": {
@@ -377,7 +377,7 @@ const translations = {
             "remembers": {
                 "heading": "What it remembers",
                 "body": [
-                    "Airline, aircraft type, theme and language. Set once, kept, and the clock restarts each time you open it.",
+                    "Airline, aircraft type, theme, language and the display window. Set once, kept, and the clock restarts each time you open it.",
                     "Language follows your system setting until you pick one."
                 ]
             },
@@ -474,10 +474,10 @@ const translations = {
             "whichFlights": {
                 "heading": "表示される便",
                 "body": [
-                    "今を中心に約2時間。出発は2時間先まで、到着は40分前からです。",
+                    "初期設定では今を中心に約2時間。出発は2時間先まで、到着は40分前からです。上の +2h ボタンで +4/+6/+8 時間に切り替えられます。",
                     "表の下に実際の日付と時間帯が出ます。",
                     "開くたびにデータを取り直します。出発時は出国審査を抜けたら、もう一度開いてゲートを確認してください。",
-                    "🔍 をタップして便名を入力すると、時間帯に関係なく当日のどの便でも調べられます。"
+                    "🔍 をタップして便名の数字を入力すると、時間帯に関係なく当日のどの便でも調べられます。"
                 ]
             },
             "install": {
@@ -497,7 +497,7 @@ const translations = {
             "remembers": {
                 "heading": "覚えている設定",
                 "body": [
-                    "航空会社・機種・テーマ・言語は一度選べばそのまま。期限は開くたびにリセットされます。",
+                    "航空会社・機種・テーマ・言語・表示時間幅は一度選べばそのまま。期限は開くたびにリセットされます。",
                     "言語は選ぶまでシステム設定に従います。"
                 ]
             },
@@ -528,23 +528,31 @@ function renderApp() {
         <div id="refresh-icon"></div>
         <div id="offline-banner" class="offline-banner" hidden></div>
         <div class="container position-relative">
-            <div class="theme-buttons-container">
-                <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
-                <div id="search-toggle" role="button" class="flight-toggle-btn" aria-label="Search flights" tabindex="0">
-                    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
-                        <line x1="12.8" y1="12.8" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
-                    </svg>
+            <!-- Issue #130 follow-up — header-row: at ≤768px the title and the
+                 cluster share ONE flex row (buttons right, title left), so the
+                 cluster no longer pushes the page down. Desktop keeps the
+                 absolute top-right overlay; this wrapper stays static so the
+                 cluster's absolute position still resolves against
+                 .container.position-relative. -->
+            <div class="header-row">
+                <div class="theme-buttons-container">
+                    <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
+                    <div id="search-toggle" role="button" class="flight-toggle-btn" aria-label="Search flights" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                            <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+                            <line x1="12.8" y1="12.8" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                        </svg>
+                    </div>
+                    <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                            <rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor"></rect>
+                            <rect x="3" y="9" width="14" height="2" rx="1" fill="currentColor"></rect>
+                            <rect x="3" y="14" width="14" height="2" rx="1" fill="currentColor"></rect>
+                        </svg>
+                    </div>
                 </div>
-                <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">
-                    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor"></rect>
-                        <rect x="3" y="9" width="14" height="2" rx="1" fill="currentColor"></rect>
-                        <rect x="3" y="14" width="14" height="2" rx="1" fill="currentColor"></rect>
-                    </svg>
-                </div>
+                <h1 id="title" class="text-uppercase fw-bold"></h1>
             </div>
-            <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="search-bar" class="search-bar" hidden>
                 <form id="search-form" role="search" class="search-form">
                     <label for="search-input" class="visually-hidden search-label"></label>
