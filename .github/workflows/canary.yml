@@ -15,6 +15,10 @@ on:
         type: choice
         options: [none, availability, contract]
         default: none
+      dry_run:
+        description: 'Dry run: probe the live API and log what would happen, but open/close nothing'
+        type: boolean
+        default: false
   pull_request:                   # PR: prove the stealth browser still clears Cloudflare
     paths:
       - 'canary/**'
@@ -142,5 +146,13 @@ jobs:
         run: node canary/api-canary.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_CANARY_WEBHOOK }}
+          # Dry run (#118): CANARY_DRY_RUN silences the open/close paths in the script, but that
+          # guard does not cover every Discord exit — a crash mid-run still alerts from
+          # run().catch. Blanking the webhook here as well means a dry run is provably incapable
+          # of paging the fleet, whatever the script does (sendDiscordAlert no-ops on an empty
+          # URL and says so in the log). Deliberately NOT auto-enabling this on canary/** PRs:
+          # challenge-probe already gives every PR a real-data check with zero side effects, and
+          # a second browser probe per PR spends shared-runner-IP reputation for nothing.
+          DISCORD_WEBHOOK_URL: ${{ github.event.inputs.dry_run != 'true' && secrets.DISCORD_CANARY_WEBHOOK || '' }}
           CANARY_SIMULATE: ${{ github.event.inputs.simulate }}
+          CANARY_DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
