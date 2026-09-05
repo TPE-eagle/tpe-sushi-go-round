@@ -62,7 +62,7 @@ jobs:
           # still wrong, and #81's rule stands without the starvation consequence.
           key: ${{ runner.os }}-playwright-chromium-${{ steps.pw-version.outputs.VERSION }}
       - name: "Install Playwright chromium"
-        uses: nick-fields/retry@v4   # rides out the flaky microsoft-packages apt mirror
+        uses: nick-fields/retry@v4   # rides out a slow Playwright CDN download (#114)
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -78,10 +78,20 @@ jobs:
           # green run is enough to produce. Remoter here than in ci.yml — #82 gave these jobs their
           # own engine-scoped key — so treat this as simplification plus defence in depth.
           #
-          # No extra cost over the branch it replaced: that already ran apt on every hit, and
-          # `playwright install` downloads only what is absent, so on a complete warm cache the added
-          # work is a registry check. `--with-deps` keeps the apt stage, which the cache never covers.
-          command: npx playwright install --with-deps chromium
+          # No extra cost over the branch it replaced: on a complete warm cache the added work is
+          # a registry check.
+          #
+          # No `--with-deps` (#114). It used to keep an apt stage here, and that stage is why run 384
+          # lost an hour of coverage: apt resolved to 9 font packages on a crawling Ubuntu mirror, the
+          # 5-minute timeout fired, and the kill was denied (`kill EPERM`) because the apt child is
+          # root-owned while this action runs as `runner` — the uncaught throw crashed the step on
+          # attempt 1, so `max_attempts: 3` never retried. On current ubuntu-latest every chromium
+          # shared library is preinstalled; fonts were the ONLY thing `--with-deps` added. Dropping it
+          # deletes that failure class outright, and what remains under the retry — the user-owned
+          # browser download — is a process the timeout CAN kill, so `max_attempts` is real now.
+          # Cloudflare's challenge does not need those fonts: challenge-probe ran green on the PR
+          # that made this change, from the same runner image the hourly canary uses.
+          command: npx playwright install chromium
       - name: "Probe: stealth browser vs Cloudflare (from this US runner)"
         run: node canary/challenge-probe.mjs
 
@@ -118,7 +128,7 @@ jobs:
           # still wrong, and #81's rule stands without the starvation consequence.
           key: ${{ runner.os }}-playwright-chromium-${{ steps.pw-version.outputs.VERSION }}
       - name: "Install Playwright chromium"
-        uses: nick-fields/retry@v4
+        uses: nick-fields/retry@v4   # rides out a slow Playwright CDN download (#114)
         with:
           timeout_minutes: 5
           max_attempts: 3
@@ -134,10 +144,20 @@ jobs:
           # green run is enough to produce. Remoter here than in ci.yml — #82 gave these jobs their
           # own engine-scoped key — so treat this as simplification plus defence in depth.
           #
-          # No extra cost over the branch it replaced: that already ran apt on every hit, and
-          # `playwright install` downloads only what is absent, so on a complete warm cache the added
-          # work is a registry check. `--with-deps` keeps the apt stage, which the cache never covers.
-          command: npx playwright install --with-deps chromium
+          # No extra cost over the branch it replaced: on a complete warm cache the added work is
+          # a registry check.
+          #
+          # No `--with-deps` (#114). It used to keep an apt stage here, and that stage is why run 384
+          # lost an hour of coverage: apt resolved to 9 font packages on a crawling Ubuntu mirror, the
+          # 5-minute timeout fired, and the kill was denied (`kill EPERM`) because the apt child is
+          # root-owned while this action runs as `runner` — the uncaught throw crashed the step on
+          # attempt 1, so `max_attempts: 3` never retried. On current ubuntu-latest every chromium
+          # shared library is preinstalled; fonts were the ONLY thing `--with-deps` added. Dropping it
+          # deletes that failure class outright, and what remains under the retry — the user-owned
+          # browser download — is a process the timeout CAN kill, so `max_attempts` is real now.
+          # Cloudflare's challenge does not need those fonts: challenge-probe ran green on the PR
+          # that made this change, from the same runner image the hourly canary uses.
+          command: npx playwright install chromium
       - name: "Run API canary"
         run: node canary/api-canary.mjs
         env:
