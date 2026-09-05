@@ -64,6 +64,20 @@ let currentPlaneType = null;
 let initialPinsRestored = false; // Guards the one-shot cookie restore in processFetchedData
 let currentTheme = 'light'; // Default to light mode
 let currentFlightMode = 'A'; // 'A' for Arrival, 'D' for Departure
+// Issue #88 — the selectable board window: how many hours past `now` the
+// board reaches. Cycled +2 → +4 → +6 → +8 → +2 by the window selector
+// button. In-memory only, deliberately NOT persisted (D3: reload resets to
+// +2; no fifth cookie — cookie policy is issue #70's). Preserved across
+// mode/language switches and pull-to-refresh, like the plane type pin's
+// in-session behaviour.
+let currentForwardHours = 2;
+// Issue #88 — airline-supported, pre-time-filter copy of the last fetched
+// day payload. filterFlightsByTime() narrows `flightData` to the window at
+// fetch time; cycling the window re-runs that pure filter on this copy
+// instead of issuing a new fetch (zero-new-fetch invariant).
+let allSupportedFlights = [];
+// Issue #88 — cycle order of the window selector button.
+const FORWARD_HOURS_OPTIONS = [2, 4, 6, 8];
 
 // Issue #33 — same-day return-leg pairing (Departures mode only).
 // null = not fetched yet for the current fetchData() cycle (5th column
@@ -132,6 +146,7 @@ const translations = {
         "noMatch": "此條件下無符合航班",
         "clearAircraftType": "清除機型",
         "airlineNoFlights": "時段內 {acode} 無航班",
+        "timeWindowTooltip": "顯示接下來 {h} 小時內的航班",
         "offlineBanner": "目前離線，顯示 {min} 分鐘前的快取資料",
         "offlineFresh": "目前離線",
         "offlineNoCache": "目前離線，且無可用快取。請連上網路後重試。",
@@ -232,6 +247,7 @@ const translations = {
         "noMatch": "No flights match this filter",
         "clearAircraftType": "Clear aircraft type",
         "airlineNoFlights": "No {acode} flights in this time window",
+        "timeWindowTooltip": "Show flights for the next {h} hours",
         "offlineBanner": "Offline — showing data from {min} min ago",
         "offlineFresh": "Offline",
         "offlineNoCache": "Offline with no cached data. Please reconnect and retry.",
@@ -332,6 +348,7 @@ const translations = {
         "noMatch": "該当する便はありません",
         "clearAircraftType": "機種をクリア",
         "airlineNoFlights": "この時間帯に {acode} 便はありません",
+        "timeWindowTooltip": "今後 {h} 時間以内の便を表示",
         "offlineBanner": "オフライン中 — {min} 分前のキャッシュを表示",
         "offlineFresh": "オフライン中",
         "offlineNoCache": "オフラインで、利用可能なキャッシュもありません。再接続してお試しください。",
@@ -438,6 +455,12 @@ function renderApp() {
             <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="airlineButtons" class="d-flex justify-content-center mb-2"></div>
             <div id="planeTypeButtons" class="d-flex justify-content-center flex-wrap mb-2"></div>
+            <!-- Issue #88 — time-window selector: cycles +2/+4/+6/+8h. Label is a
+                 language-neutral `+Nh`; aria-label/title are translated in
+                 updateTimeWindowButton(). -->
+            <div id="timeWindowButtons" class="d-flex justify-content-center mb-2">
+                <button type="button" id="time-window-toggle" class="btn btn-sm btn-outline-secondary btn-no-hover m-1">+2h</button>
+            </div>
             <div id="flightButtons" class="d-flex justify-content-center flex-wrap"></div>
             <div id="output" class="container"></div>
             <div id="footer">
@@ -497,6 +520,7 @@ function updateLanguageText() {
     updateMetaTag('meta[name="twitter:title"]', title);
     updateMetaTag('meta[name="twitter:description"]', description);
     document.documentElement.lang = HTML_LANG_TAG[currentLanguage] || HTML_LANG_TAG.en;
+    updateTimeWindowButton(); // Issue #88 — re-translate the selector's aria-label/title
 }
 
 function resetAnimation(element) {
@@ -837,19 +861,23 @@ function formatToUTC8_HHMM(dateObj) {
     return `${hours}:${minutes}`;
 }
 
-// Centralized business rule for time window config
-function getTimeWindowConfig(mode) {
+// Centralized business rule for time window config.
+// Issue #88: `forwardHours` replaces the old fixed `durationMinutes: 120`
+// as the single source of truth for the window's forward reach (120
+// minutes == the historical +2h). Mirrors src/utils/flightUtils.js — keep
+// the two copies in sync.
+function getTimeWindowConfig(mode, forwardHours = 2) {
     if (mode === 'A') { // Arrival: User's original requirement
         return {
             roundingStepMinutes: 10,      // Round to nearest 10 minutes
-            offsetFromRoundedMinutes: -40,  // Window starts 40 minutes BEFORE rounded time
-            durationMinutes: 120            // Window is 120 minutes long
+            offsetFromRoundedMinutes: -40,  // Window starts 40 minutes BEFORE rounded time (backward edge never scales)
+            forwardHours                    // Window reaches `forwardHours` past its start (forward edge only)
         };
     } else { // Departure (D): Matches current behavior post-revert
         return {
             roundingStepMinutes: 10,      // Round to nearest 10 minutes
             offsetFromRoundedMinutes: 0,    // Window starts AT the rounded time
-            durationMinutes: 120            // Window is 120 minutes long
+            forwardHours
         };
     }
 }
@@ -863,19 +891,39 @@ function roundDownToStep(date, stepMinutes) {
     return rounded;
 }
 
-// Generic time window calculator
+// Issue #88 — last millisecond (23:59:59.999) of the UTC+8 calendar day
+// `now` falls in, as an absolute instant. Taipei is a fixed +8 offset with
+// no DST, so Taipei midnight is always UTC 16:00.
+// Mirrors src/utils/flightUtils.js — keep the two copies in sync.
+function endOfUTC8Day(now = new Date()) {
+    const utc8 = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    return new Date(Date.UTC(
+        utc8.getUTCFullYear(), utc8.getUTCMonth(), utc8.getUTCDate(),
+        15, 59, 59, 999
+    ));
+}
+
+// Generic time window calculator.
+// Issue #88: the forward edge is `forwardHours` past the window start,
+// truncated so the window never reaches past the end of `initialNow`'s own
+// UTC+8 day. The anchor is the day of `now`, not of `windowStart`: the
+// arrivals −40 min backward component legally places windowStart on the
+// previous day around Taipei midnight — truncation only ever bites
+// windowEnd, never windowStart. Mirrors src/utils/flightUtils.js.
 function getTimeWindow(config, initialNow = new Date()) { // initialNow is local by default
     const roundedLocalNow = roundDownToStep(initialNow, config.roundingStepMinutes); // Rounding local time
     
     const windowStart = new Date(roundedLocalNow.getTime() + (config.offsetFromRoundedMinutes * 60 * 1000)); // windowStart is local
-    const windowEnd = new Date(windowStart.getTime() + (config.durationMinutes * 60 * 1000)); // windowEnd is local
+    const windowEnd = new Date(windowStart.getTime() + (config.forwardHours * 60 * 60 * 1000)); // windowEnd is local
     windowEnd.setSeconds(59, 999); // Make the window inclusive of the last minute
+    const endOfDay = endOfUTC8Day(initialNow); // Issue #88 — truncate at the end of now's UTC+8 day
+    if (windowEnd > endOfDay) windowEnd.setTime(endOfDay.getTime());
     return { windowStart, windowEnd };
 }
 
 function updateApiParams() {
     const dateStr = getUTC8Date(); // Date in YYYY/MM/DD (UTC+8)
-    const config = getTimeWindowConfig(currentFlightMode);
+    const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
     const { windowStart, windowEnd } = getTimeWindow(config);
     const startTimeStr = formatToUTC8_HHMM(windowStart);
     const endTimeStr = formatToUTC8_HHMM(windowEnd);
@@ -951,7 +999,7 @@ function fetchData() {
     // postData.OTimeClose = null; (already set above)
 
     // Update UI display for the current time window (for display purposes only)
-    const config = getTimeWindowConfig(currentFlightMode);
+    const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
     const { windowStart, windowEnd } = getTimeWindow(config); 
     const dateStr = getUTC8Date(); 
     const startTimeStr = formatToUTC8_HHMM(windowStart);
@@ -1162,6 +1210,14 @@ function hideOfflineBanner() {
     banner.innerText = '';
 }
 
+// Issue #88 — shared test-hostname guard: time filtering is skipped on
+// localhost/127.0.0.1 so e2e mock data renders deterministically. The
+// window-cycle button honours the same guard (clickable in dev: board
+// untouched, caption follows the selection).
+function isTestHostname() {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
+
 function processFetchedData(data) {
     data.sort((a, b) => {
         if (a.ACode < b.ACode) return -1;
@@ -1177,8 +1233,13 @@ function processFetchedData(data) {
         (!flight.Memo.toLowerCase().includes("取消") && !flight.Memo.toLowerCase().includes("cancelled"))
     );
 
+    // Issue #88 — keep the pre-time-filter copy for window re-filtering:
+    // cycling the selector re-runs the pure filter on this array instead of
+    // fetching again.
+    allSupportedFlights = flightData;
+
     // Skip time filtering in test environment for reliable E2E tests
-    if (!(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    if (!isTestHostname()) {
         flightData = filterFlightsByTime(flightData);
     }
     generateAirlineLinks(flightData);
@@ -1638,7 +1699,7 @@ function findReturnLeg(departure, arrivals) {
  */
 function filterFlightsByTime(flights) {
     const now = new Date(); // Current local time, will be converted to Taipei time in getTimeWindow
-    const config = getTimeWindowConfig(currentFlightMode);
+    const config = getTimeWindowConfig(currentFlightMode, currentForwardHours); // Issue #88 — reads the selector global
     const { windowStart, windowEnd } = getTimeWindow(config, now);
 
     return flights.filter(flight => {
@@ -1655,6 +1716,33 @@ function filterFlightsByTime(flights) {
 
         return isODateTimeInRange || isRDateTimeInRange;
     });
+}
+
+// Issue #88 — the window selector button: shows the current forward reach
+// and cycles +2 → +4 → +6 → +8 → +2 on click. Pure client-side: re-filters
+// the already-fetched full-day payload (allSupportedFlights), never issues
+// a new fetch. On the test hostname the board skips time filtering, so only
+// the caption follows the selection.
+function cycleTimeWindow() {
+    const idx = FORWARD_HOURS_OPTIONS.indexOf(currentForwardHours);
+    currentForwardHours = FORWARD_HOURS_OPTIONS[(idx + 1) % FORWARD_HOURS_OPTIONS.length];
+
+    updateTimeWindowButton();
+
+    if (!isTestHostname()) {
+        flightData = filterFlightsByTime(allSupportedFlights);
+    }
+    updateApiParams();
+    renderFilteredView();
+}
+
+function updateTimeWindowButton() {
+    const btn = document.getElementById('time-window-toggle');
+    if (!btn) return;
+    btn.textContent = `+${currentForwardHours}h`; // Language-neutral value; copy below is translated
+    const label = translations[currentLanguage]['timeWindowTooltip'].replace('{h}', currentForwardHours);
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
 }
 
 function generateFlightNumberButtons(flights) {
@@ -1856,6 +1944,9 @@ function setupEventListeners() {
     // comment on updateDrawerText() for why (a second <table> in the DOM
     // at all times broke unrelated e2e tests).
     document.getElementById('about-drawer')?.addEventListener('show.bs.offcanvas', renderDrawerBody);
+
+    // Issue #88 — time-window selector
+    document.getElementById('time-window-toggle')?.addEventListener('click', cycleTimeWindow);
 
     window.addEventListener('resize', () => {
         if (currentFilteredFlights.length > 0 && currentACode) {

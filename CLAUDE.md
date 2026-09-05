@@ -54,6 +54,8 @@ let currentACode = null;          // null = all airlines
 let currentPlaneType = null;      // null = all families; family strings like 'A330', 'B777'
 let currentTheme = 'light';       // 'light' | 'dark'
 let currentFlightMode = 'A';      // 'A' (Arrival) | 'D' (Departure)
+let currentForwardHours = 2;      // Issue #88: board window reach, cycled +2/+4/+6/+8; in-memory only, reload resets to +2
+let allSupportedFlights = [];     // Issue #88: airline-supported, pre-time-filter copy of the day payload (for window re-filtering)
 let returnLegArrivals = null;     // Departures-only (issue #33): null = pairing fetch pending, array = resolved
 let returnLegFetchToken = 0;      // Bumped every fetchData() call; guards returnLegArrivals against a stale resolve
 ```
@@ -68,8 +70,11 @@ let returnLegFetchToken = 0;      // Bumped every fetchData() call; guards retur
 
 ## Time Window
 
-- **Arrival (A):** round current time down to 10-min interval, offset −40 min, 120-min duration.
-- **Departure (D):** round down to 10-min interval, offset 0, 120-min duration.
+- **Arrival (A):** round current time down to 10-min interval, offset −40 min, then `forwardHours` past the window start (default +2h ⇒ the historical `now−40 → +80` window).
+- **Departure (D):** round down to 10-min interval, offset 0, `forwardHours` forward (default +2h ⇒ `now → +120`).
+- **Window selector (issue #88):** a button between the plane-type row and the flight-number row cycles `+2h → +4h → +6h → +8h → +2h`. Forward edge only — the arrivals −40 min backward component never scales with the cycle. `currentForwardHours` is in-memory only: preserved across mode/language switches and pull-to-refresh (like the plane type pin's in-session behaviour), reset to +2 on reload. **No cookie/localStorage** — cookie policy is issue #70's. Cycling re-filters the already-fetched day payload (`allSupportedFlights`, the pre-time-filter copy kept in `processFetchedData`) — zero new fetch. `generateFlightNumberButtons()` renders only under an airline pin; with no pin the row is cleared (D2).
+- **Midnight truncation (issue #88):** `windowEnd` is clamped to 23:59:59.999 of `now`'s own UTC+8 calendar day — the day of `now`, not of `windowStart` (the arrivals backward component legally places `windowStart` on the previous day around Taipei midnight; truncation only ever bites the end). No second-day fetch, ever: truncation is by design so tomorrow's payload (2.7% `Gate` population, marketing-carrier duplicate rows — #67) can never enter the board, and `findReturnLeg()`'s same-day pairing is untouched.
+- The window math lives twice on purpose: pure + unit-tested in `src/utils/flightUtils.js` (`filterFlightsByTime(flights, mode, now, forwardHours = 2)` — the default keeps the 3-argument canary call at +2) and mirrored inline in `main.js` (reads the `currentForwardHours` global). Keep the two copies in sync.
 - A flight is shown when **either** `ODateTime` or `RDateTime` falls in the window.
 - All times are UTC+8.
 
