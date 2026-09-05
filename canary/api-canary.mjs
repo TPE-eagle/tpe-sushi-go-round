@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Hourly API availability + contract canary for the Taoyuan Airport flight API.
+// API availability + contract canary for the Taoyuan Airport flight API.
+// Cadence: hourly cron, ~50% delivered in practice (best-effort) — see #116 before
+// sizing anything by hours.
 //
 // State model: healthy / down-availability (non-200) / down-contract (shape drift) /
 // canary-blocked (Cloudflare served a challenge to the canary itself — a canary problem,

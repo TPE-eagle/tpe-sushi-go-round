@@ -7,7 +7,9 @@ name: "🐤 API Canary"
 # Tailscale, no infra. See canary/probe.mjs.
 on:
   schedule:
-    - cron: '0 * * * *'          # hourly availability + contract check
+    - cron: '0 * * * *'          # hourly availability + contract check — ENQUEUED hourly;
+                                 # GitHub delivers ~50% in practice (median +33 min late), #116.
+                                 # Size samples by counting RUNS, never by multiplying hours.
   workflow_dispatch:              # manual run
     inputs:
       simulate:

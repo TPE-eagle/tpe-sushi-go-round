@@ -1,0 +1,35 @@
+name: "⏱️ Schedule cadence probe"
+
+# Diagnostic control for #116: the hourly canary delivers ~50% of its scheduled runs
+# while every daily cron in this GitHub account delivers ~100% — including two on
+# `0 0 * * *`, the most contended slot on the platform. In that data, FREQUENCY
+# (hourly vs daily) and REPO OWNERSHIP (org vs personal) are fully confounded: the
+# only hourly schedule with history is the canary, and the only org-owned repo with
+# history is this one.
+#
+# This workflow is the missing control: a DAILY cron in THIS org-owned repo.
+#   - If it delivers ~100% over a few weeks, frequency is the driver → switching the
+#     canary to `0 */2 * * *` becomes justified: same effective sample rate, but a
+#     cadence that is honest and predictable (#116's recommendation).
+#   - If it drops too, the org repo is the variable and no cron expression fixes it —
+#     the only remedy is external triggering, which #116 recommends against for a
+#     hobby-site canary.
+#
+# The run object itself is the data point; the step does nothing. Delete this file
+# once #116's question is answered.
+
+on:
+  schedule:
+    - cron: '23 5 * * *'   # daily; minute/hour chosen off-peak — only delivery matters, not latency
+
+permissions: {}            # no tokens, no secrets — this exists only to be counted
+
+concurrency:
+  group: schedule-probe
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "scheduled run present — counted for #116"
