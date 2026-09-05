@@ -11,8 +11,10 @@ A mobile-first web app for Taoyuan International Airport flight information. Bui
   <img src="docs/screenshots/arrivals.png" alt="Arrivals — gate, baggage carousel & aircraft" width="270" />
   &nbsp;&nbsp;
   <img src="docs/screenshots/departures.png" alt="Departures — gate, same-day return-leg gate & aircraft" width="270" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/flight-search.png" alt="Quick-dial search — type a flight number's digits and the board shows its gate or carousel, any flight today" width="270" />
 </p>
-<p align="center"><sub>Arrivals &amp; departures at a glance — pin your airline, then filter by aircraft family. Traditional Chinese / English / 日本語, dark &amp; light.</sub></p>
+<p align="center"><sub>Arrivals &amp; departures at a glance — pin your airline, filter by aircraft family, or quick-dial any flight number with 🔍. Traditional Chinese / English / 日本語, dark &amp; light.</sub></p>
 
 <p align="center">
   <img src="docs/screenshots/return-gate-light.png" alt="Departures board, 375 px, light theme — return-gate column showing the same-day return leg's arrival gate" width="200" />
@@ -26,7 +28,8 @@ A mobile-first web app for Taoyuan International Airport flight information. Bui
 ## Features
 
 - Real-time arrival / departure data from the Taoyuan Airport API
-- 2-hour time window around the current time, filtered client-side
+- **Display window** — 2 hours around the current time by default, extendable to +4 / +6 / +8h from the drawer; persisted, filtered client-side
+- **Quick-dial search** — tap 🔍, type a flight number's digits, and the board shows that flight's gate / carousel for any flight today (window not applied)
 - Airlines: BR (EVA Air + B7 UNI Air), CI (China Airlines + AE Mandarin), JX (STARLUX)
 - **Aircraft family filter** — pilots pin an airline then narrow to A321 / A330 / A350 / B777 / B787 etc. (family level, dynamic per airline). The pin sticks across sessions; it is only cleared when the pilot clears it themselves (or switches airline).
 - Traditional Chinese / English / Japanese with auto-detection
