@@ -226,6 +226,46 @@ test.describe('Toggle cluster layout (issue #66)', () => {
   }
 })
 
+// Issue #130 follow-up — header-row: at ≤768px the cluster and the title
+// share ONE flex row (buttons right, title left), so the cluster stops
+// pushing the page down. These guards pin the two properties that make the
+// row safe: same line (no vertical offset) and no horizontal overlap, at
+// both mobile widths the brief covers, plus the cluster fitting the
+// viewport at all.
+test.describe('mobile header-row (issue #130 follow-up)', () => {
+  const MOBILE_VIEWPORTS = [
+    { width: 375, height: 812 },
+    { width: 430, height: 932 },
+  ]
+
+  for (const viewport of MOBILE_VIEWPORTS) {
+    test(`title and cluster share one line without overlap — ${viewport.width}px`, async ({ page }) => {
+      await blockGoogleAnalytics(page)
+      await setupMockApiRoute(page)
+      await page.setViewportSize(viewport)
+      await page.goto('/')
+      await waitForApiAndTable(page)
+
+      const titleBox = await page.locator('#title').boundingBox()
+      const clusterBox = await page.locator('.theme-buttons-container').boundingBox()
+      expect(titleBox).not.toBeNull()
+      expect(clusterBox).not.toBeNull()
+
+      // Same line: vertical centers within a half-button of each other.
+      const titleCenter = titleBox.y + titleBox.height / 2
+      const clusterCenter = clusterBox.y + clusterBox.height / 2
+      expect(Math.abs(titleCenter - clusterCenter)).toBeLessThanOrEqual(19)
+
+      // No horizontal overlap: the title's ink stops before the cluster.
+      expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(clusterBox.x + 2)
+
+      // The whole cluster fits the viewport.
+      expect(clusterBox.x).toBeGreaterThanOrEqual(0)
+      expect(clusterBox.x + clusterBox.width).toBeLessThanOrEqual(viewport.width)
+    })
+  }
+})
+
 // Issue #98: the reduced-motion block only covered the About drawer's transition; #title's
 // 2s dropShadowAnimation (letter-spacing sweep + 3D rotation) ignored the setting entirely,
 // which is exactly the vestibular-trigger category prefers-reduced-motion exists for. This

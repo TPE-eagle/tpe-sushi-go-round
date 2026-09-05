@@ -528,23 +528,31 @@ function renderApp() {
         <div id="refresh-icon"></div>
         <div id="offline-banner" class="offline-banner" hidden></div>
         <div class="container position-relative">
-            <div class="theme-buttons-container">
-                <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
-                <div id="search-toggle" role="button" class="flight-toggle-btn" aria-label="Search flights" tabindex="0">
-                    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
-                        <line x1="12.8" y1="12.8" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
-                    </svg>
+            <!-- Issue #130 follow-up — header-row: at ≤768px the title and the
+                 cluster share ONE flex row (buttons right, title left), so the
+                 cluster no longer pushes the page down. Desktop keeps the
+                 absolute top-right overlay; this wrapper stays static so the
+                 cluster's absolute position still resolves against
+                 .container.position-relative. -->
+            <div class="header-row">
+                <div class="theme-buttons-container">
+                    <div id="flight-mode-toggle" role="button" class="flight-toggle-btn" aria-label="Toggle flight mode" tabindex="0">🛬</div>
+                    <div id="search-toggle" role="button" class="flight-toggle-btn" aria-label="Search flights" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                            <circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"></circle>
+                            <line x1="12.8" y1="12.8" x2="18" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+                        </svg>
+                    </div>
+                    <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">
+                        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                            <rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor"></rect>
+                            <rect x="3" y="9" width="14" height="2" rx="1" fill="currentColor"></rect>
+                            <rect x="3" y="14" width="14" height="2" rx="1" fill="currentColor"></rect>
+                        </svg>
+                    </div>
                 </div>
-                <div id="about-drawer-toggle" role="button" class="flight-toggle-btn" aria-label="About" data-bs-toggle="offcanvas" data-bs-target="#about-drawer" aria-controls="about-drawer" tabindex="0">
-                    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <rect x="3" y="4" width="14" height="2" rx="1" fill="currentColor"></rect>
-                        <rect x="3" y="9" width="14" height="2" rx="1" fill="currentColor"></rect>
-                        <rect x="3" y="14" width="14" height="2" rx="1" fill="currentColor"></rect>
-                    </svg>
-                </div>
+                <h1 id="title" class="text-uppercase fw-bold"></h1>
             </div>
-            <h1 id="title" class="text-center text-uppercase fw-bold my-4"></h1>
             <div id="search-bar" class="search-bar" hidden>
                 <form id="search-form" role="search" class="search-form">
                     <label for="search-input" class="visually-hidden search-label"></label>

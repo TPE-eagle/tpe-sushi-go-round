@@ -89,6 +89,10 @@ body {
   padding: 8px;
   margin: 12px 0;
   font-size: 2rem;
+  /* Owns what the removed text-center/my-4 Bootstrap utilities used to do
+   * (they carry !important and would beat any #title rule — issue #130
+   * follow-up header-row). */
+  text-align: center;
   position: relative;
   z-index: 1;
   text-shadow: 3px 3px 6px var(--shadow-dark);
@@ -889,12 +893,35 @@ body {
    * `top: 10px; right: 10px` are inert under `static` but apply under
    * `relative` — left as-is, the cluster would visibly shift 10px
    * left/down from its in-flow position instead of staying put. */
+  /* Issue #130 follow-up — header-row: the cluster and the title share one
+   * flex row, so the cluster stops pushing the page down. row-reverse
+   * because the cluster precedes the h1 in DOM (buttons right, title left).
+   * Flex siblings cannot overlap by construction — the same guarantee class
+   * as the original #66 in-flow fix. */
+  .header-row {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 8px;
+  }
+
   .theme-buttons-container {
     position: relative;
     top: auto;
     right: auto;
     justify-content: flex-end;
-    margin: 0 0 4px;
+    margin: 0;
+  }
+
+  .header-row #title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-align: left;
+    margin: 0;
+    padding: 4px;
+    font-size: 1.25rem;
   }
 
   .theme-toggle-btn {
