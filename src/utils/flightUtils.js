@@ -35,6 +35,19 @@ export function getUTC8Date() {
 }
 
 /**
+ * Issue #142 — owner decision: 16:00 UTC+8 opens the next-day search
+ * window (+8h just crosses midnight, and the morning flights a night search
+ * targets are unreachable in today's payload). Pure so the boundary is
+ * unit-testable; mirrored in main.js per the dual-copy rule (keep in sync).
+ * @param {Date} now - Current instant.
+ * @returns {boolean} True when the UTC+8 wall-clock hour is 16:00 or later.
+ */
+export function shouldFetchNextDay(now) {
+    const utc8Time = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    return utc8Time.getUTCHours() >= 16;
+}
+
+/**
  * Format Date object to UTC+8 HH:mm string
  */
 export function formatToUTC8_HHMM(dateObj) {

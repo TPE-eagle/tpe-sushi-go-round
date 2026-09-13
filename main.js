@@ -151,6 +151,21 @@ let swrStatusState = null;
 // SWR_STALE_DISMISS_MS). Cancelled on every new state so a refresh or a
 // language switch re-arms it instead of stacking timers.
 let swrStatusDismissTimer = null;
+// Issue #142 — lazy next-day search store. From 16:00 UTC+8 (owner decision:
+// +8h just crosses midnight, and the morning flights a night search targets
+// are unreachable in today's payload) a search ALSO fetches tomorrow's
+// full-day payload for BOTH directions. Memory only — never localStorage,
+// so the LRU-5 offline cache cannot evict today's offline fallback.
+// null = that direction's store hasn't been fetched yet. Board invariants
+// untouched: next-day rows never enter flightData / allSupportedFlights —
+// renderSearchResults() is the only reader.
+let nextDayByState = { date: null, A: null, D: null };
+// Same supersession pattern as searchDepFetchToken.
+let nextDayFetchToken = 0;
+// Set when the next-day fetch fails (offline with no cache, or the request
+// errored): search stays today-only, no auto-retry (the next fetchData()
+// cycle naturally retries while the gate is open). Reset on each attempt.
+let nextDayUnavailable = false;
 // sessionStorage key for { open, q } — survives the visibilitychange reload;
 // per-tab and session-scoped, deliberately NOT a cookie (issue #130 D3).
 const SEARCH_SESSION_KEY = 'tpe_flight_search';
@@ -228,11 +243,13 @@ const translations = {
             "countOne": "找到 {n} 班",
             "countBoth": "到達 {a} 班、出發 {d} 班",
             "noMatch": "今天（{date}）沒有 {query} 這班。只查得到當天航班。",
+            "noMatchWithTomorrow": "今明兩日皆無此航班。",
             "pinHint": "已釘選 {aname}，{query} 不在其中",
             "showAllAirlines": "顯示全部航空公司",
             "departuresPending": "出發資料載入中…",
             "departuresUnavailable": "出發資料暫時無法取得",
             "cancelled": "已取消",
+            "tomorrowChip": "明日",
             "gateTba": "未定",
             "headingArrivals": "到達",
             "headingDepartures": "出發"
@@ -350,11 +367,13 @@ const translations = {
             "countOne": "{n} flight(s) found",
             "countBoth": "{a} arrival(s), {d} departure(s)",
             "noMatch": "No {query} today ({date}). Search covers today's flights only.",
+            "noMatchWithTomorrow": "No match today or tomorrow.",
             "pinHint": "{aname} is pinned, {query} is another airline",
             "showAllAirlines": "Show all airlines",
             "departuresPending": "Loading departures…",
             "departuresUnavailable": "Departures unavailable right now",
             "cancelled": "Cancelled",
+            "tomorrowChip": "Tomorrow",
             "gateTba": "TBA",
             "headingArrivals": "Arrivals",
             "headingDepartures": "Departures"
@@ -472,11 +491,13 @@ const translations = {
             "countOne": "{n} 便見つかりました",
             "countBoth": "到着 {a} 便・出発 {d} 便",
             "noMatch": "{query} は本日（{date}）の便にありません。検索できるのは当日の便だけです。",
+            "noMatchWithTomorrow": "本日・明日ともに該当なし。",
             "pinHint": "{aname} を固定中。{query} は別の航空会社です",
             "showAllAirlines": "全航空会社を表示",
             "departuresPending": "出発便を読み込み中…",
             "departuresUnavailable": "出発便のデータを取得できません",
             "cancelled": "欠航",
+            "tomorrowChip": "明日",
             "gateTba": "未定",
             "headingArrivals": "到着",
             "headingDepartures": "出発"
@@ -987,6 +1008,20 @@ function getUTC8Date() {
     return utc8Time.toISOString().split('T')[0].replace(/-/g, '/');
 }
 
+// UTC+8 date string `days` from now (getUTC8Date() === getUTC8DatePlus(0)).
+function getUTC8DatePlus(days) {
+    const utc8Time = new Date(Date.now() + 8 * 60 * 60 * 1000 + days * 24 * 60 * 60 * 1000);
+    return utc8Time.toISOString().split('T')[0].replace(/-/g, '/');
+}
+
+// Issue #142 — owner decision: 16:00 UTC+8 opens the next-day search
+// window (+8h just crosses midnight). Pure so the boundary is unit-testable;
+// mirrored in src/utils/flightUtils.js per the dual-copy rule (keep in sync).
+function shouldFetchNextDay(now) {
+    const utc8Time = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    return utc8Time.getUTCHours() >= 16;
+}
+
 /**
  * Formats a JavaScript Date object to a UTC+8 "HH:mm" string.
  * This helper function is used by updateApiParams to display time in UTC+8 for D-mode.
@@ -1102,6 +1137,11 @@ async function fetchFlightDataPost(postData, acceptLanguageHeader) {
             body: JSON.stringify(postData),
             signal: controller.signal,
         });
+        // Non-2xx is a failure even when the body parses as JSON (e.g. a 500
+        // with an empty-array body would otherwise be mistaken for a
+        // successful "no flights" payload and silently swallow the failure
+        // handling in every caller).
+        if (!response.ok) throw new Error(`flight API HTTP ${response.status}`);
         return await response.json();
     } finally {
         clearTimeout(timer);
@@ -1159,6 +1199,9 @@ function fetchData(options = {}) {
         // while the takeover is active (mirror of the pairing fetch above).
         fetchSearchDepartures();
     }
+    // Issue #142 — next-day search store, gate-checked inside (search open
+    // AND 16:00+ UTC+8); refetched every cycle like the stores above.
+    fetchNextDayStores();
 
     const postData = {
         "ODate": getUTC8Date(),
@@ -1458,6 +1501,79 @@ function fetchSearchDepartures() {
             searchDepUnavailable = true;
             renderSearchResults();
         }
+    });
+}
+
+// Issue #142 — lazy next-day store for the quick-dial search. Mirrors
+// fetchSearchDepartures(): own token, deliberately silent on failure —
+// search just stays today-only (nextDayUnavailable), no error UI, no auto
+// retry (the next fetchData() cycle refetches while the gate is open).
+// Tomorrow's payload carries neighbour-day rows (verified live 2026-09-13)
+// and #67 marketing-carrier duplicates, so ingestion filters ODate to
+// tomorrow, keeps the supported groups, and dedupes on
+// (FlightNo, OTime, CityCode). Rows NEVER touch flightData /
+// allSupportedFlights — renderSearchResults() is the only reader.
+function fetchNextDayStores() {
+    if (!searchOpen || !shouldFetchNextDay(new Date())) return;
+    const token = ++nextDayFetchToken;
+    nextDayUnavailable = false;
+    const tomorrowStr = getUTC8DatePlus(1);
+    nextDayByState.date = tomorrowStr;
+    const allGroupCodes = Object.values(AIRLINE_GROUPS).flat();
+    const acceptLanguageHeader = currentLanguage === 'zh'
+        ? 'zh-TW,zh;q=0.9'
+        : currentLanguage === 'jp'
+            ? 'ja-JP,ja;q=0.9'
+            : 'en-US,en;q=0.9';
+
+    const ingest = (data) => {
+        const seen = new Set();
+        return data
+            .filter(flight => flight.ODate === tomorrowStr && allGroupCodes.includes(flight.ACode))
+            .filter(flight => {
+                const key = `${String(flight.FlightNo ?? "").replace(/\s+/g, "")}|${flight.OTime}|${flight.CityCode}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    };
+
+    const applyResult = (state, data) => {
+        if (token !== nextDayFetchToken) return; // superseded — drop silently
+        nextDayByState[state] = ingest(data);
+        renderSearchResults();
+    };
+
+    const markUnavailable = () => {
+        if (token !== nextDayFetchToken) return; // superseded — drop silently
+        nextDayUnavailable = true;
+        renderSearchResults();
+    };
+
+    ['A', 'D'].forEach((state) => {
+        const postData = {
+            "ODate": tomorrowStr,
+            "OTimeOpen": null,
+            "OTimeClose": null,
+            "BNO": null,
+            "AState": state,
+            "language": currentLanguage === "zh" ? "ch" : currentLanguage,
+            "keyword": ""
+        };
+
+        // Issue #151 review — no code path ever writes a next-day cache
+        // entry (the board fetchers all key on today's ODate and this
+        // function never calls setCachedFlightData), so a cache read here
+        // can never hit. Offline (or cache-disabled) simply means the
+        // next-day leg is unavailable: stay today-only.
+        if (!swrCacheEnabled() || !isOnline()) {
+            markUnavailable();
+            return;
+        }
+
+        fetchFlightDataPost(postData, acceptLanguageHeader)
+        .then(data => applyResult(state, data))
+        .catch(markUnavailable);
     });
 }
 
@@ -2223,6 +2339,9 @@ function openSearch() {
     if (currentFlightMode === 'A' && !fullDayByState.D && !searchDepUnavailable) {
         fetchSearchDepartures();
     }
+    // Issue #142 — the next-day store lazy-fetches on the same trigger
+    // (opening search past 16:00 UTC+8 shouldn't wait for the next cycle).
+    fetchNextDayStores();
     renderSearchResults();
     // Synchronous focus inside the click handler so iOS opens the keyboard.
     document.getElementById('search-input').focus();
@@ -2347,9 +2466,26 @@ function renderSearchResults() {
     const departures = fullDayByState.D ?? [];
     const store = [...arrivals, ...departures];
 
+    // Issue #142 — next-day interleave. Gate and store freshness are
+    // re-checked here too (a fetch only runs from 16:00 UTC+8, and its date
+    // stamp must still BE tomorrow — a page left open past midnight waits
+    // for the next cycle rather than rendering a stale day). Today's
+    // matches come first, tomorrow's are appended; exact-first sorting
+    // already ran inside each store's own match, and the cap applies AFTER
+    // the concat so an exact match is never displaced by the other day's
+    // rows (owner decision).
+    const tomorrowStr = getUTC8DatePlus(1);
+    const tomorrowLoaded = !nextDayUnavailable
+        && nextDayByState.date === tomorrowStr
+        && nextDayByState.A !== null && nextDayByState.D !== null;
+    const tomorrowStore = [...(nextDayByState.A ?? []), ...(nextDayByState.D ?? [])];
+
     const scopeGroup = searchScopeGroup();
     const scopedStore = scopeGroup ? store.filter(f => scopeGroup.includes(f.ACode)) : store;
-    const matches = matchFlights(scopedStore, query, today);
+    const scopedTomorrow = scopeGroup ? tomorrowStore.filter(f => scopeGroup.includes(f.ACode)) : tomorrowStore;
+    const todayMatches = matchFlights(scopedStore, query, today);
+    const tomorrowMatches = tomorrowLoaded ? matchFlights(scopedTomorrow, query, tomorrowStr) : [];
+    const matches = [...todayMatches, ...tomorrowMatches];
     const arrMatches = matches.filter(f => f.AState === 'A');
     const depMatches = matches.filter(f => f.AState === 'D');
     const capArr = arrMatches.slice(0, SEARCH_RESULT_CAP);
@@ -2357,8 +2493,8 @@ function renderSearchResults() {
 
     const isSmall = isSmallScreen();
     let html = '';
-    if (capArr.length) html += buildSearchTable(capArr, 'A', isSmall);
-    if (capDep.length) html += buildSearchTable(capDep, 'D', isSmall);
+    if (capArr.length) html += buildSearchTable(capArr, 'A', isSmall, tomorrowStr);
+    if (capDep.length) html += buildSearchTable(capDep, 'D', isSmall, tomorrowStr);
 
     // Issue #130 review F3 — distinguish "stores not fetched yet" from a
     // successful-but-empty day: length checks would show an eternal loading
@@ -2369,7 +2505,10 @@ function renderSearchResults() {
     // not flying today" by re-running the match without the pin.
     if (matches.length === 0 && !storesPending) {
         if (scopeGroup) {
-            const unscoped = matchFlights(store, query, today);
+            const unscoped = [
+                ...matchFlights(store, query, today),
+                ...(tomorrowLoaded ? matchFlights(tomorrowStore, query, tomorrowStr) : [])
+            ];
             if (unscoped.length > 0) {
                 const pinnedName = currentACode;
                 html += `<div class="search-empty">`
@@ -2379,7 +2518,12 @@ function renderSearchResults() {
             }
         }
         if (!html) {
-            html += `<div class="search-empty">${escapeHtml(t.search.noMatch
+            // Issue #142 — the "today or tomorrow" wording is only honest
+            // once the tomorrow store is actually loaded; pending/failed
+            // keeps the today-only wording (a day we haven't seen can't be
+            // claimed "no flight").
+            const emptyTemplate = tomorrowLoaded ? t.search.noMatchWithTomorrow : t.search.noMatch;
+            html += `<div class="search-empty">${escapeHtml(emptyTemplate
                 .replace('{query}', normalized)
                 .replace('{date}', today))}</div>`;
         }
@@ -2417,7 +2561,7 @@ function renderSearchResults() {
 // the nth-child styling and the crew's muscle memory both carry over:
 //   A: flight, origin, terminal, Gate, Carousel
 //   D: flight, destination, terminal, Gate, ReturnGate
-function buildSearchTable(rows, direction, isSmall) {
+function buildSearchTable(rows, direction, isSmall, tomorrowStr = null) {
     const t = translations[currentLanguage];
     const headers = t.tableHeaders;
     const flightNumberHeader = isSmall ? headers["FlightNumberShort"] : headers["FlightNumber"];
@@ -2437,6 +2581,11 @@ function buildSearchTable(rows, direction, isSmall) {
     // Return-gate pool: the full-day arrivals store minus cancelled rows,
     // NOT returnLegArrivals (which only exists in departures mode).
     const returnPool = (fullDayByState.A ?? []).filter(flight => !isCancelledFlight(flight));
+    // Issue #142 — tomorrow departures pair against TOMORROW's arrivals
+    // (store ingestion is day-pure, and findReturnLeg's same-ODate rule
+    // backstops any mixing). Unloaded tomorrow store -> empty pool -> blank
+    // cell, the same contract as "no pool has arrived yet".
+    const returnPoolTomorrow = (nextDayByState.A ?? []).filter(flight => !isCancelledFlight(flight));
 
     let table = `
     <table class="table table-sm table-striped table-borderless search-table">
@@ -2463,10 +2612,14 @@ function buildSearchTable(rows, direction, isSmall) {
         const tba = `<span class="gate-tba">${escapeHtml(t.search.gateTba)}</span>`;
         const gateCell = cancelled ? '' : (flight.Gate ? escapeHtml(flight.Gate) : tba);
         const carouselCell = cancelled ? '' : (flight.StopCode ? escapeHtml(flight.StopCode) : tba);
+        // Issue #142 — next-day rows carry the "tomorrow" chip (a cancelled
+        // tomorrow row carries both: state and day are orthogonal).
+        const isTomorrowRow = tomorrowStr !== null && flight.ODate === tomorrowStr;
         const returnCell = direction === 'D' && !cancelled
-            ? buildReturnGateCellFrom(flight, returnPool, isSmall)
+            ? buildReturnGateCellFrom(flight, isTomorrowRow ? returnPoolTomorrow : returnPool, isSmall)
             : '';
-        const chip = cancelled ? `<span class="status-chip">${escapeHtml(t.search.cancelled)}</span>` : '';
+        const chip = (cancelled ? `<span class="status-chip">${escapeHtml(t.search.cancelled)}</span>` : '')
+            + (isTomorrowRow ? `<span class="status-chip">${escapeHtml(t.search.tomorrowChip)}</span>` : '');
 
         table += `
             <tr class="${cancelled ? 'row-cancelled' : ''}">

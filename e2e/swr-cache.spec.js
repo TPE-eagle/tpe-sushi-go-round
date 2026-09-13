@@ -128,6 +128,7 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // Issue #149 — the stale label auto-dismisses at 8s; seed + goto + label
     // assertions eat into the default 10s test timeout, so give it headroom.
     test.slow()
+
     const date = getCurrentUTC8Date()
     await seedCacheViaColdLoad(page)
 
@@ -146,6 +147,7 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // Issue #149 — the stale capsule auto-dismisses (8s) so it never sits
     // over the title indefinitely; any later refresh re-indicates.
     await expect(page.locator('#swr-status')).toBeHidden({ timeout: 10000 })
+
   })
 
   test('seeds and honours the 30-minute window on the real cache entry', async ({ page }) => {
