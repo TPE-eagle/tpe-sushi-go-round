@@ -201,7 +201,7 @@ test.describe('User Interaction Tests', () => {
     // the vitest-5 PR). Pin the app's Date to a mid-afternoon UTC+8 moment
     // where no truncation bites, so the assertion is deterministic
     // year-round. setFixed only pins Date; timers still run normally.
-    await page.clock.setFixed('2026-06-15T08:00:00Z') // 16:00 UTC+8, far from the truncation edge
+    await page.clock.setFixedTime('2026-06-15T08:00:00Z') // 16:00 UTC+8, far from the truncation edge
     await page.goto('/')
     await page.waitForSelector('#apiParams')
     // The selector lives in the About drawer header (issue #130 follow-up).
