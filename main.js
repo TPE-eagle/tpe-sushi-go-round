@@ -31,6 +31,9 @@ const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const PLANE_TYPE_COOKIE_NAME = 'PlaneType';
 const REFRESH_DELAY = 1500;
+// Issue #149 — the stale "N min ago" capsule auto-dismisses after this long;
+// it explains the moment of a failed refresh, it is not a permanent fixture.
+const SWR_STALE_DISMISS_MS = 8000;
 const THEME_COOKIE_NAME = 'theme';
 // Issue #130 follow-up — the window selection is cookie-persisted (owner
 // decision 2026-09-05, superseding #88's in-memory-only D3) so it survives
@@ -144,6 +147,10 @@ let boardHasData = false;
 // Kept as state (not just DOM text) so a language switch can re-translate
 // the label; every kind clears on the next fetchData() entry / success.
 let swrStatusState = null;
+// Issue #149 — pending auto-dismiss timer for the stale capsule (see
+// SWR_STALE_DISMISS_MS). Cancelled on every new state so a refresh or a
+// language switch re-arms it instead of stacking timers.
+let swrStatusDismissTimer = null;
 // sessionStorage key for { open, q } — survives the visibilitychange reload;
 // per-tab and session-scoped, deliberately NOT a cookie (issue #130 D3).
 const SEARCH_SESSION_KEY = 'tpe_flight_search';
@@ -1497,6 +1504,19 @@ function hideOfflineBanner() {
 // language switch re-translates the visible label.
 function setSwrStatus(state) {
     swrStatusState = state;
+    if (swrStatusDismissTimer) {
+        clearTimeout(swrStatusDismissTimer);
+        swrStatusDismissTimer = null;
+    }
+    // Issue #149 — the stale label auto-dismisses: it exists to explain the
+    // moment of a failed refresh, not to sit over the title forever (any new
+    // fetchData cycle or state change cancels/re-arms the timer).
+    if (state && state.kind === 'stale') {
+        swrStatusDismissTimer = setTimeout(() => {
+            swrStatusDismissTimer = null;
+            setSwrStatus(null);
+        }, SWR_STALE_DISMISS_MS);
+    }
     renderSwrStatus();
 }
 

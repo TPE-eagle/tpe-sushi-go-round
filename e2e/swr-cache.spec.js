@@ -106,14 +106,28 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // cache-only read).
     expect(reloadRequests).toBe(1)
 
+    // Issue #149 — the capsule overlay must never shift the page: #output's
+    // position is identical while the indicator is visible vs after it hides
+    // (the original in-flow strip pushed the whole page down on every update).
+    const outputTopWhileUpdating = await page.evaluate(() =>
+      document.getElementById('output').getBoundingClientRect().top
+    )
+
     // When the revalidation lands, the board swaps silently: same rows, no
     // error, indicator cleared.
     await revalidationLanded
     await expect(page.locator('tbody tr', { hasText: 'BR900' })).toBeVisible()
     await expect(page.locator('#swr-status')).toBeHidden()
+    const outputTopAfterSwap = await page.evaluate(() =>
+      document.getElementById('output').getBoundingClientRect().top
+    )
+    expect(outputTopAfterSwap).toBe(outputTopWhileUpdating)
   })
 
   test('failed revalidation keeps the cached board and labels its age', async ({ page }) => {
+    // Issue #149 — the stale label auto-dismisses at 8s; seed + goto + label
+    // assertions eat into the default 10s test timeout, so give it headroom.
+    test.slow()
     const date = getCurrentUTC8Date()
     await seedCacheViaColdLoad(page)
 
@@ -128,6 +142,10 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // Staleness note instead: age is 0 minutes (just cached).
     await expect(page.locator('#swr-status')).toBeVisible()
     await expect(page.locator('#swr-status')).toHaveText('Showing data from 0 min ago')
+
+    // Issue #149 — the stale capsule auto-dismisses (8s) so it never sits
+    // over the title indefinitely; any later refresh re-indicates.
+    await expect(page.locator('#swr-status')).toBeHidden({ timeout: 10000 })
   })
 
   test('seeds and honours the 30-minute window on the real cache entry', async ({ page }) => {

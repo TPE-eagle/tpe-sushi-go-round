@@ -148,23 +148,30 @@ body {
   border-color: rgba(255, 180, 0, 0.35);
 }
 
-/* SWR status strip (issue #141): sibling of the offline banner for the
- * online path — "updating…" while a background revalidation runs behind a
- * cache-painted board, "showing data from N min ago" when it failed. Same
- * non-blocking strip shape as the banner; neutral colours so it reads as
- * status, not warning. */
+/* SWR status capsule (issue #141, restyled in #149): sibling of the offline
+ * banner for the online path — "updating…" while a background revalidation
+ * runs behind a cache-painted board, "showing data from N min ago" when it
+ * failed. Same floating-capsule language as #refresh-icon: absolutely
+ * positioned overlay, so showing/hiding it never pushes the page content
+ * down (the original in-flow strip caused a full-page layout shift on every
+ * background update). */
 .swr-status {
-  padding: 6px 12px;
-  margin: 0 0 8px 0;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, 10px);
+  padding: 6px 18px;
+  border-radius: 999px;
   font-size: 0.875rem;
   font-weight: 500;
-  text-align: center;
+  white-space: nowrap;
   color: var(--text-color);
   background-color: var(--background-color);
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-  opacity: 0.85;
-  letter-spacing: 0.01em;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  opacity: 0.92;
+  pointer-events: none;
+  z-index: 10;
 
   &[hidden] {
     display: none;
