@@ -82,7 +82,7 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
   test('after 16:00 UTC+8: tomorrow rows load, today renders first, tomorrow rows carry the chip, duplicates collapse', async ({ page }) => {
     const requests = await setupODateAwareMockRoute(page, rowsFor)
     await page.clock.setFixedTime(fixedAtUtc8(17, 30))
-    await page.goto('/?e2e-swr=1')
+    await page.goto('')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
 
     await openAndSearch(page, '178')
@@ -114,7 +114,7 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
   test('same flight number on both days shows both rows (dual-row case)', async ({ page }) => {
     await setupODateAwareMockRoute(page, rowsFor)
     await page.clock.setFixedTime(fixedAtUtc8(22, 50))
-    await page.goto('/?e2e-swr=1')
+    await page.goto('')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
 
     await openAndSearch(page, '178')
@@ -129,7 +129,7 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
   test('cancelled tomorrow row keeps both chips (state and day are orthogonal)', async ({ page }) => {
     await setupODateAwareMockRoute(page, rowsFor)
     await page.clock.setFixedTime(fixedAtUtc8(17, 30))
-    await page.goto('/?e2e-swr=1')
+    await page.goto('')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
 
     await openAndSearch(page, '124')
@@ -145,7 +145,7 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
   test('before 16:00 UTC+8: no next-day request goes out and no chip renders', async ({ page }) => {
     const requests = await setupODateAwareMockRoute(page, rowsFor)
     await page.clock.setFixedTime(fixedAtUtc8(15, 59))
-    await page.goto('/?e2e-swr=1')
+    await page.goto('')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
 
     await openAndSearch(page, '178')
@@ -165,7 +165,7 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
     const failing = (dateStr, state) => (dateStr === utc8Date(1) ? { status: 500 } : rowsFor(dateStr, state))
     const requests = await setupODateAwareMockRoute(page, failing)
     await page.clock.setFixedTime(fixedAtUtc8(17, 30))
-    await page.goto('/?e2e-swr=1')
+    await page.goto('')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
 
     await openAndSearch(page, '178')

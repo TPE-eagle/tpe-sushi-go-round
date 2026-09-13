@@ -1561,12 +1561,13 @@ function fetchNextDayStores() {
             "keyword": ""
         };
 
-        // Issue #151 review — no code path ever writes a next-day cache
-        // entry (the board fetchers all key on today's ODate and this
-        // function never calls setCachedFlightData), so a cache read here
-        // can never hit. Offline (or cache-disabled) simply means the
-        // next-day leg is unavailable: stay today-only.
-        if (!swrCacheEnabled() || !isOnline()) {
+        // No code path ever writes a next-day cache entry (the board
+        // fetchers all key on today's ODate and this function never calls
+        // setCachedFlightData), so there is no cache interaction here at
+        // all — swrCacheEnabled() does not belong in this gate. Only
+        // connectivity matters: offline means the next-day leg is
+        // unavailable, stay today-only.
+        if (!isOnline()) {
             markUnavailable();
             return;
         }
