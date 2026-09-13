@@ -139,6 +139,10 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // Staleness note instead: age is 0 minutes (just cached).
     await expect(page.locator('#swr-status')).toBeVisible()
     await expect(page.locator('#swr-status')).toHaveText('Showing data from 0 min ago')
+
+    // Issue #149 — the stale capsule auto-dismisses (8s) so it never sits
+    // over the title indefinitely; any later refresh re-indicates.
+    await expect(page.locator('#swr-status')).toBeHidden({ timeout: 10000 })
   })
 
   test('seeds and honours the 30-minute window on the real cache entry', async ({ page }) => {
