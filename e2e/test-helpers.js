@@ -159,21 +159,28 @@ export function getCurrentUTC8DateTime() {
   return utc8Time
 }
 
-import { getTimeWindowConfig, getTimeWindow } from '../src/utils/flightUtils.js'
-
 export function getMockFlightData(date = getCurrentUTC8Date()) {
-  // Generate flight times within the calculated UTC+8 window
-  const nowLocal = new Date()
-  const config = getTimeWindowConfig('A')
-  const { windowStart } = getTimeWindow(config, nowLocal)
+  // Issue #151 — anchor fixture times to a FIXED wall clock inside the
+  // `date` UTC+8 day (12:00) instead of deriving them from the real time
+  // window. The window-derived anchor tracked the wall clock (now −40 min,
+  // 10-min rounded), so CI runs after 16:00 UTC+8 (= Taipei midnight) built
+  // rows whose ODate said "yesterday" while their ids said "today" — the
+  // quick-dial search store (matchFlights drops rows whose ODate ≠ today)
+  // went empty and the whole flight-search suite failed. 12:00 + the
+  // 10–50 min offsets can never straddle a day boundary, so ids, ODate and
+  // RDate always agree, for any date passed in.
+  const [y, m, d] = date.split('/').map(Number)
+  const anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0) - 8 * 60 * 60 * 1000)
   const offsets = [10, 20, 30, 40, 50]
   const dateTimes = offsets.map(offset => {
-    const dt = new Date(windowStart.getTime() + offset * 60 * 1000)
-    // Issue #149 CI — dateStr/timeStr must be UTC+8 WALL-CLOCK (the app
-    // matches rows against getUTC8Date() and parses ODate+OTime as +08:00).
-    // Plain toISOString() emits UTC, so every night 00:00–08:00 UTC+8 the
-    // mock's ODate lagged a day behind the app's today and matchFlights'
-    // ODate filter silently dropped every row — all search E2E red.
+    // Resolution of #149-CI (+8h stamping) × #151 (fixed anchor): the
+    // anchor is the absolute instant of 12:00 UTC+8 on the fixture day, and
+    // the stamp shifts +8h before toISOString so dateStr/timeStr read back
+    // as UTC+8 wall clock — the app matches rows against getUTC8Date() and
+    // parses ODate+OTime as +08:00, so plain toISOString() would render
+    // 04:0x UTC instead of the intended 12:0x UTC+8. Deterministic and
+    // straddle-free either way.
+    const dt = new Date(anchor.getTime() + offset * 60 * 1000)
     const utc8 = new Date(dt.getTime() + 8 * 60 * 60 * 1000)
     const dateStr = utc8.toISOString().split('T')[0].replace(/-/g, '/')
     const timeStr = utc8.toISOString().split('T')[1].slice(0, 8)
