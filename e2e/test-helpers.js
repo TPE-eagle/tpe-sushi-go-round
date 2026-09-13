@@ -169,8 +169,14 @@ export function getMockFlightData(date = getCurrentUTC8Date()) {
   const offsets = [10, 20, 30, 40, 50]
   const dateTimes = offsets.map(offset => {
     const dt = new Date(windowStart.getTime() + offset * 60 * 1000)
-    const dateStr = dt.toISOString().split('T')[0].replace(/-/g, '/')
-    const timeStr = dt.toISOString().split('T')[1].slice(0, 8)
+    // Issue #149 CI — dateStr/timeStr must be UTC+8 WALL-CLOCK (the app
+    // matches rows against getUTC8Date() and parses ODate+OTime as +08:00).
+    // Plain toISOString() emits UTC, so every night 00:00–08:00 UTC+8 the
+    // mock's ODate lagged a day behind the app's today and matchFlights'
+    // ODate filter silently dropped every row — all search E2E red.
+    const utc8 = new Date(dt.getTime() + 8 * 60 * 60 * 1000)
+    const dateStr = utc8.toISOString().split('T')[0].replace(/-/g, '/')
+    const timeStr = utc8.toISOString().split('T')[1].slice(0, 8)
     return { dateStr, timeStr }
   })
 

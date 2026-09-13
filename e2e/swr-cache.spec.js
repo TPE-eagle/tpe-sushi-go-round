@@ -125,6 +125,9 @@ test.describe('SWR cache-first board (issue #141)', () => {
   })
 
   test('failed revalidation keeps the cached board and labels its age', async ({ page }) => {
+    // Issue #149 — the stale label auto-dismisses at 8s; seed + goto + label
+    // assertions eat into the default 10s test timeout, so give it headroom.
+    test.slow()
     const date = getCurrentUTC8Date()
     await seedCacheViaColdLoad(page)
 
