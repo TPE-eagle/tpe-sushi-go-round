@@ -1234,20 +1234,10 @@ function fetchData(options = {}) {
     // postData.OTimeOpen = null; (already set above)
     // postData.OTimeClose = null; (already set above)
 
-    // Update UI display for the current time window (for display purposes only)
-    const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
-    const { windowStart, windowEnd, crossesMidnight } = getTimeWindow(config); 
-    const dateStr = getUTC8Date(); 
-    const startTimeStr = formatToUTC8_HHMM(windowStart);
-    // Issue #145 — same crossing-aware end label as updateApiParams.
-    const endTimeStr = crossesMidnight
-        ? `${formatToUTC8_MMDD(windowEnd)} ${formatToUTC8_HHMM(windowEnd)}`
-        : formatToUTC8_HHMM(windowEnd);
-    const apiParamsText = `Date: ${dateStr}, Range: ${startTimeStr} - ${endTimeStr} (UTC+8)`;
-    const apiParamsElement = document.getElementById("apiParams");
-    if (apiParamsElement) {
-        apiParamsElement.innerText = apiParamsText;
-    }
+    // Update UI display for the current time window (for display purposes
+    // only). Delegates to updateApiParams() — same computation, one copy
+    // (review nit 3, #154).
+    updateApiParams();
 
     // Issue #141 — SWR: the cache is no longer an offline-only fallback.
     // Any non-forced fetch first tries to paint the cached board: within
@@ -2732,8 +2722,15 @@ function boardTomorrowRows() {
     const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
     const { windowStart, windowEnd } = getTimeWindow(config);
     const inWindow = (flight) => {
+        // Same O/R-either rule as the board's filterFlightsByTime: a
+        // tomorrow flight with a revised (RDate/RTime) time inside the
+        // window must not fall through the edge (review nit 2, #154).
         const odt = new Date(`${flight.ODate.replace(/\//g, '-')}T${flight.OTime}+08:00`);
-        return odt >= windowStart && odt <= windowEnd;
+        const rdt = flight.RDate && flight.RTime
+            ? new Date(`${flight.RDate.replace(/\//g, '-')}T${flight.RTime}+08:00`)
+            : null;
+        return (odt && odt >= windowStart && odt <= windowEnd)
+            || (rdt && rdt >= windowStart && rdt <= windowEnd);
     };
     return filterByPlaneType(
         applyAirlineScope(nextDayByState[currentFlightMode] ?? [], currentACode),
@@ -2743,7 +2740,11 @@ function boardTomorrowRows() {
         .sort((a, b) => {
             if (a.ACode < b.ACode) return -1;
             if (a.ACode > b.ACode) return 1;
-            return (parseInt(a.FlightNo, 10) || 0) - (parseInt(b.FlightNo, 10) || 0);
+            // Same regex-based numeric extraction as processFetchedData
+            // (review nit 1, #154) — non-numeric FlightNo stays consistent.
+            const flightNumberA = parseInt(a.FlightNo.match(/\d+/), 10);
+            const flightNumberB = parseInt(b.FlightNo.match(/\d+/), 10);
+            return flightNumberA - flightNumberB;
         });
 }
 
