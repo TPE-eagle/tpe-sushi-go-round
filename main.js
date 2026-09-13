@@ -1614,12 +1614,14 @@ function fetchNextDayStores() {
             "keyword": ""
         };
 
-        // Issue #151 review — no code path ever writes a next-day cache
-        // entry (the board fetchers all key on today's ODate and this
-        // function never calls setCachedFlightData), so a cache read here
-        // can never hit. Offline (or cache-disabled) simply means the
-        // next-day leg is unavailable: stay today-only.
-        if (!swrCacheEnabled() || !isOnline()) {
+        // Issue #153 — this fetch has no cache interaction at all: the
+        // cache read was deleted as dead code (7739c23a) and no code path
+        // writes a next-day entry, so swrCacheEnabled() — which gates
+        // cache reads/writes everywhere else — must not gate this request
+        // (it is false on the localhost test host, which used to silently
+        // disable the next-day leg there). Offline simply means
+        // today-only.
+        if (!isOnline()) {
             markUnavailable();
             return;
         }
