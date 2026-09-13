@@ -1515,7 +1515,7 @@ function fetchNextDayStores() {
         return data
             .filter(flight => flight.ODate === tomorrowStr && allGroupCodes.includes(flight.ACode))
             .filter(flight => {
-                const key = `${flight.FlightNo}|${flight.OTime}|${flight.CityCode}`;
+                const key = `${String(flight.FlightNo ?? "").replace(/\s+/g, "")}|${flight.OTime}|${flight.CityCode}`;
                 if (seen.has(key)) return false;
                 seen.add(key);
                 return true;
