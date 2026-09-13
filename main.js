@@ -1137,6 +1137,11 @@ async function fetchFlightDataPost(postData, acceptLanguageHeader) {
             body: JSON.stringify(postData),
             signal: controller.signal,
         });
+        // Non-2xx is a failure even when the body parses as JSON (e.g. a 500
+        // with an empty-array body would otherwise be mistaken for a
+        // successful "no flights" payload and silently swallow the failure
+        // handling in every caller).
+        if (!response.ok) throw new Error(`flight API HTTP ${response.status}`);
         return await response.json();
     } finally {
         clearTimeout(timer);

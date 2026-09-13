@@ -32,8 +32,16 @@ function utc8Date(offsetDays = 0) {
 // ingestion. CI124 is cancelled tomorrow — chips are orthogonal.
 function rowsFor(dateStr, state) {
   if (dateStr === utc8Date(0)) {
+    // Boot is always arrivals mode, and the spec waits for the board table
+    // before opening search — today's arrivals must not be empty (an empty
+    // board here is what kept every test in this file red, PR review
+    // 2026-09-13: waitForSelector('#output table tbody tr') could never
+    // pass). BR100 doesn't match the '178' query, so search assertions are
+    // unaffected.
     return state === 'A'
-      ? []
+      ? [
+          { ACode: 'BR', FlightNo: '100', Gate: 'C1', OTime: '17:40:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 3, Memo: '' }
+        ]
       : [
           { ACode: 'BR', FlightNo: '178', Gate: 'C3', OTime: '23:30:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 1, Memo: '' },
           { ACode: 'CI', FlightNo: '124', Gate: 'A5', OTime: '22:10:00', CityCode: 'HKG', CityEname: 'Hong Kong', CityName: '香港', BNO: 1, Memo: '' }
@@ -62,6 +70,11 @@ async function openAndSearch(page, query) {
 }
 
 test.describe('Next-day quick-dial search (issue #142)', () => {
+  // The assertions below expect the zh chip copy ("明日" / "已取消"); pin the
+  // context locale so the app boots in zh regardless of the runner's default
+  // (en-US made the chips render in English and every chip assertion fail).
+  test.use({ locale: 'zh-TW' })
+
   test.beforeEach(async ({ page }) => {
     blockGoogleAnalytics(page)
   })
