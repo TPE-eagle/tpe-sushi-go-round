@@ -75,6 +75,8 @@ test.describe('Cross-midnight board (issue #145)', () => {
     await expect(rows.nth(2)).toContainText('明日')
     await expect(rows.nth(3)).toContainText('CI801')
     await expect(rows.nth(3)).toContainText('明日')
+    // Missing carousel (StopCode) renders BLANK, never the string "undefined".
+    await expect(rows.nth(2).locator('td').last()).toHaveText('')
 
     // The window-end label carries the actual date once the window crosses
     // midnight (no bare ambiguous HH:MM, no engineering notation).
@@ -82,7 +84,10 @@ test.describe('Cross-midnight board (issue #145)', () => {
   })
 
   test('A→D→A toggles within the skip window issue zero extra network requests', async ({ page }) => {
-    await setupODateAwareMockRoute(page, rowsFor)
+    // Issue #149-precedent — the boundary phase advances the frozen clock
+    // and waits out real settle windows, exceeding the default 10s budget.
+    test.slow()
+    const requests = await setupODateAwareMockRoute(page, rowsFor)
     await page.clock.setFixedTime(fixedAtUtc8(22, 30))
     await page.goto('/?e2e-swr=1')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
@@ -93,19 +98,26 @@ test.describe('Cross-midnight board (issue #145)', () => {
     await page.click('#flight-mode-toggle')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
     await page.waitForTimeout(1500)
-    const countAfterD = await page.evaluate(() => performance.getEntriesByType('resource')
-      .filter(e => e.name.includes('a_flight')).length)
+    const countAfterD = requests.length
+    expect(countAfterD).toBeGreaterThan(0)
 
     // Toggle back to A within SWR_TOGGLE_SKIP_MS: the fast path must not
-    // issue ANY request (main, pairing or next-day).
+    // issue ANY request (main, pairing or next-day) — counted at the route
+    // handler, so every a_flight call is seen.
     await page.click('#flight-mode-toggle')
     await page.waitForTimeout(1500)
-    const countAfterA = await page.evaluate(() => performance.getEntriesByType('resource')
-      .filter(e => e.name.includes('a_flight')).length)
-    expect(countAfterA).toBe(countAfterD)
+    expect(requests.length).toBe(countAfterD)
 
     // The board came back as arrivals, served from the fresh cache.
     await expect(page.locator('#output table tbody tr').first()).toContainText('BR900')
+
+    // Past SWR_TOGGLE_SKIP_MS (advance the frozen clock 3 min): the toggle
+    // falls through to the SWR cycle and a real revalidation goes out —
+    // pins the boundary between the fast path and the SWR path.
+    await page.clock.setFixedTime(fixedAtUtc8(22, 33))
+    await page.click('#flight-mode-toggle')
+    await expect.poll(() => requests.length, { timeout: 8000 }).toBeGreaterThan(countAfterD)
+    await expect(page.locator('#output table tbody tr').first()).toContainText('BR910')
   })
 
   test('a +2h window at mid-day never crosses: no tomorrow request, no date label', async ({ page }) => {

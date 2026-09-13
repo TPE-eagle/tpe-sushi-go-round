@@ -1606,10 +1606,13 @@ function fetchNextDayStores() {
         if (searchOpen) renderSearchResults(); else renderFilteredView();
     };
 
-    // Search shows both directions; the board only renders the current
-    // mode, so a board-triggered cycle fetches just that leg (the search
-    // gate refetches both whenever it next opens).
-    const states = searchWants ? ['A', 'D'] : [currentFlightMode];
+    // Search shows both directions. The board renders only the current
+    // mode, but a D-mode crossing still needs tomorrow's ARRIVALS as the
+    // return-gate pool (F3) — hence ['D','A'] rather than ['D']; the A leg
+    // is pairing-only input and never renders unchipped.
+    const states = searchWants
+        ? ['A', 'D']
+        : (currentFlightMode === 'D' ? ['D', 'A'] : ['A']);
     states.forEach((state) => {
         const postData = {
             "ODate": tomorrowStr,
@@ -1975,7 +1978,10 @@ function renderFilteredView() {
     updateAirlineLinks();
     updatePlaneTypeLinks();
 
-    if (currentFilteredFlights.length === 0) {
+    // Issue #145 F1 — empty TODAY rows must not trigger the empty state
+    // when chip-marked tomorrow rows are waiting to render (displayFlights
+    // renders the tomorrow block even for an empty today list).
+    if (currentFilteredFlights.length === 0 && !boardTomorrowRows().length) {
         renderEmptyState(airlineFiltered);
         document.getElementById('flightButtons').innerHTML = '';
     } else {
@@ -2712,6 +2718,35 @@ function boardWindowCrossesMidnight() {
     return crossesMidnight;
 }
 
+// Issue #145 — today's chip-marked tomorrow rows for the board: empty
+// unless the store is loaded, day-stamped to the render-time tomorrow, not
+// unavailable, and the window actually crosses midnight (F2: a store loaded
+// by the 16:00+ search gate must not leak into a non-crossing window).
+// Whole-array filtering (gemini #154): pins, cancelled-drop and window run
+// on the array, not per-row singletons.
+function boardTomorrowRows() {
+    if (nextDayUnavailable) return [];
+    if (nextDayByState.date !== getUTC8DatePlus(1)) return [];
+    if (nextDayByState[currentFlightMode] === null) return [];
+    if (!boardWindowCrossesMidnight()) return [];
+    const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
+    const { windowStart, windowEnd } = getTimeWindow(config);
+    const inWindow = (flight) => {
+        const odt = new Date(`${flight.ODate.replace(/\//g, '-')}T${flight.OTime}+08:00`);
+        return odt >= windowStart && odt <= windowEnd;
+    };
+    return filterByPlaneType(
+        applyAirlineScope(nextDayByState[currentFlightMode] ?? [], currentACode),
+        currentPlaneType
+    )
+        .filter(flight => !isCancelledFlight(flight) && inWindow(flight))
+        .sort((a, b) => {
+            if (a.ACode < b.ACode) return -1;
+            if (a.ACode > b.ACode) return 1;
+            return (parseInt(a.FlightNo, 10) || 0) - (parseInt(b.FlightNo, 10) || 0);
+        });
+}
+
 // Issue #33 — departures-only 5th column content. Blank when there is no
 // confident return-leg match (not yet fetched, long-haul, one-way, no
 // candidate survives the plausibility gate, or dayReturn() overrides it to
@@ -2799,7 +2834,7 @@ function displayFlights(flights, ACode) {
                 <td ${isSmall ? 'class="text-center"' : ''}>${cityDisplay}</td>
                 <td class="text-center">${terminalDisplay}</td>
                 <td class="text-center">${flight.Gate}</td>
-                ${currentFlightMode === 'A' ? `<td class="text-center">${flight.StopCode}</td>` : ''}
+                ${currentFlightMode === 'A' ? `<td class="text-center">${flight.StopCode ? escapeHtml(flight.StopCode) : ''}</td>` : ''}
                 ${currentFlightMode === 'D' ? `<td class="text-center">${buildReturnGateCell(flight, isSmall)}</td>` : ''}
             </tr>`;
     });
@@ -2807,35 +2842,11 @@ function displayFlights(flights, ACode) {
     // Issue #145 — when the window crosses midnight, tomorrow's early-hours
     // rows are APPENDED after today's (never interleaved, never merged into
     // flightData/allSupportedFlights) and every row carries the tomorrow
-    // chip. Same ingestion guarantees as the search store: day-pure,
-    // group-filtered, deduped; cancelled rows are dropped here (board
-    // semantics — search keeps them, the board does not). The store's date
-    // stamp is re-checked at render time so a page left open past midnight
-    // waits for the next cycle instead of rendering a stale day.
-    const tomorrowStr = getUTC8DatePlus(1);
-    const tomorrowLoaded = !nextDayUnavailable
-        && nextDayByState.date === tomorrowStr
-        && nextDayByState[currentFlightMode] !== null;
-    if (tomorrowLoaded) {
-        const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
-        const { windowStart, windowEnd } = getTimeWindow(config);
-        const inWindow = (flight) => {
-            const odt = new Date(`${flight.ODate.replace(/\//g, '-')}T${flight.OTime}+08:00`);
-            return odt >= windowStart && odt <= windowEnd;
-        };
+    // chip. boardTomorrowRows() (issue #145 F2) re-checks store freshness,
+    // the crossing gate, pins, cancelled-drop and the window in one place.
+    const tomorrowRows = boardTomorrowRows();
+    if (tomorrowRows.length) {
         const tomorrowArrivalsPool = (nextDayByState.A ?? []).filter(f => !isCancelledFlight(f));
-        const tomorrowRows = (nextDayByState[currentFlightMode] ?? [])
-            .filter(flight => !isCancelledFlight(flight) && inWindow(flight))
-            // Pins apply to tomorrow rows exactly like today's: the airline
-            // group scope and the plane-type pin (TBD-always-passes) both
-            // re-run here so a pinned pilot never sees an unpinned row.
-            .map(flight => applyAirlineScope([flight], currentACode).length ? flight : null)
-            .filter(flight => flight && filterByPlaneType([flight], currentPlaneType).length)
-            .sort((a, b) => {
-                if (a.ACode < b.ACode) return -1;
-                if (a.ACode > b.ACode) return 1;
-                return (parseInt(a.FlightNo, 10) || 0) - (parseInt(b.FlightNo, 10) || 0);
-            });
 
         tomorrowRows.forEach(flight => {
             const cityDisplay = isSmall ? flight.CityCode : (currentLanguage === 'zh' ? flight.CityName : flight.CityEname);
@@ -2856,7 +2867,7 @@ function displayFlights(flights, ACode) {
                 <td ${isSmall ? 'class="text-center"' : ''}>${cityDisplay}</td>
                 <td class="text-center">${terminalDisplay}</td>
                 <td class="text-center">${gateCell}</td>
-                ${currentFlightMode === 'A' ? `<td class="text-center">${flight.StopCode}</td>` : ''}
+                ${currentFlightMode === 'A' ? `<td class="text-center">${flight.StopCode ? escapeHtml(flight.StopCode) : ''}</td>` : ''}
                 ${currentFlightMode === 'D' ? `<td class="text-center">${returnCell}</td>` : ''}
             </tr>`;
         });
@@ -2864,7 +2875,9 @@ function displayFlights(flights, ACode) {
 
     tableContent += `</tbody></table>`;
 
-    document.getElementById("output").innerHTML = flights.length === 0
+    // Issue #145 F1 — an empty TODAY block must not hide chip-marked
+    // tomorrow rows: show the table whenever either day has rows.
+    document.getElementById("output").innerHTML = (flights.length === 0 && !tomorrowRows.length)
         ? `<div class="text-center">${translations[currentLanguage]["noFlights"]}</div>`
         : tableContent;
 }
