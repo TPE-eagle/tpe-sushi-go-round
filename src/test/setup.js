@@ -20,13 +20,15 @@ Object.defineProperty(window, 'matchMedia', {
 })
 
 // Mock localStorage
-const localStorageMock = {
+// vitest 5 (issue #140): jsdom exposes `localStorage` on the global as a
+// getter-only property, so a plain assignment throws. vi.stubGlobal()
+// defines the property instead.
+vi.stubGlobal('localStorage', {
   getItem: vi.fn(),
   setItem: vi.fn(),
   removeItem: vi.fn(),
   clear: vi.fn(),
-}
-global.localStorage = localStorageMock
+})
 
 // Mock console to reduce noise in tests
 global.console = {

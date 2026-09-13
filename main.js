@@ -31,6 +31,9 @@ const DEFAULT_LANGUAGE = 'zh';
 const COOKIE_NAME = 'ACode';
 const PLANE_TYPE_COOKIE_NAME = 'PlaneType';
 const REFRESH_DELAY = 1500;
+// Issue #149 — the stale "N min ago" capsule auto-dismisses after this long;
+// it explains the moment of a failed refresh, it is not a permanent fixture.
+const SWR_STALE_DISMISS_MS = 8000;
 const THEME_COOKIE_NAME = 'theme';
 // Issue #130 follow-up — the window selection is cookie-persisted (owner
 // decision 2026-09-05, superseding #88's in-memory-only D3) so it survives
@@ -139,10 +142,15 @@ let searchDepUnavailable = false;
 let boardHasData = false;
 // Issue #141 — current SWR indicator state ({ kind: 'updating' } while a
 // background revalidation runs, { kind: 'stale', timestamp } when the
-// revalidation failed and the board is showing cached data). Kept as state
-// (not just DOM text) so a language switch can re-translate the label.
+// revalidation failed and the board is showing cached data, { kind: 'error'
+// } when a forced refresh failed with the previous board kept on screen).
+// Kept as state (not just DOM text) so a language switch can re-translate
+// the label; every kind clears on the next fetchData() entry / success.
 let swrStatusState = null;
-
+// Issue #149 — pending auto-dismiss timer for the stale capsule (see
+// SWR_STALE_DISMISS_MS). Cancelled on every new state so a refresh or a
+// language switch re-arms it instead of stacking timers.
+let swrStatusDismissTimer = null;
 // Issue #142 — lazy next-day search store. From 16:00 UTC+8 (owner decision:
 // +8h just crosses midnight, and the morning flights a night search targets
 // are unreachable in today's payload) a search ALSO fetches tomorrow's
@@ -1302,8 +1310,11 @@ function fetchData(options = {}) {
 
         // Issue #141 — a forced refresh failed but the board already shows
         // the previous cycle: keep it (it was never cleared on this path)
-        // and surface the failure instead of blanking it.
+        // and surface the failure on the strip (review 🟡: with search
+        // closed the status line is hidden, so the strip is the only always-
+        // visible channel) and on the status line when search is open.
         if (forceRefresh && boardHasData) {
+            setSwrStatus({ kind: 'error' });
             if (searchOpen) setStatusLine(translations[currentLanguage]["error"]);
             return;
         }
@@ -1605,6 +1616,19 @@ function hideOfflineBanner() {
 // language switch re-translates the visible label.
 function setSwrStatus(state) {
     swrStatusState = state;
+    if (swrStatusDismissTimer) {
+        clearTimeout(swrStatusDismissTimer);
+        swrStatusDismissTimer = null;
+    }
+    // Issue #149 — the stale label auto-dismisses: it exists to explain the
+    // moment of a failed refresh, not to sit over the title forever (any new
+    // fetchData cycle or state change cancels/re-arms the timer).
+    if (state && state.kind === 'stale') {
+        swrStatusDismissTimer = setTimeout(() => {
+            swrStatusDismissTimer = null;
+            setSwrStatus(null);
+        }, SWR_STALE_DISMISS_MS);
+    }
     renderSwrStatus();
 }
 
@@ -1619,7 +1643,9 @@ function renderSwrStatus() {
     const t = translations[currentLanguage];
     el.innerText = swrStatusState.kind === 'stale'
         ? t['staleShown'].replace('{min}', cacheAgeMinutes(swrStatusState.timestamp))
-        : t['updating'];
+        : swrStatusState.kind === 'error'
+            ? t['error']
+            : t['updating'];
     el.hidden = false;
 }
 
@@ -1785,11 +1811,19 @@ function clearFlightCache() {
     }
 }
 
+// Issue #147 — the live API's English AName values ("EVA Airways",
+// "STARLUX Airlines") make each pill's label wrap to a second line at
+// mid-size widths (769-850px), blowing the row to 58px. Display the official
+// short brands in this row only; every other AName consumer (empty-state
+// tint, search) keeps the API value verbatim. Unknown names pass through.
+const AIRLINE_ROW_SHORT_NAMES = { 'EVA Airways': 'EVA Air', 'STARLUX Airlines': 'STARLUX' };
+
 function generateAirlineLinks(flights) {
     const airlines = {};
     flights.forEach(flight => {
         if (!airlines[flight.ACode]) {
-            airlines[flight.ACode] = `${flight.AName} (${flight.ACode})`;
+            const displayName = AIRLINE_ROW_SHORT_NAMES[flight.AName] || flight.AName;
+            airlines[flight.ACode] = `${displayName} (${flight.ACode})`;
         }
     });
 

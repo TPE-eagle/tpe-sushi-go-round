@@ -106,14 +106,29 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // cache-only read).
     expect(reloadRequests).toBe(1)
 
+    // Issue #149 — the capsule overlay must never shift the page: #output's
+    // position is identical while the indicator is visible vs after it hides
+    // (the original in-flow strip pushed the whole page down on every update).
+    const outputTopWhileUpdating = await page.evaluate(() =>
+      document.getElementById('output').getBoundingClientRect().top
+    )
+
     // When the revalidation lands, the board swaps silently: same rows, no
     // error, indicator cleared.
     await revalidationLanded
     await expect(page.locator('tbody tr', { hasText: 'BR900' })).toBeVisible()
     await expect(page.locator('#swr-status')).toBeHidden()
+    const outputTopAfterSwap = await page.evaluate(() =>
+      document.getElementById('output').getBoundingClientRect().top
+    )
+    expect(outputTopAfterSwap).toBe(outputTopWhileUpdating)
   })
 
   test('failed revalidation keeps the cached board and labels its age', async ({ page }) => {
+    // Issue #149 — the stale label auto-dismisses at 8s; seed + goto + label
+    // assertions eat into the default 10s test timeout, so give it headroom.
+    test.slow()
+
     const date = getCurrentUTC8Date()
     await seedCacheViaColdLoad(page)
 
@@ -128,6 +143,11 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // Staleness note instead: age is 0 minutes (just cached).
     await expect(page.locator('#swr-status')).toBeVisible()
     await expect(page.locator('#swr-status')).toHaveText('Showing data from 0 min ago')
+
+    // Issue #149 — the stale capsule auto-dismisses (8s) so it never sits
+    // over the title indefinitely; any later refresh re-indicates.
+    await expect(page.locator('#swr-status')).toBeHidden({ timeout: 10000 })
+
   })
 
   test('seeds and honours the 30-minute window on the real cache entry', async ({ page }) => {
@@ -213,5 +233,49 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // The board was never blanked; data still there after the swap.
     await expect(page.locator('tbody tr', { hasText: 'BR900' })).toBeVisible()
     await expect(page.locator('#output .empty-state')).toHaveCount(0)
+  })
+
+  test('failed forced refresh keeps the board and shows the error on the strip (review 🟡)', async ({ page }) => {
+    const date = getCurrentUTC8Date()
+    await seedCacheViaColdLoad(page)
+
+    // Boot revalidation succeeds; every later request (the forced one) aborts.
+    let requestCount = 0
+    await page.unroute(FLIGHT_API)
+    await page.route(FLIGHT_API, async (route) => {
+      requestCount += 1
+      if (requestCount === 1) {
+        await fulfillFlights(route, date)
+        return
+      }
+      await route.abort()
+    })
+
+    await page.goto('/?e2e-swr=1')
+    await expect(page.locator('tbody tr', { hasText: 'BR900' })).toBeVisible()
+
+    const touchSupported = await page.evaluate(() => typeof TouchEvent !== 'undefined' && typeof Touch !== 'undefined')
+    test.skip(!touchSupported, 'TouchEvent/Touch constructors unavailable in this engine')
+    // Dispatch on a real element — the listeners read event.target.closest(),
+    // and a Document target would throw there.
+    await page.evaluate(() => {
+      const fire = (type, y) => {
+        const touch = new Touch({ identifier: 1, target: document.body, clientX: 100, clientY: y })
+        document.body.dispatchEvent(new TouchEvent(type, { touches: [touch], bubbles: true, cancelable: true }))
+      }
+      fire('touchstart', 120)
+      fire('touchmove', 220)
+      fire('touchmove', 360)
+      fire('touchend', 360)
+    })
+
+    // The forced POST went out and failed: the board stays (it was never
+    // blanked), and the failure is visible on the strip even with search
+    // closed — not silent (review 5654143885, 🟡).
+    await expect.poll(() => requestCount, { timeout: 8000 }).toBe(2)
+    await expect(page.locator('tbody tr', { hasText: 'BR900' })).toBeVisible()
+    await expect(page.locator('#output .empty-state')).toHaveCount(0)
+    await expect(page.locator('#swr-status')).toBeVisible()
+    await expect(page.locator('#swr-status')).toHaveText('Query failed, please try again later.')
   })
 })

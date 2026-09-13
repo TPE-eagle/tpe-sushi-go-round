@@ -194,6 +194,14 @@ test.describe('User Interaction Tests', () => {
   // +2/+4/+6/+8h and wraps back to +2h; the footer Range line follows every
   // step, and the ForwardHours cookie survives the visibilitychange reload.
   test('time-window selector cycles the display window, survives a reload, and wraps back to +2h', async ({ page }) => {
+    // The end-of-day truncation (issue #88) collapses +2h and +4h into the
+    // identical "… - 23:59" range once the rounded window start crosses
+    // 22:00 UTC+8, which made the range-inequality assertion below fail for
+    // any CI run landing in the daily 22:10–23:59 UTC+8 window (seen live on
+    // the vitest-5 PR). Pin the app's Date to a mid-afternoon UTC+8 moment
+    // where no truncation bites, so the assertion is deterministic
+    // year-round. setFixed only pins Date; timers still run normally.
+    await page.clock.setFixedTime('2026-06-15T08:00:00Z') // 16:00 UTC+8, far from the truncation edge
     await page.goto('/')
     await page.waitForSelector('#apiParams')
     // The selector lives in the About drawer header (issue #130 follow-up).
@@ -228,6 +236,37 @@ test.describe('User Interaction Tests', () => {
     await btn.click() // wraps back to the default
     await expect(btn).toHaveText('+2h')
     await expect(btn).not.toHaveClass(/active/)
+  })
+
+  // Issue #147 — the stock mock carries short English AName values ("EVA Air"),
+  // which never wrap. The real API returns longer names ("EVA Airways",
+  // "STARLUX Airlines") that wrapped each pill to two lines at mid-size widths
+  // (769-850px, row 58px vs 40px). Route the real long names directly and pin
+  // the single-line row at the tightest mid-size width.
+  test('airline pill row stays single-line at mid-size widths with the real API long names', async ({ page }) => {
+    await page.unroute('https://www.taoyuan-airport.com/api/api/flight/a_flight')
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { BNO: '1', ACode: 'BR', AName: 'EVA Airways', FlightNo: '35', Gate: 'C1', ODate: '2026/09/13', OTime: '08:10:00', RDate: '2026/09/13', RTime: '08:10:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', Memo: '', PlaneNo: 'B777-300ER', StopCode: '03', flightCode: 'BR35', AState: 'A' },
+          { BNO: '2', ACode: 'CI', AName: 'China Airlines', FlightNo: '123', Gate: 'D2', ODate: '2026/09/13', OTime: '09:20:00', RDate: '2026/09/13', RTime: '09:20:00', CityCode: 'HND', CityEname: 'Tokyo', CityName: '東京', Memo: '', PlaneNo: 'A330-300', StopCode: '03', flightCode: 'CI123', AState: 'A' },
+          { BNO: '3', ACode: 'JX', AName: 'STARLUX Airlines', FlightNo: '456', Gate: 'C5', ODate: '2026/09/13', OTime: '10:30:00', RDate: '2026/09/13', RTime: '10:30:00', CityCode: 'KIX', CityEname: 'Osaka', CityName: '大阪', Memo: '', PlaneNo: 'A321-252NX', StopCode: '03', flightCode: 'JX456', AState: 'A' },
+        ]),
+      })
+    })
+    await page.setViewportSize({ width: 800, height: 900 })
+    await page.goto('/')
+    await waitForApiAndTable(page)
+
+    await expect(page.locator('#airlineButtons .airline-link')).toHaveCount(4)
+    const height = await page.evaluate(() =>
+      document.querySelector('#airlineButtons').getBoundingClientRect().height
+    )
+    expect(height).toBeLessThanOrEqual(46) // one 40px line; the pre-fix row measured 58px
+    await expect(page.locator('#airlineButtons')).toContainText('EVA Air (BR)')
+    await expect(page.locator('#airlineButtons')).toContainText('STARLUX (JX)')
   })
 
   // PR #133 review note 2 — pin the boot restore path: the drawer markup
