@@ -139,8 +139,10 @@ let searchDepUnavailable = false;
 let boardHasData = false;
 // Issue #141 — current SWR indicator state ({ kind: 'updating' } while a
 // background revalidation runs, { kind: 'stale', timestamp } when the
-// revalidation failed and the board is showing cached data). Kept as state
-// (not just DOM text) so a language switch can re-translate the label.
+// revalidation failed and the board is showing cached data, { kind: 'error'
+// } when a forced refresh failed with the previous board kept on screen).
+// Kept as state (not just DOM text) so a language switch can re-translate
+// the label; every kind clears on the next fetchData() entry / success.
 let swrStatusState = null;
 // sessionStorage key for { open, q } — survives the visibilitychange reload;
 // per-tab and session-scoped, deliberately NOT a cookie (issue #130 D3).
@@ -1263,8 +1265,11 @@ function fetchData(options = {}) {
 
         // Issue #141 — a forced refresh failed but the board already shows
         // the previous cycle: keep it (it was never cleared on this path)
-        // and surface the failure instead of blanking it.
+        // and surface the failure on the strip (review 🟡: with search
+        // closed the status line is hidden, so the strip is the only always-
+        // visible channel) and on the status line when search is open.
         if (forceRefresh && boardHasData) {
+            setSwrStatus({ kind: 'error' });
             if (searchOpen) setStatusLine(translations[currentLanguage]["error"]);
             return;
         }
@@ -1506,7 +1511,9 @@ function renderSwrStatus() {
     const t = translations[currentLanguage];
     el.innerText = swrStatusState.kind === 'stale'
         ? t['staleShown'].replace('{min}', cacheAgeMinutes(swrStatusState.timestamp))
-        : t['updating'];
+        : swrStatusState.kind === 'error'
+            ? t['error']
+            : t['updating'];
     el.hidden = false;
 }
 

@@ -175,6 +175,8 @@ Language is detected from `navigator.language` on each load; not persisted.
 
 **Shared utility module with inline duplication.** `src/utils/flightUtils.js` is imported by unit tests. `main.js` re-implements the same functions inline (no import) to keep the bundle self-contained. **These two copies must stay in sync.** Current duplicated functions: `filterFlightsByTime`, `filterSupportedAirlines`, `getTimeWindowConfig`, `getTimeWindow`, `roundDownToStep`, `extractPlaneFamily`, `getAvailableFamilies`, `filterByPlaneType`, `hasVendoredLogo` (plus the `KNOWN_LOGO_CODES` constant it reads — issue #69), `normalizeFlightQuery`, `matchFlights` (issue #130). Same convention applies to `src/utils/blockTimes.js`: `BLOCK_TIME_MINUTES`, `TURNAROUND_MINUTES`, `getMinPlausibleRoundTripMinutes`, `findReturnLeg`, `dayReturn`. (`getUncoveredCityCodes` is test/build-time only — not part of the render path, not mirrored in `main.js`. `findReturnLeg`'s aircraft-type check calls `extractPlaneFamily`, already in this list.)
 
+**New pure-function utils since issue #141 skip the mirroring**: put them in a standalone module that `main.js` imports directly (`src/utils/swr.js` — the SWR cache age gate — is the pattern; Vite bundles the import, so the self-contained-bundle rationale above no longer applies to new code). The duplicated list above is frozen as-is — when touching one of those, still update both copies in the same commit.
+
 **CSP `connect-src` lists only real origins.** An earlier commit included `https://api.taoyuan-airport.com`, which does not resolve in DNS. The real API lives at `https://www.taoyuan-airport.com/api/api/flight/a_flight` (the `www` host with an `/api/` path). Only add origins to CSP that the app actually talks to.
 
 ## Testing
