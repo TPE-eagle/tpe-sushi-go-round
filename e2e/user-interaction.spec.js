@@ -194,6 +194,14 @@ test.describe('User Interaction Tests', () => {
   // +2/+4/+6/+8h and wraps back to +2h; the footer Range line follows every
   // step, and the ForwardHours cookie survives the visibilitychange reload.
   test('time-window selector cycles the display window, survives a reload, and wraps back to +2h', async ({ page }) => {
+    // The end-of-day truncation (issue #88) collapses +2h and +4h into the
+    // identical "… - 23:59" range once the rounded window start crosses
+    // 22:00 UTC+8, which made the range-inequality assertion below fail for
+    // any CI run landing in the daily 22:10–23:59 UTC+8 window (seen live on
+    // the vitest-5 PR). Pin the app's Date to a mid-afternoon UTC+8 moment
+    // where no truncation bites, so the assertion is deterministic
+    // year-round. setFixed only pins Date; timers still run normally.
+    await page.clock.setFixedTime('2026-06-15T08:00:00Z') // 16:00 UTC+8, far from the truncation edge
     await page.goto('/')
     await page.waitForSelector('#apiParams')
     // The selector lives in the About drawer header (issue #130 follow-up).
