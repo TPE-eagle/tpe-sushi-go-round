@@ -173,9 +173,17 @@ export function getMockFlightData(date = getCurrentUTC8Date()) {
   const anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0) - 8 * 60 * 60 * 1000)
   const offsets = [10, 20, 30, 40, 50]
   const dateTimes = offsets.map(offset => {
+    // Resolution of #149-CI (+8h stamping) × #151 (fixed anchor): the
+    // anchor is the absolute instant of 12:00 UTC+8 on the fixture day, and
+    // the stamp shifts +8h before toISOString so dateStr/timeStr read back
+    // as UTC+8 wall clock — the app matches rows against getUTC8Date() and
+    // parses ODate+OTime as +08:00, so plain toISOString() would render
+    // 04:0x UTC instead of the intended 12:0x UTC+8. Deterministic and
+    // straddle-free either way.
     const dt = new Date(anchor.getTime() + offset * 60 * 1000)
-    const dateStr = dt.toISOString().split('T')[0].replace(/-/g, '/')
-    const timeStr = dt.toISOString().split('T')[1].slice(0, 8)
+    const utc8 = new Date(dt.getTime() + 8 * 60 * 60 * 1000)
+    const dateStr = utc8.toISOString().split('T')[0].replace(/-/g, '/')
+    const timeStr = utc8.toISOString().split('T')[1].slice(0, 8)
     return { dateStr, timeStr }
   })
 
