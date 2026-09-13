@@ -1074,20 +1074,29 @@ function updateApiParams() {
 // aborts after API_FETCH_TIMEOUT_MS and lands in the caller's catch, where
 // a cache-painted board simply keeps standing. The timer is cleared as
 // soon as the request settles either way.
-function fetchFlightDataPost(postData, acceptLanguageHeader) {
+// Issue #141 — the deadline must cover the whole request, not just the
+// headers: fetch() resolves as soon as the response headers arrive, so the
+// timer is only cleared after response.json() finishes. A hang during body
+// download/parse now still trips the 15s abort (review finding on PR #143).
+async function fetchFlightDataPost(postData, acceptLanguageHeader) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
-    return fetch(API_URL, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": acceptLanguageHeader,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(postData),
-        signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
+    try {
+        const response = await fetch(API_URL, {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": acceptLanguageHeader,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(postData),
+            signal: controller.signal,
+        });
+        return await response.json();
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // Issue #141 — fetchData({ forceRefresh: true }) is the pull-to-refresh
@@ -1212,7 +1221,6 @@ function fetchData(options = {}) {
             ? 'ja-JP,ja;q=0.9'
             : 'en-US,en;q=0.9';
     fetchFlightDataPost(postData, acceptLanguageHeader)
-    .then(response => response.json())
     .then(data => {
         // Store for the next SWR paint / offline fallback. Kept
         // unconditional (issue #39): a superseded response is still valid
@@ -1360,7 +1368,6 @@ function fetchReturnLegArrivals(token) {
             ? 'ja-JP,ja;q=0.9'
             : 'en-US,en;q=0.9';
     fetchFlightDataPost(postData, acceptLanguageHeader)
-    .then(response => response.json())
     .then(data => {
         if (cacheable) {
             setCachedFlightData(cacheKey, { data: data, timestamp: Date.now() });
@@ -1425,7 +1432,6 @@ function fetchSearchDepartures() {
     fetchFlightDataPost(postData, currentLanguage === 'zh' ? 'zh-TW,zh;q=0.9'
         : currentLanguage === 'jp' ? 'ja-JP,ja;q=0.9'
         : 'en-US,en;q=0.9')
-    .then(response => response.json())
     .then(data => {
         if (cacheable) {
             setCachedFlightData(cacheKey, { data: data, timestamp: Date.now() });
