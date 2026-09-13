@@ -34,6 +34,12 @@ const REFRESH_DELAY = 1500;
 // Issue #149 — the stale "N min ago" capsule auto-dismisses after this long;
 // it explains the moment of a failed refresh, it is not a permanent fixture.
 const SWR_STALE_DISMISS_MS = 8000;
+// Issue #145 — A↔D toggle fast path: when the other direction's cache is
+// younger than this, render it directly and skip the network entirely (the
+// board is then at most 2 min stale, and visibilitychange / online /
+// pull-to-refresh still force the network). Gate changes on a coarser
+// granularity than this, and the API round trip costs 3.4s+ (measured).
+const SWR_TOGGLE_SKIP_MS = 2 * 60 * 1000;
 const THEME_COOKIE_NAME = 'theme';
 // Issue #130 follow-up — the window selection is cookie-persisted (owner
 // decision 2026-09-05, superseding #88's in-memory-only D3) so it survives
@@ -158,7 +164,8 @@ let swrStatusDismissTimer = null;
 // so the LRU-5 offline cache cannot evict today's offline fallback.
 // null = that direction's store hasn't been fetched yet. Board invariants
 // untouched: next-day rows never enter flightData / allSupportedFlights —
-// renderSearchResults() is the only reader.
+// readers are renderSearchResults() and, since #145, displayFlights() when
+// the board window crosses midnight (chip-marked, board-filtered).
 let nextDayByState = { date: null, A: null, D: null };
 // Same supersession pattern as searchDepFetchToken.
 let nextDayFetchToken = 0;
@@ -1037,6 +1044,15 @@ function formatToUTC8_HHMM(dateObj) {
     return `${hours}:${minutes}`;
 }
 
+// Issue #145 — MM/DD of a UTC+8 instant, used to label a window end that
+// reaches past midnight (a bare HH:MM would be ambiguous there).
+function formatToUTC8_MMDD(dateObj) {
+    const utc8EquivalentDate = new Date(dateObj.getTime() + (8 * 60 * 60 * 1000));
+    const month = (utc8EquivalentDate.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = utc8EquivalentDate.getUTCDate().toString().padStart(2, '0');
+    return `${month}/${day}`;
+}
+
 // Centralized business rule for time window config.
 // Issue #88: `forwardHours` replaces the old fixed `durationMinutes: 120`
 // as the single source of truth for the window's forward reach (120
@@ -1080,29 +1096,38 @@ function endOfUTC8Day(now = new Date()) {
 }
 
 // Generic time window calculator.
-// Issue #88: the forward edge is `forwardHours` past the window start,
-// truncated so the window never reaches past the end of `initialNow`'s own
-// UTC+8 day. The anchor is the day of `now`, not of `windowStart`: the
-// arrivals −40 min backward component legally places windowStart on the
-// previous day around Taipei midnight — truncation only ever bites
-// windowEnd, never windowStart. Mirrors src/utils/flightUtils.js.
+// Issue #88: the forward edge is `forwardHours` past the window start.
+// The anchor is the day of `now`, not of `windowStart`: the arrivals
+// −40 min backward component legally places windowStart on the previous
+// day around Taipei midnight.
+// Issue #145 (revising #88's truncation): windowEnd is NO longer clamped
+// to now's own UTC+8 day — when `forwardHours` reaches past midnight the
+// window legally extends into tomorrow's early hours. Callers get
+// `crossesMidnight` instead and must treat tomorrow rows as chip-marked
+// board data pulled from the next-day store (never silently mixed into
+// today's payload). Mirrors src/utils/flightUtils.js.
 function getTimeWindow(config, initialNow = new Date()) { // initialNow is local by default
     const roundedLocalNow = roundDownToStep(initialNow, config.roundingStepMinutes); // Rounding local time
     
     const windowStart = new Date(roundedLocalNow.getTime() + (config.offsetFromRoundedMinutes * 60 * 1000)); // windowStart is local
     const windowEnd = new Date(windowStart.getTime() + (config.forwardHours * 60 * 60 * 1000)); // windowEnd is local
     windowEnd.setSeconds(59, 999); // Make the window inclusive of the last minute
-    const endOfDay = endOfUTC8Day(initialNow); // Issue #88 — truncate at the end of now's UTC+8 day
-    if (windowEnd > endOfDay) windowEnd.setTime(endOfDay.getTime());
-    return { windowStart, windowEnd };
+    const endOfDay = endOfUTC8Day(initialNow);
+    const crossesMidnight = windowEnd.getTime() > endOfDay.getTime();
+    return { windowStart, windowEnd, crossesMidnight };
 }
 
 function updateApiParams() {
     const dateStr = getUTC8Date(); // Date in YYYY/MM/DD (UTC+8)
     const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
-    const { windowStart, windowEnd } = getTimeWindow(config);
+    const { windowStart, windowEnd, crossesMidnight } = getTimeWindow(config);
     const startTimeStr = formatToUTC8_HHMM(windowStart);
-    const endTimeStr = formatToUTC8_HHMM(windowEnd);
+    // Issue #145 — once the window crosses midnight a bare HH:MM end is
+    // ambiguous (is 06:10 today or tomorrow?); show the end's actual date.
+    // No engineering notation — owner decision (issue #145).
+    const endTimeStr = crossesMidnight
+        ? `${formatToUTC8_MMDD(windowEnd)} ${formatToUTC8_HHMM(windowEnd)}`
+        : formatToUTC8_HHMM(windowEnd);
 
     const apiParamsText = `Date: ${dateStr}, Range: ${startTimeStr} - ${endTimeStr} (UTC+8)`;
     const apiParamsElement = document.getElementById("apiParams");
@@ -1153,6 +1178,7 @@ async function fetchFlightDataPost(postData, acceptLanguageHeader) {
 // on failure the previous paint stays up with the error on the status line.
 function fetchData(options = {}) {
     const forceRefresh = options?.forceRefresh === true;
+    const allowFreshCacheSkip = options?.allowFreshCacheSkip === true;
     setSwrStatus(null);
 
     // Issue #33 — kick off the return-leg arrivals fetch in parallel,
@@ -1192,16 +1218,6 @@ function fetchData(options = {}) {
     // token means the render-gate at fetchReturnLegArrivals() can only
     // pass once THIS token's own primary fetch has actually resolved.
     mainDataReadyForToken = -1;
-    if (currentFlightMode === 'D') {
-        fetchReturnLegArrivals(requestToken);
-    } else if (searchOpen) {
-        // Issue #130 — arrivals mode keeps the departures search store fresh
-        // while the takeover is active (mirror of the pairing fetch above).
-        fetchSearchDepartures();
-    }
-    // Issue #142 — next-day search store, gate-checked inside (search open
-    // AND 16:00+ UTC+8); refetched every cycle like the stores above.
-    fetchNextDayStores();
 
     const postData = {
         "ODate": getUTC8Date(),
@@ -1220,10 +1236,13 @@ function fetchData(options = {}) {
 
     // Update UI display for the current time window (for display purposes only)
     const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
-    const { windowStart, windowEnd } = getTimeWindow(config); 
+    const { windowStart, windowEnd, crossesMidnight } = getTimeWindow(config); 
     const dateStr = getUTC8Date(); 
     const startTimeStr = formatToUTC8_HHMM(windowStart);
-    const endTimeStr = formatToUTC8_HHMM(windowEnd);
+    // Issue #145 — same crossing-aware end label as updateApiParams.
+    const endTimeStr = crossesMidnight
+        ? `${formatToUTC8_MMDD(windowEnd)} ${formatToUTC8_HHMM(windowEnd)}`
+        : formatToUTC8_HHMM(windowEnd);
     const apiParamsText = `Date: ${dateStr}, Range: ${startTimeStr} - ${endTimeStr} (UTC+8)`;
     const apiParamsElement = document.getElementById("apiParams");
     if (apiParamsElement) {
@@ -1241,6 +1260,34 @@ function fetchData(options = {}) {
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
     const cacheable = swrCacheEnabled();
     const cachedData = cacheable && !forceRefresh ? getCachedFlightData(cacheKey) : null;
+
+    // Issue #145 — A↔D toggle fast path: a cache younger than
+    // SWR_TOGGLE_SKIP_MS renders directly with no network at all (not even
+    // a background revalidation, and — because the side-fetch kicks below
+    // sit after this gate — no pairing/next-day requests either). Owner
+    // decision: gate changes on a coarser granularity than 2 min, and every
+    // other trigger (visibilitychange reload, online event, pull-to-refresh)
+    // still forces the network. Placed before the SWR paint: the fast path
+    // shows no indicator at all.
+    if (allowFreshCacheSkip && cacheable && isOnline() && cachedData
+        && (Date.now() - cachedData.timestamp) <= SWR_TOGGLE_SKIP_MS) {
+        processFetchedData(cachedData.data);
+        mainDataReadyForToken = requestToken;
+        return;
+    }
+
+    if (currentFlightMode === 'D') {
+        fetchReturnLegArrivals(requestToken);
+    } else if (searchOpen) {
+        // Issue #130 — arrivals mode keeps the departures search store fresh
+        // while the takeover is active (mirror of the pairing fetch above).
+        fetchSearchDepartures();
+    }
+    // Issue #142/#145 — next-day store, gate-checked inside (search open
+    // AND 16:00+ UTC+8, or the board window itself crosses midnight);
+    // refetched every cycle like the stores above.
+    fetchNextDayStores();
+
     const paintedFromCache = shouldPaintFromCache(cachedData, Date.now(), isOnline(), forceRefresh);
     if (paintedFromCache) {
         processFetchedData(cachedData.data, { animate: true });
@@ -1512,9 +1559,16 @@ function fetchSearchDepartures() {
 // and #67 marketing-carrier duplicates, so ingestion filters ODate to
 // tomorrow, keeps the supported groups, and dedupes on
 // (FlightNo, OTime, CityCode). Rows NEVER touch flightData /
-// allSupportedFlights — renderSearchResults() is the only reader.
+// allSupportedFlights — readers are renderSearchResults() and (since
+// #145, when the board window crosses midnight) displayFlights().
 function fetchNextDayStores() {
-    if (!searchOpen || !shouldFetchNextDay(new Date())) return;
+    // Issue #145 — two independent triggers: the quick-dial search wants
+    // tomorrow from 16:00 UTC+8 (owner gate; search ignores the window),
+    // and the BOARD wants it whenever its own window reaches past midnight
+    // (boardWindowCrossesMidnight). Either one fetches the shared store.
+    const searchWants = searchOpen && shouldFetchNextDay(new Date());
+    const boardWants = boardWindowCrossesMidnight();
+    if (!searchWants && !boardWants) return;
     const token = ++nextDayFetchToken;
     nextDayUnavailable = false;
     const tomorrowStr = getUTC8DatePlus(1);
@@ -1541,16 +1595,22 @@ function fetchNextDayStores() {
     const applyResult = (state, data) => {
         if (token !== nextDayFetchToken) return; // superseded — drop silently
         nextDayByState[state] = ingest(data);
-        renderSearchResults();
+        // Issue #145 — the store now has two readers: the search takeover
+        // and (when the board window crosses midnight) the board itself.
+        if (searchOpen) renderSearchResults(); else renderFilteredView();
     };
 
     const markUnavailable = () => {
         if (token !== nextDayFetchToken) return; // superseded — drop silently
         nextDayUnavailable = true;
-        renderSearchResults();
+        if (searchOpen) renderSearchResults(); else renderFilteredView();
     };
 
-    ['A', 'D'].forEach((state) => {
+    // Search shows both directions; the board only renders the current
+    // mode, so a board-triggered cycle fetches just that leg (the search
+    // gate refetches both whenever it next opens).
+    const states = searchWants ? ['A', 'D'] : [currentFlightMode];
+    states.forEach((state) => {
         const postData = {
             "ODate": tomorrowStr,
             "OTimeOpen": null,
@@ -2229,6 +2289,10 @@ function cycleTimeWindow() {
         // so rebuilding is safe (same pattern as every fetch);
         // renderFilteredView()'s updateAirlineLinks() re-applies active state.
         generateAirlineLinks(flightData);
+        // Issue #145 — cycling onto a window that now crosses midnight needs
+        // tomorrow's payload for the chip-marked board rows; the fetch is
+        // gate-checked inside (no-op when the window stays within today).
+        fetchNextDayStores();
     }
     updateApiParams();
     renderFilteredView();
@@ -2639,6 +2703,15 @@ function isSmallScreen() {
     return window.innerWidth <= 768;
 }
 
+// Issue #145 — does the BOARD's current window reach past the UTC+8
+// midnight? True means the next-day store may hold rows the board needs
+// (chip-marked) and fetchNextDayStores() must run for the current mode.
+function boardWindowCrossesMidnight() {
+    const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
+    const { crossesMidnight } = getTimeWindow(config);
+    return crossesMidnight;
+}
+
 // Issue #33 — departures-only 5th column content. Blank when there is no
 // confident return-leg match (not yet fetched, long-haul, one-way, no
 // candidate survives the plausibility gate, or dayReturn() overrides it to
@@ -2730,6 +2803,64 @@ function displayFlights(flights, ACode) {
                 ${currentFlightMode === 'D' ? `<td class="text-center">${buildReturnGateCell(flight, isSmall)}</td>` : ''}
             </tr>`;
     });
+
+    // Issue #145 — when the window crosses midnight, tomorrow's early-hours
+    // rows are APPENDED after today's (never interleaved, never merged into
+    // flightData/allSupportedFlights) and every row carries the tomorrow
+    // chip. Same ingestion guarantees as the search store: day-pure,
+    // group-filtered, deduped; cancelled rows are dropped here (board
+    // semantics — search keeps them, the board does not). The store's date
+    // stamp is re-checked at render time so a page left open past midnight
+    // waits for the next cycle instead of rendering a stale day.
+    const tomorrowStr = getUTC8DatePlus(1);
+    const tomorrowLoaded = !nextDayUnavailable
+        && nextDayByState.date === tomorrowStr
+        && nextDayByState[currentFlightMode] !== null;
+    if (tomorrowLoaded) {
+        const config = getTimeWindowConfig(currentFlightMode, currentForwardHours);
+        const { windowStart, windowEnd } = getTimeWindow(config);
+        const inWindow = (flight) => {
+            const odt = new Date(`${flight.ODate.replace(/\//g, '-')}T${flight.OTime}+08:00`);
+            return odt >= windowStart && odt <= windowEnd;
+        };
+        const tomorrowArrivalsPool = (nextDayByState.A ?? []).filter(f => !isCancelledFlight(f));
+        const tomorrowRows = (nextDayByState[currentFlightMode] ?? [])
+            .filter(flight => !isCancelledFlight(flight) && inWindow(flight))
+            // Pins apply to tomorrow rows exactly like today's: the airline
+            // group scope and the plane-type pin (TBD-always-passes) both
+            // re-run here so a pinned pilot never sees an unpinned row.
+            .map(flight => applyAirlineScope([flight], currentACode).length ? flight : null)
+            .filter(flight => flight && filterByPlaneType([flight], currentPlaneType).length)
+            .sort((a, b) => {
+                if (a.ACode < b.ACode) return -1;
+                if (a.ACode > b.ACode) return 1;
+                return (parseInt(a.FlightNo, 10) || 0) - (parseInt(b.FlightNo, 10) || 0);
+            });
+
+        tomorrowRows.forEach(flight => {
+            const cityDisplay = isSmall ? flight.CityCode : (currentLanguage === 'zh' ? flight.CityName : flight.CityEname);
+            const terminalDisplay = flight.BNO ? `T${flight.BNO}` : '';
+            const displayFlightNo = `${flight.ACode}${flight.FlightNo}`.replace(/\s+/g, '');
+            const logoImg = hasVendoredLogo(flight.ACode)
+                ? `<img alt="" width="28" height="20" src="${LOGO_BASE_URL}${flight.ACode}.gif">`
+                : '';
+            const chip = `<span class="status-chip">${escapeHtml(translations[currentLanguage].search.tomorrowChip)}</span>`;
+            const gateCell = flight.Gate ? escapeHtml(flight.Gate) : `<span class="gate-tba">${escapeHtml(translations[currentLanguage].search.gateTba)}</span>`;
+            const returnCell = currentFlightMode === 'D'
+                ? buildReturnGateCellFrom(flight, tomorrowArrivalsPool, isSmall)
+                : '';
+
+            tableContent += `
+            <tr>
+                <td>${logoImg}${displayFlightNo}${chip}</td>
+                <td ${isSmall ? 'class="text-center"' : ''}>${cityDisplay}</td>
+                <td class="text-center">${terminalDisplay}</td>
+                <td class="text-center">${gateCell}</td>
+                ${currentFlightMode === 'A' ? `<td class="text-center">${flight.StopCode}</td>` : ''}
+                ${currentFlightMode === 'D' ? `<td class="text-center">${returnCell}</td>` : ''}
+            </tr>`;
+        });
+    }
 
     tableContent += `</tbody></table>`;
 
@@ -3093,7 +3224,10 @@ function toggleFlightMode() {
     updateElement('title', translations[currentLanguage][titleKey]);
     resetAnimation(document.getElementById('title'));
 
-    fetchData();
+    // Issue #145 — the fresh-cache fast path: if the other direction's
+    // cache is younger than SWR_TOGGLE_SKIP_MS, render it directly with no
+    // network. Otherwise the normal (SWR-enabled) cycle runs.
+    fetchData({ allowFreshCacheSkip: true });
     updateApiParams();
 }
 

@@ -136,6 +136,7 @@ npm run test:e2e:prod     # Production E2E (live site, multi-browser)
 | `language-detection.spec.js` | Three languages, browser detection |
 | `user-interaction.spec.js` | Airline filter, theme, cookies, responsive |
 | `plane-type.spec.js` | Plane type row, dynamic list, pin / clear, pin survives mode toggle and cold load, orphan cookie cleanup |
+| `crossmidnight-board.spec.js` | Cross-midnight board: tomorrow chip rows after today, date-labelled window end, toggle fast path (issue #145) |
 | `offline.spec.js` | Offline banner visibility on `offline` / `online` events |
 | `production.spec.js` | Live site smoke tests |
 
