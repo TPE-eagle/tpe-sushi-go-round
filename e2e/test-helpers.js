@@ -159,16 +159,21 @@ export function getCurrentUTC8DateTime() {
   return utc8Time
 }
 
-import { getTimeWindowConfig, getTimeWindow } from '../src/utils/flightUtils.js'
-
 export function getMockFlightData(date = getCurrentUTC8Date()) {
-  // Generate flight times within the calculated UTC+8 window
-  const nowLocal = new Date()
-  const config = getTimeWindowConfig('A')
-  const { windowStart } = getTimeWindow(config, nowLocal)
+  // Issue #151 — anchor fixture times to a FIXED wall clock inside the
+  // `date` UTC+8 day (12:00) instead of deriving them from the real time
+  // window. The window-derived anchor tracked the wall clock (now −40 min,
+  // 10-min rounded), so CI runs after 16:00 UTC+8 (= Taipei midnight) built
+  // rows whose ODate said "yesterday" while their ids said "today" — the
+  // quick-dial search store (matchFlights drops rows whose ODate ≠ today)
+  // went empty and the whole flight-search suite failed. 12:00 + the
+  // 10–50 min offsets can never straddle a day boundary, so ids, ODate and
+  // RDate always agree, for any date passed in.
+  const [y, m, d] = date.split('/').map(Number)
+  const anchor = new Date(Date.UTC(y, m - 1, d, 12, 0, 0) - 8 * 60 * 60 * 1000)
   const offsets = [10, 20, 30, 40, 50]
   const dateTimes = offsets.map(offset => {
-    const dt = new Date(windowStart.getTime() + offset * 60 * 1000)
+    const dt = new Date(anchor.getTime() + offset * 60 * 1000)
     const dateStr = dt.toISOString().split('T')[0].replace(/-/g, '/')
     const timeStr = dt.toISOString().split('T')[1].slice(0, 8)
     return { dateStr, timeStr }
