@@ -1561,14 +1561,13 @@ function fetchNextDayStores() {
             "keyword": ""
         };
 
-        const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-        if (!isTestEnvironment && !isOnline()) {
-            const cachedData = getCachedFlightData(`flight_data_${JSON.stringify(postData)}`);
-            if (cachedData) {
-                applyResult(state, cachedData.data);
-            } else {
-                markUnavailable();
-            }
+        // Issue #151 review — no code path ever writes a next-day cache
+        // entry (the board fetchers all key on today's ODate and this
+        // function never calls setCachedFlightData), so a cache read here
+        // can never hit. Offline (or cache-disabled) simply means the
+        // next-day leg is unavailable: stay today-only.
+        if (!swrCacheEnabled() || !isOnline()) {
+            markUnavailable();
             return;
         }
 
