@@ -73,21 +73,22 @@ describe('+4/+6/+8h extend the forward edge only (issue #88 D1)', () => {
     });
 });
 
-describe('midnight truncation (issue #88)', () => {
-    const taipeiEndOfDay = new Date('2025-06-08T23:59:59.999+08:00').getTime();
-
-    it('bites windowEnd at Taipei 23:59:59.999 — arrivals +2h started at 23:00', () => {
+describe('midnight crossing (issue #145, revising the #88 truncation)', () => {
+    it('lets arrivals +2h at 23:00 keep the full span past midnight and reports the crossing', () => {
         const now = new Date('2025-06-08T23:00:00+08:00');
-        const { windowStart, windowEnd } = getTimeWindow(getTimeWindowConfig('A', 2), now);
+        const { windowStart, windowEnd, crossesMidnight } = getTimeWindow(getTimeWindowConfig('A', 2), now);
         expect(formatToUTC8_HHMM(windowStart)).toBe('22:20');
-        expect(windowEnd.getTime()).toBe(taipeiEndOfDay); // would be 00:20 next day untruncated
+        // The old clamp truncated windowEnd at 23:59:59.999; it now keeps
+        // the full forward reach into tomorrow (00:20 next day).
+        expect(windowEnd.getTime()).toBe(new Date('2025-06-09T00:20:59.999+08:00').getTime());
+        expect(crossesMidnight).toBe(true);
     });
 
-    it('bites at +8h well before midnight — departures 17:00 would reach 01:20 next day', () => {
+    it('reports the crossing at +8h well before midnight — departures 17:00 reaches 01:20 next day', () => {
         const now = new Date('2025-06-08T17:00:00+08:00');
-        const { windowStart, windowEnd } = getTimeWindow(getTimeWindowConfig('D', 8), now);
-        expect(formatToUTC8_HHMM(windowStart)).toBe('17:00');
-        expect(windowEnd.getTime()).toBe(taipeiEndOfDay);
+        const { windowEnd, crossesMidnight } = getTimeWindow(getTimeWindowConfig('D', 8), now);
+        expect(crossesMidnight).toBe(true);
+        expect(windowEnd.getTime()).toBe(new Date('2025-06-09T01:00:59.999+08:00').getTime());
     });
 
     it('never touches windowStart — arrivals around Taipei midnight keep their previous-day start', () => {
@@ -152,17 +153,19 @@ describe('filterFlightsByTime forwardHours (issue #88)', () => {
         expect(filterFlightsByTime(revised, 'A', now, 8)).toHaveLength(1);
     });
 
-    it('truncation keeps a revised time past Taipei midnight out of the board', () => {
-        // Departures 23:00 +8h would reach 07:00 next day untruncated. A
-        // delayed row whose revised (RDate) time lands after midnight must
-        // not match — the window never crosses the day boundary.
+    it('includes a today row whose revised (RDate) time lands past midnight — it is today\'s flight, not a tomorrow row', () => {
+        // Departures 23:00 +8h reaches 07:00 next day untruncated. A
+        // delayed row whose revised (RDate) time lands after midnight is
+        // TODAY's flight running late (ODate stays today) — it belongs in
+        // the today block, unchipped. Only rows ODATE-stamped tomorrow come
+        // from the next-day store and carry the chip.
         const lateNow = new Date('2025-06-08T23:00:00+08:00');
         const delayedPastMidnight = [{
             ODate: '2025/06/08', OTime: '22:00:00',
             RDate: '2025/06/09', RTime: '00:30:00',
             Memo: 'delay'
         }];
-        expect(filterFlightsByTime(delayedPastMidnight, 'D', lateNow, 8)).toHaveLength(0);
+        expect(filterFlightsByTime(delayedPastMidnight, 'D', lateNow, 8)).toHaveLength(1);
     });
 });
 

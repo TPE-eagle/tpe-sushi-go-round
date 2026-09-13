@@ -179,6 +179,27 @@ describe('Time Window Logic', () => {
         expect(formatToUTC8_HHMM(windowEnd)).toBe('08:00');
     });
 
+    // Issue #145 — the #88 truncation is gone: a window reaching past the
+    // UTC+8 midnight keeps its full span and reports the crossing instead.
+    it('should report crossesMidnight and keep the full span when the window reaches past the UTC+8 day', () => {
+        const testTime = new Date('2025-06-08T23:30:00+08:00'); // 23:30, +2h -> 01:30 next day
+        const config = getTimeWindowConfig('D');
+        const { windowStart, windowEnd, crossesMidnight } = getTimeWindow(config, testTime);
+
+        expect(crossesMidnight).toBe(true);
+        expect(formatToUTC8_HHMM(windowStart)).toBe('23:30');
+        // The old clamp truncated windowEnd to 23:59:59.999; it now keeps
+        // the full forward reach into tomorrow.
+        expect(formatToUTC8_HHMM(windowEnd)).toBe('01:30');
+    });
+
+    it('should keep crossesMidnight false for windows inside the day', () => {
+        const testTime = new Date('2025-06-08T10:00:00+08:00');
+        const config = getTimeWindowConfig('D');
+        const { crossesMidnight } = getTimeWindow(config, testTime);
+        expect(crossesMidnight).toBe(false);
+    });
+
     it('should handle time rounding correctly', () => {
         const testCases = [
             { input: '06:05:30', expected: '05:20' }, // 6:05 -> 6:00 -> 5:20 (arrival)

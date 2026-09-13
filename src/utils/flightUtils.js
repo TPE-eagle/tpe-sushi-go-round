@@ -106,12 +106,17 @@ export function endOfUTC8Day(now = new Date()) {
 
 /**
  * Calculate time window based on configuration and current time.
- * Issue #88: the forward edge is `forwardHours` past the window start,
- * truncated so the window never reaches past the end of `initialNow`'s own
- * UTC+8 day. The anchor is the day of `now`, not of `windowStart` — the
- * arrivals −40 min backward component legally places windowStart on the
- * previous day around Taipei midnight; truncation only ever bites
- * windowEnd, never windowStart.
+ * Issue #88: the forward edge is `forwardHours` past the window start.
+ * The anchor is the day of `now`, not of `windowStart` — the arrivals
+ * −40 min backward component legally places windowStart on the previous
+ * day around Taipei midnight.
+ *
+ * Issue #145 (revising #88's truncation): windowEnd is NO longer clamped
+ * to now's own UTC+8 day — when `forwardHours` reaches past midnight the
+ * window legally extends into tomorrow's early hours. Callers get
+ * `crossesMidnight` instead and must treat tomorrow rows as chip-marked
+ * board data pulled from the next-day store (never silently mixed into
+ * today's payload).
  */
 export function getTimeWindow(config, initialNow = new Date()) {
     const roundedLocalNow = roundDownToStep(initialNow, config.roundingStepMinutes);
@@ -119,9 +124,9 @@ export function getTimeWindow(config, initialNow = new Date()) {
     const windowStart = new Date(roundedLocalNow.getTime() + (config.offsetFromRoundedMinutes * 60 * 1000));
     const windowEnd = new Date(windowStart.getTime() + (config.forwardHours * 60 * 60 * 1000));
     windowEnd.setSeconds(59, 999);
-    const endOfDay = endOfUTC8Day(initialNow); // Issue #88 — truncate at the end of now's UTC+8 day
-    if (windowEnd > endOfDay) windowEnd.setTime(endOfDay.getTime());
-    return { windowStart, windowEnd };
+    const endOfDay = endOfUTC8Day(initialNow);
+    const crossesMidnight = windowEnd.getTime() > endOfDay.getTime();
+    return { windowStart, windowEnd, crossesMidnight };
 }
 
 /**
