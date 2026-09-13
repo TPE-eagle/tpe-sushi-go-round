@@ -106,11 +106,22 @@ test.describe('SWR cache-first board (issue #141)', () => {
     // cache-only read).
     expect(reloadRequests).toBe(1)
 
+    // Issue #149 — the capsule overlay must never shift the page: #output's
+    // position is identical while the indicator is visible vs after it hides
+    // (the original in-flow strip pushed the whole page down on every update).
+    const outputTopWhileUpdating = await page.evaluate(() =>
+      document.getElementById('output').getBoundingClientRect().top
+    )
+
     // When the revalidation lands, the board swaps silently: same rows, no
     // error, indicator cleared.
     await revalidationLanded
     await expect(page.locator('tbody tr', { hasText: 'BR900' })).toBeVisible()
     await expect(page.locator('#swr-status')).toBeHidden()
+    const outputTopAfterSwap = await page.evaluate(() =>
+      document.getElementById('output').getBoundingClientRect().top
+    )
+    expect(outputTopAfterSwap).toBe(outputTopWhileUpdating)
   })
 
   test('failed revalidation keeps the cached board and labels its age', async ({ page }) => {
