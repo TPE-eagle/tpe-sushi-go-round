@@ -355,3 +355,31 @@ export async function setupMockApiRoute(page, mockData = null, arrivalsMockData 
 
   return baseData
 }
+// Issue #142 — ODate-aware mock route. The routes above stamp rows from the
+// local time window / caller-provided lists, so a NEXT-day request is
+// indistinguishable from a today request and the cross-day search paths are
+// untestable. This variant serves each request rows stamped with the
+// REQUESTED ODate (rows that already carry an ODate pass through untouched,
+// so neighbour-day strays — which the real payload contains — can be mocked
+// too). rowsFor(dateStr, aState) returns the rows for that request, or
+// { status: N } to simulate a failing fetch for that day/state. Returns the
+// recorded requests ([{ ODate, AState }]) so specs can assert exactly which
+// day/state pairs the app actually sent.
+export async function setupODateAwareMockRoute(page, rowsFor) {
+  const requests = []
+  await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', async (route) => {
+    let body = {}
+    try { body = route.request().postDataJSON() || {} } catch (_) { /* empty body is fine */ }
+    const dateStr = typeof body.ODate === 'string' ? body.ODate : getCurrentUTC8Date()
+    const state = body.AState === 'D' ? 'D' : 'A'
+    requests.push({ ODate: dateStr, AState: state })
+    const result = rowsFor(dateStr, state)
+    if (result && typeof result.status === 'number') {
+      await route.fulfill({ status: result.status, contentType: 'application/json', body: '[]' })
+      return
+    }
+    const rows = (result || []).map(flight => ({ ...flight, ODate: flight.ODate ?? dateStr, AState: state }))
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) })
+  })
+  return requests
+}
