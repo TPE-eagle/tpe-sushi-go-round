@@ -148,6 +148,29 @@ body {
   border-color: rgba(255, 180, 0, 0.35);
 }
 
+/* SWR status strip (issue #141): sibling of the offline banner for the
+ * online path — "updating…" while a background revalidation runs behind a
+ * cache-painted board, "showing data from N min ago" when it failed. Same
+ * non-blocking strip shape as the banner; neutral colours so it reads as
+ * status, not warning. */
+.swr-status {
+  padding: 6px 12px;
+  margin: 0 0 8px 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+  color: var(--text-color);
+  background-color: var(--background-color);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  opacity: 0.85;
+  letter-spacing: 0.01em;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
 /* Footer Styles */
 #footer {
   text-align: center;

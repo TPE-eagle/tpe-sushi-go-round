@@ -155,30 +155,31 @@ describe('Flight Data Caching', () => {
     expect(cacheKey2).toContain('flight_data_')
   })
 
-  // Caching policy: flight data is live; gate and carousel change over time
-  // and a stale value is worse than a momentary empty state. So when online
-  // we always fetch fresh and never serve localStorage, regardless of age.
-  // localStorage is kept purely as an offline fallback.
-  describe('always-fresh-online policy', () => {
-    const shouldServeCache = (cached, online) => !!cached && !online
+  // Caching policy since issue #141 — SWR: a cache entry no older than
+  // SWR_MAX_AGE_MS (30 min) paints the board immediately on any connection
+  // while the network revalidates behind a visible indicator; beyond that
+  // age it is served only when offline (the historical fallback contract).
+  // Exhaustive boundary + forceRefresh coverage in swr.test.js against the
+  // real shouldPaintFromCache(); these checks pin the headline behaviours.
+  describe('swr cache policy', () => {
+    const SWR_MAX_AGE_MS = 30 * 60 * 1000
+    const shouldPaintCache = (cached, ageMs, online, forceRefresh = false) =>
+      !!cached && !forceRefresh && (ageMs <= SWR_MAX_AGE_MS || !online)
 
-    test('refuses cache of any age when online', () => {
-      const now = Date.now()
-      const fresh = { timestamp: now - 30_000 }
-      const aged = { timestamp: now - 5 * 60 * 1000 }
-      expect(shouldServeCache(fresh, true)).toBe(false)
-      expect(shouldServeCache(aged, true)).toBe(false)
+    test('paints fresh cache regardless of connectivity', () => {
+      expect(shouldPaintCache({ timestamp: Date.now() }, 30_000, true)).toBe(true)
+      expect(shouldPaintCache({ timestamp: Date.now() }, 30_000, false)).toBe(true)
     })
 
-    test('serves cache when offline regardless of age', () => {
-      const now = Date.now()
-      expect(shouldServeCache({ timestamp: now - 30_000 }, false)).toBe(true)
-      expect(shouldServeCache({ timestamp: now - 24 * 60 * 60 * 1000 }, false)).toBe(true)
+    test('paints stale cache only when offline', () => {
+      expect(shouldPaintCache({ timestamp: Date.now() }, 31 * 60 * 1000, true)).toBe(false)
+      expect(shouldPaintCache({ timestamp: Date.now() }, 24 * 60 * 60 * 1000, false)).toBe(true)
     })
 
-    test('returns false when nothing is cached regardless of connectivity', () => {
-      expect(shouldServeCache(null, true)).toBe(false)
-      expect(shouldServeCache(null, false)).toBe(false)
+    test('never paints without a cache entry or under forceRefresh', () => {
+      expect(shouldPaintCache(null, 0, true)).toBe(false)
+      expect(shouldPaintCache(null, 0, false)).toBe(false)
+      expect(shouldPaintCache({ timestamp: Date.now() }, 0, true, true)).toBe(false)
     })
   })
 
