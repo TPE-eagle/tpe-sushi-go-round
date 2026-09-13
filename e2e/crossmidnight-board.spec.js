@@ -77,6 +77,11 @@ test.describe('Cross-midnight board (issue #145)', () => {
     await expect(rows.nth(3)).toContainText('明日')
     // Missing carousel (StopCode) renders BLANK, never the string "undefined".
     await expect(rows.nth(2).locator('td').last()).toHaveText('')
+    // Feedback — the chip sits INLINE beside the flight number (same text
+    // line): a block chip would drop below it and double the row height.
+    const chipBox = await rows.nth(2).locator('.status-chip').boundingBox()
+    const numBox = await rows.nth(2).locator('td').first().boundingBox()
+    expect(chipBox.y).toBeLessThan(numBox.y + numBox.height / 2)
 
     // The window-end label carries the actual date once the window crosses
     // midnight (no bare ambiguous HH:MM, no engineering notation).

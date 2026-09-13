@@ -1296,6 +1296,16 @@ body {
   color: color-mix(in srgb, #dc3545 75%, var(--text-color));
 }
 
+/* Issue #145 — board variant of the chip: INLINE beside the flight number
+ * (the search takeover's chips stack on their own line by design, but the
+ * board row must stay single-line or it reads as 爆版). Later in the
+ * cascade, so display:inline-block wins over the block above. */
+.status-chip-inline {
+  display: inline-block;
+  margin: 0 0 0 4px;
+  vertical-align: middle;
+}
+
 tr.row-cancelled td {
   color: color-mix(in srgb, var(--text-color) 55%, var(--background-color));
 }

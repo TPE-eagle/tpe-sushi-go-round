@@ -2855,7 +2855,7 @@ function displayFlights(flights, ACode) {
             const logoImg = hasVendoredLogo(flight.ACode)
                 ? `<img alt="" width="28" height="20" src="${LOGO_BASE_URL}${flight.ACode}.gif">`
                 : '';
-            const chip = `<span class="status-chip">${escapeHtml(translations[currentLanguage].search.tomorrowChip)}</span>`;
+            const chip = `<span class="status-chip status-chip-inline">${escapeHtml(translations[currentLanguage].search.tomorrowChip)}</span>`;
             const gateCell = flight.Gate ? escapeHtml(flight.Gate) : `<span class="gate-tba">${escapeHtml(translations[currentLanguage].search.gateTba)}</span>`;
             const returnCell = currentFlightMode === 'D'
                 ? buildReturnGateCellFrom(flight, tomorrowArrivalsPool, isSmall)
