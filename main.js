@@ -1549,11 +1549,19 @@ function clearFlightCache() {
     }
 }
 
+// Issue #147 — the live API's English AName values ("EVA Airways",
+// "STARLUX Airlines") make each pill's label wrap to a second line at
+// mid-size widths (769-850px), blowing the row to 58px. Display the official
+// short brands in this row only; every other AName consumer (empty-state
+// tint, search) keeps the API value verbatim. Unknown names pass through.
+const AIRLINE_ROW_SHORT_NAMES = { 'EVA Airways': 'EVA Air', 'STARLUX Airlines': 'STARLUX' };
+
 function generateAirlineLinks(flights) {
     const airlines = {};
     flights.forEach(flight => {
         if (!airlines[flight.ACode]) {
-            airlines[flight.ACode] = `${flight.AName} (${flight.ACode})`;
+            const displayName = AIRLINE_ROW_SHORT_NAMES[flight.AName] || flight.AName;
+            airlines[flight.ACode] = `${displayName} (${flight.ACode})`;
         }
     });
 

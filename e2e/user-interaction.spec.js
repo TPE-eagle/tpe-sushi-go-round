@@ -238,6 +238,37 @@ test.describe('User Interaction Tests', () => {
     await expect(btn).not.toHaveClass(/active/)
   })
 
+  // Issue #147 — the stock mock carries short English AName values ("EVA Air"),
+  // which never wrap. The real API returns longer names ("EVA Airways",
+  // "STARLUX Airlines") that wrapped each pill to two lines at mid-size widths
+  // (769-850px, row 58px vs 40px). Route the real long names directly and pin
+  // the single-line row at the tightest mid-size width.
+  test('airline pill row stays single-line at mid-size widths with the real API long names', async ({ page }) => {
+    await page.unroute('https://www.taoyuan-airport.com/api/api/flight/a_flight')
+    await page.route('https://www.taoyuan-airport.com/api/api/flight/a_flight', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { BNO: '1', ACode: 'BR', AName: 'EVA Airways', FlightNo: '35', Gate: 'C1', ODate: '2026/09/13', OTime: '08:10:00', RDate: '2026/09/13', RTime: '08:10:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', Memo: '', PlaneNo: 'B777-300ER', StopCode: '03', flightCode: 'BR35', AState: 'A' },
+          { BNO: '2', ACode: 'CI', AName: 'China Airlines', FlightNo: '123', Gate: 'D2', ODate: '2026/09/13', OTime: '09:20:00', RDate: '2026/09/13', RTime: '09:20:00', CityCode: 'HND', CityEname: 'Tokyo', CityName: '東京', Memo: '', PlaneNo: 'A330-300', StopCode: '03', flightCode: 'CI123', AState: 'A' },
+          { BNO: '3', ACode: 'JX', AName: 'STARLUX Airlines', FlightNo: '456', Gate: 'C5', ODate: '2026/09/13', OTime: '10:30:00', RDate: '2026/09/13', RTime: '10:30:00', CityCode: 'KIX', CityEname: 'Osaka', CityName: '大阪', Memo: '', PlaneNo: 'A321-252NX', StopCode: '03', flightCode: 'JX456', AState: 'A' },
+        ]),
+      })
+    })
+    await page.setViewportSize({ width: 800, height: 900 })
+    await page.goto('/')
+    await waitForApiAndTable(page)
+
+    await expect(page.locator('#airlineButtons .airline-link')).toHaveCount(4)
+    const height = await page.evaluate(() =>
+      document.querySelector('#airlineButtons').getBoundingClientRect().height
+    )
+    expect(height).toBeLessThanOrEqual(46) // one 40px line; the pre-fix row measured 58px
+    await expect(page.locator('#airlineButtons')).toContainText('EVA Air (BR)')
+    await expect(page.locator('#airlineButtons')).toContainText('STARLUX (JX)')
+  })
+
   // PR #133 review note 2 — pin the boot restore path: the drawer markup
   // hardcodes "+2h", so only a real initApp() restore (cookie read before the
   // first paint of the selector) can produce "+4h" here. Seeding via
