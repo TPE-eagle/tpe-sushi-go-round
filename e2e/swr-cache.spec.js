@@ -192,10 +192,12 @@ test.describe('SWR cache-first board (issue #141)', () => {
 
     // Simulate the pull gesture: touchstart at scrollY 0, drag past the
     // 200px threshold, release → triggerRefresh() → fetchData({forceRefresh}).
+    // Dispatch on a real element — the listeners read event.target.closest(),
+    // and a Document target would throw there.
     await page.evaluate(() => {
       const fire = (type, y) => {
         const touch = new Touch({ identifier: 1, target: document.body, clientX: 100, clientY: y })
-        document.dispatchEvent(new TouchEvent(type, { touches: [touch], bubbles: true, cancelable: true }))
+        document.body.dispatchEvent(new TouchEvent(type, { touches: [touch], bubbles: true, cancelable: true }))
       }
       fire('touchstart', 120)
       fire('touchmove', 220)
