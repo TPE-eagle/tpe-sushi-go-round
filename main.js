@@ -5,6 +5,10 @@ import './style.scss'
 // depends on Bootstrap's JS today.
 import 'bootstrap/js/dist/offcanvas'
 
+// Issue #141 — SWR cache policy constants + pure age gate (unit-tested in
+// src/test/swr.test.js).
+import { SWR_MAX_AGE_MS, API_FETCH_TIMEOUT_MS, shouldPaintFromCache, cacheAgeMinutes } from './src/utils/swr.js'
+
 // Constants
 const API_URL = 'https://www.taoyuan-airport.com/api/api/flight/a_flight';
 const AIRLINE_CODES = ['BR', 'CI', 'JX'];
@@ -129,6 +133,15 @@ let searchDepFetchToken = 0;
 // request errored) so the status line says "unavailable" instead of an
 // endless "loading". Reset on the next fetch attempt.
 let searchDepUnavailable = false;
+// Issue #141 — the board holds rendered flight data (cache paint or a
+// resolved fetch). A failed forced refresh checks this to keep the
+// previous paint on screen instead of blanking it with an error.
+let boardHasData = false;
+// Issue #141 — current SWR indicator state ({ kind: 'updating' } while a
+// background revalidation runs, { kind: 'stale', timestamp } when the
+// revalidation failed and the board is showing cached data). Kept as state
+// (not just DOM text) so a language switch can re-translate the label.
+let swrStatusState = null;
 // sessionStorage key for { open, q } — survives the visibilitychange reload;
 // per-tab and session-scoped, deliberately NOT a cookie (issue #130 D3).
 const SEARCH_SESSION_KEY = 'tpe_flight_search';
@@ -170,6 +183,8 @@ const translations = {
         "loading": "資料載入中...🧳",
         "refreshing": "🔄 正在重新整理...",
         "releaseToRefresh": "放開以重新整理",
+        "updating": "🔄 更新中...",
+        "staleShown": "顯示 {min} 分鐘前的資料",
         "error": "查詢失敗，請稍後再試。",
         "flightsInWindow": "時段內 {aname} 共 {n} 班",
         "currentFilter": "目前過濾條件：機型 {type}",
@@ -290,6 +305,8 @@ const translations = {
         "loading": "Data loading...🧳",
         "refreshing": "🔄 Refreshing...",
         "releaseToRefresh": "Release to refresh",
+        "updating": "🔄 Updating...",
+        "staleShown": "Showing data from {min} min ago",
         "error": "Query failed, please try again later.",
         "flightsInWindow": "{n} {aname} flight(s) in this time window",
         "currentFilter": "Current filter: Aircraft type {type}",
@@ -410,6 +427,8 @@ const translations = {
         "loading": "データを読み込み中...🧳",
         "refreshing": "🔄 再読み込み中...",
         "releaseToRefresh": "離して更新",
+        "updating": "🔄 更新中...",
+        "staleShown": "{min} 分前のデータを表示中",
         "error": "クエリに失敗しました。後でもう一度やり直してください。",
         "flightsInWindow": "この時間帯の{aname}便は {n} 便",
         "currentFilter": "現在のフィルター：機種 {type}",
@@ -527,6 +546,7 @@ function renderApp() {
     appContainer.innerHTML = `
         <div id="refresh-icon"></div>
         <div id="offline-banner" class="offline-banner" hidden></div>
+        <div id="swr-status" class="swr-status" hidden></div>
         <div class="container position-relative">
             <!-- Issue #130 follow-up — header-row: at ≤768px the title and the
                  cluster share ONE flex row (buttons right, title left), so the
@@ -632,6 +652,7 @@ function updateLanguageText() {
     updateMetaTag('meta[name="twitter:description"]', description);
     document.documentElement.lang = HTML_LANG_TAG[currentLanguage] || HTML_LANG_TAG.en;
     updateTimeWindowButton(); // Issue #88 — re-translate the selector's aria-label/title
+    renderSwrStatus(); // Issue #141 — re-translate the SWR indicator if visible
 }
 
 function resetAnimation(element) {
@@ -1048,15 +1069,33 @@ function updateApiParams() {
 
 
 
-function fetchData() {
-    document.getElementById('airlineButtons').innerHTML = '';
-    document.getElementById('planeTypeButtons').innerHTML = '';
-    document.getElementById("flightButtons").innerHTML = '';
-    document.getElementById("output").innerHTML = `
-        <div class="blinking-text text-center">
-            ${translations[currentLanguage]["loading"]}
-        </div>
-    `;
+// Issue #141 — the airport API POST with a hard deadline (AbortController).
+// A hung request (measured TTFB ~3.4-4.3s with occasional CF 522s) now
+// aborts after API_FETCH_TIMEOUT_MS and lands in the caller's catch, where
+// a cache-painted board simply keeps standing. The timer is cleared as
+// soon as the request settles either way.
+function fetchFlightDataPost(postData, acceptLanguageHeader) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT_MS);
+    return fetch(API_URL, {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": acceptLanguageHeader,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(postData),
+        signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
+}
+
+// Issue #141 — fetchData({ forceRefresh: true }) is the pull-to-refresh
+// path: it skips the cache-first paint entirely and never blanks the board;
+// on failure the previous paint stays up with the error on the status line.
+function fetchData(options = {}) {
+    const forceRefresh = options?.forceRefresh === true;
+    setSwrStatus(null);
 
     // Issue #33 — kick off the return-leg arrivals fetch in parallel,
     // non-blocking. The departures table renders immediately with the 5th
@@ -1130,21 +1169,41 @@ function fetchData() {
         apiParamsElement.innerText = apiParamsText;
     }
 
-    // localStorage is retained solely as an offline fallback. When online we
-    // always hit the API so that gate / carousel changes surface immediately.
+    // Issue #141 — SWR: the cache is no longer an offline-only fallback.
+    // Any non-forced fetch first tries to paint the cached board: within
+    // SWR_MAX_AGE_MS on any connection, beyond it only while offline (the
+    // historical fallback contract). The paint is synchronous — the user
+    // sees last-known data immediately instead of a "loading" flash — and
+    // an online revalidation continues below behind a visible indicator.
+    // The key embeds ODate, so the window never leaks across the UTC+8
+    // midnight rollover (a new day means a new key and a cold load).
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
-    const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-    if (!isTestEnvironment && !isOnline()) {
-        const cachedData = getCachedFlightData(cacheKey);
-        if (cachedData) {
-            processFetchedData(cachedData.data);
-            mainDataReadyForToken = requestToken;
+    const cacheable = swrCacheEnabled();
+    const cachedData = cacheable && !forceRefresh ? getCachedFlightData(cacheKey) : null;
+    const paintedFromCache = shouldPaintFromCache(cachedData, Date.now(), isOnline(), forceRefresh);
+    if (paintedFromCache) {
+        processFetchedData(cachedData.data, { animate: true });
+        mainDataReadyForToken = requestToken;
+        if (!isOnline()) {
             updateOfflineBanner(cachedData.timestamp);
             return;
         }
-        // No cache and offline: fall through; the fetch will fail and the
-        // offline-no-cache message will render.
+        // Online: keep the cached paint visible and revalidate in the
+        // background behind the "updating" indicator.
+        setSwrStatus({ kind: 'updating' });
+    }
+
+    if (!paintedFromCache && !forceRefresh) {
+        // Cold load with nothing usable to paint — the previous unconditional
+        // behaviour: blank the three filter rows and show the loading state.
+        document.getElementById('airlineButtons').innerHTML = '';
+        document.getElementById('planeTypeButtons').innerHTML = '';
+        document.getElementById("flightButtons").innerHTML = '';
+        document.getElementById("output").innerHTML = `
+            <div class="blinking-text text-center">
+                ${translations[currentLanguage]["loading"]}
+            </div>
+        `;
     }
 
     const acceptLanguageHeader = currentLanguage === 'zh'
@@ -1152,22 +1211,13 @@ function fetchData() {
         : currentLanguage === 'jp'
             ? 'ja-JP,ja;q=0.9'
             : 'en-US,en;q=0.9';
-    fetch(API_URL, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": acceptLanguageHeader,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(postData),
-    })
+    fetchFlightDataPost(postData, acceptLanguageHeader)
     .then(response => response.json())
     .then(data => {
-        // Store for offline fallback only; never served while online. Kept
+        // Store for the next SWR paint / offline fallback. Kept
         // unconditional (issue #39): a superseded response is still valid
-        // data for the offline cache, even though it must not render below.
-        if (!isTestEnvironment) {
+        // data for the cache, even though it must not render below.
+        if (cacheable) {
             setCachedFlightData(cacheKey, {
                 data: data,
                 timestamp: Date.now()
@@ -1180,8 +1230,11 @@ function fetchData() {
         if (mainRequestToken !== mainFetchToken) return;
 
         hideOfflineBanner();
-        processFetchedData(data);
+        // Issue #141 — a background swap over an already-painted board
+        // skips the pop-up animation (the paint never left).
+        processFetchedData(data, { animate: !paintedFromCache });
         mainDataReadyForToken = requestToken;
+        setSwrStatus(null);
     })
     .catch(error => {
         // Issue #39 — same staleness guard as the success path: nobody is
@@ -1189,10 +1242,31 @@ function fetchData() {
         // error (or clear a banner) for one.
         if (mainRequestToken !== mainFetchToken) return;
 
-        // Offline without any cached data -> dedicated message.
-        // Online but the request failed -> generic error. We intentionally do
-        // NOT fall back to stale cache here: a working network connection with
-        // a failed API call should not silently serve yesterday's carousels.
+        // Issue #141 — the revalidation failed behind a cache-painted board
+        // (fetch error or the 15s abort): keep the paint and label its age
+        // instead of tearing it down for an error. The #swr-status strip
+        // stays visible even under the search takeover, so no status-line
+        // write is needed here.
+        if (paintedFromCache) {
+            setSwrStatus({ kind: 'stale', timestamp: cachedData.timestamp });
+            if (!isOnline()) updateOfflineBanner(cachedData.timestamp);
+            return;
+        }
+
+        // Issue #141 — a forced refresh failed but the board already shows
+        // the previous cycle: keep it (it was never cleared on this path)
+        // and surface the failure instead of blanking it.
+        if (forceRefresh && boardHasData) {
+            if (searchOpen) setStatusLine(translations[currentLanguage]["error"]);
+            return;
+        }
+
+        // Offline with no usable cache -> dedicated message. Online but the
+        // request failed, with nothing painted this cycle and no previous
+        // board (cold load) -> generic error. The pre-#141 "never serve
+        // stale while online" stance only applies to this last case now:
+        // everywhere else the board is already showing cache with a visible
+        // staleness label.
         if (!isOnline()) {
             document.getElementById("output").innerHTML =
                 `<div class="empty-state text-center">${translations[currentLanguage]["offlineNoCache"]}</div>`;
@@ -1262,16 +1336,22 @@ function fetchReturnLegArrivals(token) {
     };
 
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
-    const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-    if (!isTestEnvironment && !isOnline()) {
+    const cacheable = swrCacheEnabled();
+    // Issue #141 — symmetric SWR (same age gate as the primary board):
+    // paint the cached pairing set first, revalidate online behind it.
+    // With the cache disabled (localhost test host) the gate is skipped
+    // entirely so the fetch behaves exactly as it did pre-#141.
+    let paintedFromCache = false;
+    if (cacheable) {
         const cachedData = getCachedFlightData(cacheKey);
-        if (cachedData) {
+        paintedFromCache = shouldPaintFromCache(cachedData, Date.now(), isOnline());
+        if (paintedFromCache) {
             applyResult(cachedData.data);
-        } else {
+            if (!isOnline()) return;
+        } else if (!isOnline()) {
             blankResult(token);
+            return;
         }
-        return;
     }
 
     const acceptLanguageHeader = currentLanguage === 'zh'
@@ -1279,27 +1359,20 @@ function fetchReturnLegArrivals(token) {
         : currentLanguage === 'jp'
             ? 'ja-JP,ja;q=0.9'
             : 'en-US,en;q=0.9';
-    fetch(API_URL, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": acceptLanguageHeader,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(postData),
-    })
+    fetchFlightDataPost(postData, acceptLanguageHeader)
     .then(response => response.json())
     .then(data => {
-        if (!isTestEnvironment) {
+        if (cacheable) {
             setCachedFlightData(cacheKey, { data: data, timestamp: Date.now() });
         }
         applyResult(data);
     })
     .catch(() => {
         // No fresh data is coming for this token — blank rather than leave
-        // item 1's previous-cycle array showing indefinitely (see blankResult).
-        blankResult(token);
+        // item 1's previous-cycle array showing indefinitely (see
+        // blankResult), unless this cycle already painted the cached set:
+        // a failed revalidation keeps the paint (issue #141).
+        if (!paintedFromCache) blankResult(token);
     });
 }
 
@@ -1330,42 +1403,43 @@ function fetchSearchDepartures() {
     };
 
     const cacheKey = `flight_data_${JSON.stringify(postData)}`;
-    const isTestEnvironment = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-    if (!isTestEnvironment && !isOnline()) {
+    const cacheable = swrCacheEnabled();
+    // Issue #141 — symmetric SWR (same age gate as the primary board):
+    // paint the cached departures store first, revalidate online behind it.
+    // With the cache disabled (localhost test host) the gate is skipped
+    // entirely so the fetch behaves exactly as it did pre-#141.
+    let paintedFromCache = false;
+    if (cacheable) {
         const cachedData = getCachedFlightData(cacheKey);
-        if (cachedData) {
+        paintedFromCache = shouldPaintFromCache(cachedData, Date.now(), isOnline());
+        if (paintedFromCache) {
             applyResult(cachedData.data);
-        } else {
+            if (!isOnline()) return;
+        } else if (!isOnline()) {
             searchDepUnavailable = true;
             renderSearchResults();
+            return;
         }
-        return;
     }
 
-    fetch(API_URL, {
-        method: "POST",
-        cache: "no-store",
-        headers: {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": currentLanguage === 'zh' ? 'zh-TW,zh;q=0.9'
-                : currentLanguage === 'jp' ? 'ja-JP,ja;q=0.9'
-                : 'en-US,en;q=0.9',
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(postData),
-    })
+    fetchFlightDataPost(postData, currentLanguage === 'zh' ? 'zh-TW,zh;q=0.9'
+        : currentLanguage === 'jp' ? 'ja-JP,ja;q=0.9'
+        : 'en-US,en;q=0.9')
     .then(response => response.json())
     .then(data => {
-        if (!isTestEnvironment) {
+        if (cacheable) {
             setCachedFlightData(cacheKey, { data: data, timestamp: Date.now() });
         }
         applyResult(data);
     })
     .catch(() => {
         if (token !== searchDepFetchToken) return;
-        searchDepUnavailable = true;
-        renderSearchResults();
+        // Issue #141 — a cache-painted store survives a failed revalidation;
+        // only flag "unavailable" when nothing was painted this cycle.
+        if (!paintedFromCache) {
+            searchDepUnavailable = true;
+            renderSearchResults();
+        }
     });
 }
 
@@ -1388,7 +1462,7 @@ function updateOfflineBanner(cacheTimestamp) {
     if (cacheTimestamp == null) {
         msg = t['offlineFresh'];
     } else {
-        const ageMin = Math.max(0, Math.round((Date.now() - cacheTimestamp) / 60000));
+        const ageMin = cacheAgeMinutes(cacheTimestamp);
         msg = ageMin === 0
             ? t['offlineFresh']
             : t['offlineBanner'].replace('{min}', ageMin);
@@ -1404,12 +1478,47 @@ function hideOfflineBanner() {
     banner.innerText = '';
 }
 
+// Issue #141 — SWR status strip: "updating…" while an online revalidation
+// runs behind a cache-painted board, "showing data from N min ago" when
+// that revalidation failed. Deliberately NOT reusing updateOfflineBanner():
+// the banner self-hides whenever isOnline() is true, while this indicator
+// is specifically an online-path signal. Rendered from swrStatusState so a
+// language switch re-translates the visible label.
+function setSwrStatus(state) {
+    swrStatusState = state;
+    renderSwrStatus();
+}
+
+function renderSwrStatus() {
+    const el = document.getElementById('swr-status');
+    if (!el) return;
+    if (!swrStatusState) {
+        el.hidden = true;
+        el.innerText = '';
+        return;
+    }
+    const t = translations[currentLanguage];
+    el.innerText = swrStatusState.kind === 'stale'
+        ? t['staleShown'].replace('{min}', cacheAgeMinutes(swrStatusState.timestamp))
+        : t['updating'];
+    el.hidden = false;
+}
+
 // Issue #88 — shared test-hostname guard: time filtering is skipped on
 // localhost/127.0.0.1 so e2e mock data renders deterministically. The
 // window-cycle button honours the same guard (clickable in dev: board
 // untouched, caption follows the selection).
 function isTestHostname() {
     return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
+
+// Issue #141 — SWR cache reads/writes are disabled on the localhost test
+// host so e2e mock flows stay deterministic (mirroring the hostnames
+// isTestHostname() guards); `?e2e-swr=1` opts a page back in for the specs
+// that exercise cache-first behaviour.
+function swrCacheEnabled() {
+    if (!isTestHostname()) return true;
+    return new URLSearchParams(window.location.search).has('e2e-swr');
 }
 
 // Null-safe cancelled check shared by the board filter, the pairing fetch
@@ -1420,7 +1529,11 @@ function isCancelledFlight(flight) {
     return memo.includes('取消') || memo.includes('cancelled');
 }
 
-function processFetchedData(data) {
+// Issue #141 — `animate` controls the pop-up animation on the freshly
+// rendered table: a cache-first paint plays it, but a background swap over
+// an already-painted board skips it (the table is already on screen — a
+// flash would read as flicker, not feedback).
+function processFetchedData(data, { animate = true } = {}) {
     data.sort((a, b) => {
         if (a.ACode < b.ACode) return -1;
         if (a.ACode > b.ACode) return 1;
@@ -1474,8 +1587,12 @@ function processFetchedData(data) {
 
     renderFilteredView();
 
+    // Issue #141 — the board now holds rendered flight data (cache paint or
+    // a resolved fetch); a failed forced refresh keeps it on screen.
+    boardHasData = true;
+
     const outputTable = document.querySelector('#output table');
-    if (outputTable) {
+    if (outputTable && animate) {
         outputTable.classList.add('table-pop-up');
         setTimeout(() => {
             outputTable.classList.remove('table-pop-up');
@@ -2707,7 +2824,9 @@ function triggerRefresh() {
     refreshIcon.style.opacity = '1';
     refreshIcon.style.transform = 'translate(-50%, 12px)';
     refreshIcon.innerText = translations[currentLanguage]['refreshing'];
-    fetchData();
+    // Issue #141 — pull-to-refresh exists to bypass the cache: always issue
+    // the real POST and never blank the board on the way.
+    fetchData({ forceRefresh: true });
     setTimeout(hideRefreshIndicator, REFRESH_DELAY);
 }
 

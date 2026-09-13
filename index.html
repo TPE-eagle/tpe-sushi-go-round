@@ -61,11 +61,16 @@
     <!-- Preconnect for critical resources -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://www.taoyuan-airport.com">
+    <!-- crossorigin: the flight API is fetched with CORS (anonymous), so the
+         preconnect must open the same anonymous-credentials connection pool
+         or the hint is wasted (issue #141). -->
+    <link rel="preconnect" href="https://www.taoyuan-airport.com" crossorigin>
     <link rel="preconnect" href="https://www.googletagmanager.com">
     
-    <!-- Preload critical resources -->
-    <link rel="preload" href="/main.js" as="script">
+    <!-- Issue #141: the /main.js preload was removed — Vite emits a hashed
+         bundle (dist/assets/main-*.js) that the page actually executes; the
+         unhashed preload downloaded a second, never-executed copy of the
+         whole bundle (console: "The resource was preloaded but not used"). -->
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@100..900&display=swap" as="style">
 
     <!-- Google Tag Manager (Deferred) -->

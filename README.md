@@ -74,7 +74,7 @@ flowchart LR
 ```
 
 - The API always receives `OTimeOpen: null, OTimeClose: null`; the 2-hour window is applied client-side.
-- `localStorage` never serves online reads — every API call is fresh. The cache is kept only as an offline fallback (served when `navigator.onLine === false`). Max 5 entries; disabled on localhost.
+- Stale-while-revalidate: the cached board paints immediately when the entry is ≤ 30 min old (any connection), then the API revalidates in the background behind an "updating" note. Older entries are served only offline. Max 5 entries; disabled on localhost (except `?e2e-swr=1`). A failed or timed-out (15s) refresh keeps the cached board with a "data from N min ago" label instead of an error.
 - Service Worker precaches the app shell only (HTML / JS / CSS / icons / webmanifest); the airport API and other external origins pass through to the network.
 
 ## Time Window
@@ -115,7 +115,7 @@ All times are UTC+8.
 | Aircraft family (`PlaneType`) | Cookie | 400 days (sliding, renewed each load) |
 | Theme (`theme`) | Cookie | 400 days (sliding, renewed each load) |
 | Language | Detected from `navigator.language` | Not persisted |
-| Flight data (offline fallback) | `localStorage` | Never served while online |
+| Flight data (SWR cache / offline fallback) | `localStorage` | Painted fresh ≤ 30 min, offline any age |
 
 ## Testing
 
@@ -128,7 +128,8 @@ npm run test:e2e:prod     # Production E2E (live site, multi-browser)
 | Test File | Coverage |
 |-----------|----------|
 | `api.test.js` | Post data, time window math, filtering |
-| `cache.test.js` | `localStorage` lifecycle, cleanup, quota, always-fresh-online policy |
+| `cache.test.js` | `localStorage` lifecycle, cleanup, quota, SWR policy headline checks |
+| `swr.test.js` | SWR age gate (30-min boundary, offline contract, forceRefresh) |
 | `etag-integration.test.js` | ETag / 304 conditional requests |
 | `planetype.test.js` | Family extraction, TBD handling, type filter |
 | `api-integration.spec.js` | API parameters, display, mode switching |
