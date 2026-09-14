@@ -218,8 +218,7 @@ jobs:
     # it verifies test-harness changes; app-code regressions are gated by e2e-tests-local.
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) }}
     permissions:
-      contents: read           # checkout
-      pull-requests: write     # "Comment PR with Test Results" (github-script) posts to the PR — fixes the "Resource not accessible by integration" 403 (default token is read-only)
+      contents: read           # checkout (PR reporting moved to flight-deck-report, #156)
     steps:
     - name: "🔄 Flight Plan: Checkout Code"
       uses: actions/checkout@v6
@@ -320,30 +319,50 @@ jobs:
         if-no-files-found: error
         retention-days: 7
 
-    - name: "📝 Flight Deck Report: Comment PR with Test Results"
-      if: github.event_name == 'pull_request' && always()
-      continue-on-error: true   # reporting-only nicety; needs pull-requests:write the default token lacks ("Resource not accessible by integration") — must not fail the gate. The real gate is the Execute step.
+  flight-deck-report:
+    name: "📝 Flight Deck Report (aggregated)"
+    runs-on: ubuntu-latest
+    # Issue #156 — the report used to live inside e2e-tests-production and
+    # printed a hardcoded ✅ (its try block contained nothing that could
+    # throw), so a red E2E leg could hide behind a green report: on run
+    # 34763513744 the local leg failed and the PR comment still said
+    # "✅ Production E2E flight completed". The report now aggregates both
+    # E2E legs' real conclusions and FAILS unless both are 'success', so
+    # the last green word can no longer come from a leg that isn't the
+    # gate. !cancelled() keeps it running (and reporting red) precisely
+    # when a leg failed — the default needs-gate would skip it then.
+    needs: [e2e-tests-local, e2e-tests-production]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      pull-requests: write   # posts the aggregated report to the PR
+    steps:
+    - name: "📝 Flight Deck Report: Comment PR with Aggregated E2E Results"
       uses: actions/github-script@v9
       with:
         script: |
-          const fs = require('fs');
-          const path = require('path');
-          
-          let comment = '## ✈️ Flight Deck Test Report\n\n';
-          
-          try {
-          // 🛩️ Gathering flight test data for report
-            comment += '✅ Production E2E flight completed\n';
-            comment += '📊 Check the [flight log report](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details\n';
-          } catch (error) {
-            comment += '❌ Production E2E flight failed\n';
-            comment += `Error: ${error.message}\n`;
-          }
+          const localResult = '${{ needs.e2e-tests-local.result }}';
+          const prodResult = '${{ needs.e2e-tests-production.result }}';
 
-          // 📡 Dispatching flight report to PR
-          github.rest.issues.createComment({
+          const mark = (r) => r === 'success' ? '✅' : (r === 'skipped' || r === 'cancelled') ? '⏭️' : '❌';
+
+          let comment = '## ✈️ Flight Deck Test Report\n\n';
+          comment += '| Leg | Conclusion |\n|---|---|\n';
+          comment += '| 🛫 Pre-flight E2E Tests (Local) | ' + mark(localResult) + ' ' + localResult + ' |\n';
+          comment += '| 🛬 Post-landing E2E Tests (Production) | ' + mark(prodResult) + ' ' + prodResult + ' |\n\n';
+          comment += '📊 Check the [flight log report](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details\n';
+
+          // 📡 Dispatching the flight report to the PR — before failing, so
+          // the comment lands even (especially) on a red run.
+          await github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
             body: comment
           });
+
+          // #156 — the report is the honest last word: any leg that did not
+          // pass turns the report red. A skipped gate is not a pass.
+          if (localResult !== 'success' || prodResult !== 'success') {
+            core.setFailed('E2E leg did not pass — local=' + localResult + ', production=' + prodResult);
+          }
