@@ -9,19 +9,33 @@
 // table. This test imports the real main.js in jsdom with the network
 // stubbed, so any module-scope render/init error fails fast here.
 
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 
 // Never-resolving fetch: initApp() → detectLanguage() → fetchData() must not
 // blow up on an undefined response, and the test must not hit the network.
 vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
 
+// Issue #164 — pin the boot clock. The caption is rendered from the real
+// wall clock, and whenever the default window crosses UTC+8 midnight its
+// end carries an MM/DD date suffix (issue #145). Any CI run in the
+// ~22:30–24:00 UTC+8 window then failed the old bare-HH:MM assertion even
+// on untouched main. Booting against a fixed late-evening instant makes
+// the whole suite deterministic at any real-world time and pins the
+// midnight-crossing format contract as a regression guard.
+const BOOT_INSTANT = '2026-09-17T23:10:00+08:00' // UTC+8 date: 2026/09/17
+
 describe('main.js app boot (smoke)', () => {
     let button
 
     beforeAll(async () => {
+        vi.useFakeTimers({ now: new Date(BOOT_INSTANT), toFake: ['Date'] })
         document.body.innerHTML = '<div id="app"></div>'
         await import('../../main.js')
         button = document.getElementById('time-window-toggle')
+    })
+
+    afterAll(() => {
+        vi.useRealTimers()
     })
 
     it('renders the app shell', () => {
@@ -40,9 +54,13 @@ describe('main.js app boot (smoke)', () => {
         expect(button.getAttribute('title')).toBe(label)
     })
 
-    it('renders the time-window caption', () => {
+    it('renders the time-window caption (clock pinned to a midnight-crossing window)', () => {
         const caption = document.getElementById('apiParams')
         expect(caption).not.toBeNull()
-        expect(caption.innerText).toMatch(/Range: \d{2}:\d{2} - \d{2}:\d{2}/)
+        // Pinned boot at 23:10 UTC+8 → default window 22:30 - 09/18 00:30:
+        // the exact output CI produced when issue #164 was filed (issue #145
+        // date-suffixed end). Exact match, not a loose regex, so any future
+        // format drift fails loudly here at any wall-clock time.
+        expect(caption.innerText).toBe('Date: 2026/09/17, Range: 22:30 - 09/18 00:30 (UTC+8)')
     })
 })
