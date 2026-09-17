@@ -1,3 +1,6 @@
+// ci-probe #161: whitespace-only probe commit so a zero-diff branch can open a PR.
+// Purpose: run the Local E2E suite on pristine main inside the 22:00-24:00 UTC+8
+// wall-clock window. Revert after the probe. No functional change.
 import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
