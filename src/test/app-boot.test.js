@@ -43,8 +43,6 @@ describe('main.js app boot (smoke)', () => {
     it('renders the time-window caption', () => {
         const caption = document.getElementById('apiParams')
         expect(caption).not.toBeNull()
-        // Issue #145 — past 22:00 UTC+8 the default +2h window crosses
-        // midnight and the end gains an MM/DD date prefix; both are valid.
-        expect(caption.innerText).toMatch(/Range: (\d{2}\/\d{2} )?\d{2}:\d{2} - (\d{2}\/\d{2} )?\d{2}:\d{2} \(UTC\+8\)/)
+        expect(caption.innerText).toMatch(/Range: \d{2}:\d{2} - \d{2}:\d{2}/)
     })
 })

@@ -94,10 +94,12 @@ describe('matchFlights', () => {
     })
 })
 
-// Issue #160 — search "now" cutoff. Fixture times live on TODAY
-// (2026/09/05); `now` is frozen at 22:00 UTC+8, so 08:30/09:15 are the past
-// and 23:00+ is still ahead.
-describe('filterFutureFlights (search now-cutoff)', () => {
+// Issue #160 — search cutoff. Fixture times live on TODAY
+// (2026/09/05); `now` is frozen at 22:00 UTC+8. The lower bound is the
+// board window's START per mode (owner update 14:50Z): departures cut at
+// 22:00 (roundDown10(now)), arrivals at 21:20 (roundDown10(now) − 40 min
+// grace), no upper bound.
+describe('filterFutureFlights (search cutoff at windowStart)', () => {
     const now = new Date('2026-09-05T22:00:00+08:00')
     const mk = (over = {}) => ({ ACode: 'BR', FlightNo: '900', AState: 'D', ODate: TODAY, OTime: '08:30:00', Gate: 'C5', Memo: '', ...over })
 
@@ -106,8 +108,21 @@ describe('filterFutureFlights (search now-cutoff)', () => {
         expect(kept.map(f => f.FlightNo)).toEqual(['901'])
     })
 
-    it('keeps a flight whose effective time is exactly now', () => {
+    it('keeps a departure exactly at the windowStart (roundDown10(now))', () => {
         expect(filterFutureFlights([mk({ OTime: '22:00:00' })], now)).toHaveLength(1)
+        // 21:55 is inside the rounding gap but still before windowStart — cut.
+        expect(filterFutureFlights([mk({ FlightNo: '906', OTime: '21:55:00' })], now)).toEqual([])
+    })
+
+    it('grace zone: an arrival landed minutes ago stays findable (windowStart = roundDown10(now) − 40 min)', () => {
+        // now 22:00 -> arrivals windowStart 21:20. A 21:50 arrival (10 min
+        // ago) is the pickup case the lower bound exists for.
+        const kept = filterFutureFlights([
+            mk({ FlightNo: '903', AState: 'A', OTime: '21:50:00' }),
+            mk({ FlightNo: '904', AState: 'A', OTime: '21:10:00' }),
+            mk({ FlightNo: '905', AState: 'A', OTime: '21:20:00' }),
+        ], now)
+        expect(kept.map(f => f.FlightNo)).toEqual(['903', '905'])
     })
 
     it('prefers the revised RDate/RTime over the scheduled time', () => {

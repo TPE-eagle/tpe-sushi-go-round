@@ -31,7 +31,10 @@ function rowsFor(dateStr, state) {
     // unaffected.
     return state === 'A'
       ? [
-          { ACode: 'BR', FlightNo: '100', Gate: 'C1', OTime: '17:40:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 3, Memo: '' }
+          { ACode: 'BR', FlightNo: '100', Gate: 'C1', OTime: '17:40:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 3, Memo: '' },
+          // Landed 10 minutes before the now-cutoff test's frozen 22:50 clock
+          // — inside the arrivals 40-minute grace zone (issue #160 case d).
+          { ACode: 'BR', FlightNo: '101', Gate: 'C2', OTime: '22:40:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 4, Memo: '' }
         ]
       : [
           { ACode: 'BR', FlightNo: '178', Gate: 'C3', OTime: '23:30:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 1, Memo: '' },
@@ -145,6 +148,17 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
     await expect(depRows178.nth(0)).not.toContainText('明日')
     await expect(depRows178.nth(1)).toContainText('BR178')
     await expect(depRows178.nth(1)).toContainText('明日')
+
+    // (d) grace zone (owner spec update 14:50Z): BR101 landed 10 minutes
+    // before the frozen clock. The arrivals windowStart is ~22:10 (now
+    // rounded to 10 min, minus the 40-minute arrival grace), so a
+    // just-landed flight stays findable for pickup lookups — only the
+    // arrivals table renders and the row carries no tomorrow chip.
+    await page.fill('#search-input', '101')
+    const arrRows101 = page.locator('#search-results table').first().locator('tbody tr')
+    await expect(arrRows101).toHaveCount(1)
+    await expect(arrRows101.nth(0)).toContainText('BR101')
+    await expect(arrRows101.nth(0)).not.toContainText('明日')
   })
 
   test('cancelled tomorrow row keeps both chips (state and day are orthogonal)', async ({ page }) => {
