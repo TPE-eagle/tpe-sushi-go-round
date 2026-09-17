@@ -228,6 +228,31 @@ export function normalizeFlightQuery(query) {
         .replace(/[^0-9]/g, '');
 }
 
+// Issue #160 — search "now" cutoff. The board filters by a forward time
+// window (filterFlightsByTime in main.js), but the search path consumed the
+// full-day store with a date-only check, so a 22:00 query still surfaced the
+// 07:00 arrival from that same morning. Search intent is "my next flight":
+// the anchor is NOW (Taipei, +08:00), not the board's forward window.
+//
+// Effective time = revised RDate/RTime when BOTH parts exist, else the
+// scheduled ODate/OTime (the repo's all-or-nothing R-pair convention, parsed
+// as UTC+8 exactly like filterFlightsByTime / boardTomorrowRows). Cancelled
+// rows go through the same check — a past cancellation is useless when
+// looking for the next flight (owner decision, issue #160). A row whose time
+// is missing or unparseable abstains (kept): the cutoff only removes flights
+// it can positively place in the past.
+export function filterFutureFlights(flights, now = new Date()) {
+    const isPast = (flight) => {
+        const revised = flight.RDate && flight.RTime;
+        const dateStr = revised ? flight.RDate : flight.ODate;
+        const timeStr = revised ? flight.RTime : flight.OTime;
+        if (!dateStr || !timeStr) return false;
+        const effective = new Date(`${String(dateStr).replace(/\//g, '-')}T${timeStr}+08:00`);
+        return !Number.isNaN(effective.getTime()) && effective < now;
+    };
+    return flights.filter(flight => !isPast(flight));
+}
+
 // Match the full-day search store against a raw query string.
 //
 // Rules (issue #130):

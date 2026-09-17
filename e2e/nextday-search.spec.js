@@ -8,16 +8,7 @@
 // page clock, because on localhost the board is full-day and the gate depends
 // on the wall clock.
 import { test, expect } from '@playwright/test'
-import { setupODateAwareMockRoute, blockGoogleAnalytics } from './test-helpers.js'
-
-// A UTC instant whose UTC+8 wall clock is TODAY at hour:minute. Freezing the
-// page clock on today keeps the node-side fixture dates (computed from the
-// real clock) consistent with the page's Date.now().
-function fixedAtUtc8(hour, minute) {
-  const nowUtc8 = new Date(Date.now() + 8 * 3600 * 1000)
-  const midnightUtc8 = Date.UTC(nowUtc8.getUTCFullYear(), nowUtc8.getUTCMonth(), nowUtc8.getUTCDate())
-  return new Date(midnightUtc8 + hour * 3600 * 1000 + minute * 60 * 1000 - 8 * 3600 * 1000)
-}
+import { setupODateAwareMockRoute, blockGoogleAnalytics, fixedAtUtc8 } from './test-helpers.js'
 
 function utc8Date(offsetDays = 0) {
   return new Date(Date.now() + 8 * 3600 * 1000 + offsetDays * 86400 * 1000)
@@ -44,7 +35,8 @@ function rowsFor(dateStr, state) {
         ]
       : [
           { ACode: 'BR', FlightNo: '178', Gate: 'C3', OTime: '23:30:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 1, Memo: '' },
-          { ACode: 'CI', FlightNo: '124', Gate: 'A5', OTime: '22:10:00', CityCode: 'HKG', CityEname: 'Hong Kong', CityName: '香港', BNO: 1, Memo: '' }
+          { ACode: 'CI', FlightNo: '124', Gate: 'A5', OTime: '22:10:00', CityCode: 'HKG', CityEname: 'Hong Kong', CityName: '香港', BNO: 1, Memo: '' },
+          { ACode: 'BR', FlightNo: '179', Gate: 'C4', OTime: '06:10:00', CityCode: 'KIX', CityEname: 'Osaka', CityName: '大阪', BNO: 2, Memo: '' }
         ]
   }
   if (dateStr === utc8Date(1)) {
@@ -55,6 +47,7 @@ function rowsFor(dateStr, state) {
       : [
           { ACode: 'BR', FlightNo: '178', Gate: '', OTime: '06:00:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 1, Memo: '' },
           { ACode: 'B7', FlightNo: '178', Gate: '', OTime: '06:00:00', CityCode: 'NRT', CityEname: 'Tokyo', CityName: '東京', BNO: 1, Memo: '' },
+          { ACode: 'BR', FlightNo: '179', Gate: 'C4', OTime: '06:00:00', CityCode: 'KIX', CityEname: 'Osaka', CityName: '大阪', BNO: 2, Memo: '' },
           { ACode: 'CI', FlightNo: '124', Gate: 'B2', OTime: '07:15:00', CityCode: 'HKG', CityEname: 'Hong Kong', CityName: '香港', BNO: 1, Memo: '取消' },
           { ACode: 'JX', FlightNo: '800', Gate: '', OTime: '05:30:00', CityCode: 'KIX', CityEname: 'Osaka', CityName: '大阪', BNO: 2, Memo: '', ODate: '2000/01/01' }
         ]
@@ -124,6 +117,34 @@ test.describe('Next-day quick-dial search (issue #142)', () => {
     const depRows = page.locator('#search-results table').last().locator('tbody tr')
     await expect(depRows).toHaveCount(2)
     await expect(depRows.nth(1)).toContainText('明日')
+  })
+
+  // Issue #160 — the search "now" cutoff: at 22:50 today's BR179 (06:10)
+  // already operated this morning and must never surface, while its tomorrow
+  // occurrence survives with the chip. Today's still-ahead BR178 (23:30)
+  // keeps rendering and coexists with tomorrow's same-number row.
+  test('now-cutoff: a today row whose time already passed never surfaces (issue #160)', async ({ page }) => {
+    await setupODateAwareMockRoute(page, rowsFor)
+    await page.clock.setFixedTime(fixedAtUtc8(22, 50))
+    await page.goto('/')
+    await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
+
+    // (a) today-past excluded; only tomorrow's BR179 remains, with the chip.
+    await openAndSearch(page, '179')
+    const depRows179 = page.locator('#search-results table').last().locator('tbody tr')
+    await expect(depRows179).toHaveCount(1)
+    await expect(depRows179.nth(0)).toContainText('BR179')
+    await expect(depRows179.nth(0)).toContainText('明日')
+
+    // (b)+(c) today-future stays (no chip) and the same number's tomorrow
+    // row coexists with its chip.
+    await page.fill('#search-input', '178')
+    const depRows178 = page.locator('#search-results table').last().locator('tbody tr')
+    await expect(depRows178).toHaveCount(2)
+    await expect(depRows178.nth(0)).toContainText('BR178')
+    await expect(depRows178.nth(0)).not.toContainText('明日')
+    await expect(depRows178.nth(1)).toContainText('BR178')
+    await expect(depRows178.nth(1)).toContainText('明日')
   })
 
   test('cancelled tomorrow row keeps both chips (state and day are orthogonal)', async ({ page }) => {

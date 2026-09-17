@@ -2374,6 +2374,23 @@ function matchFlights(flights, query, todayStr) {
         });
 }
 
+// Issue #160 — search "now" cutoff (mirrored in src/utils/flightUtils.js per
+// the dual-copy rule). Effective time = RDate/RTime pair when both exist,
+// else ODate/OTime, parsed as UTC+8. A search must never surface a flight
+// whose effective time already passed — including cancelled rows; rows with
+// an unparseable time abstain (kept). See flightUtils.js for the full note.
+function filterFutureFlights(flights, now = new Date()) {
+    const isPast = (flight) => {
+        const revised = flight.RDate && flight.RTime;
+        const dateStr = revised ? flight.RDate : flight.ODate;
+        const timeStr = revised ? flight.RTime : flight.OTime;
+        if (!dateStr || !timeStr) return false;
+        const effective = new Date(`${String(dateStr).replace(/\//g, '-')}T${timeStr}+08:00`);
+        return !Number.isNaN(effective.getTime()) && effective < now;
+    };
+    return flights.filter(flight => !isPast(flight));
+}
+
 // D-A: the airline pin scopes the search — normalized to the GROUP level
 // (BR covers B7, CI covers AE) because displayFlights overwrites currentACode
 // with a tapped flight's own code (e.g. 'B7') and the pin must not silently
@@ -2545,7 +2562,9 @@ function renderSearchResults() {
     const scopeGroup = searchScopeGroup();
     const scopedStore = scopeGroup ? store.filter(f => scopeGroup.includes(f.ACode)) : store;
     const scopedTomorrow = scopeGroup ? tomorrowStore.filter(f => scopeGroup.includes(f.ACode)) : tomorrowStore;
-    const todayMatches = matchFlights(scopedStore, query, today);
+    // Issue #160 — today's matches pass the "now" cutoff; tomorrow's are
+    // untouched (by definition in the future).
+    const todayMatches = filterFutureFlights(matchFlights(scopedStore, query, today));
     const tomorrowMatches = tomorrowLoaded ? matchFlights(scopedTomorrow, query, tomorrowStr) : [];
     const matches = [...todayMatches, ...tomorrowMatches];
     const arrMatches = matches.filter(f => f.AState === 'A');
@@ -2568,7 +2587,7 @@ function renderSearchResults() {
     if (matches.length === 0 && !storesPending) {
         if (scopeGroup) {
             const unscoped = [
-                ...matchFlights(store, query, today),
+                ...filterFutureFlights(matchFlights(store, query, today)),
                 ...(tomorrowLoaded ? matchFlights(tomorrowStore, query, tomorrowStr) : [])
             ];
             if (unscoped.length > 0) {

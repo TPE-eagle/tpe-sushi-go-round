@@ -152,6 +152,16 @@ export function getCurrentUTC8Date() {
   return utc8Time.toISOString().split('T')[0].replace(/-/g, '/')
 }
 
+// A UTC instant whose UTC+8 wall clock is TODAY at hour:minute. Freezing the
+// page clock on today keeps node-side fixture dates (computed from the real
+// clock) consistent with the page's Date.now(). Lives here so specs beyond
+// nextday-search can pin a deterministic wall time (issue #160 e2e).
+export function fixedAtUtc8(hour, minute) {
+  const nowUtc8 = new Date(Date.now() + 8 * 3600 * 1000)
+  const midnightUtc8 = Date.UTC(nowUtc8.getUTCFullYear(), nowUtc8.getUTCMonth(), nowUtc8.getUTCDate())
+  return new Date(midnightUtc8 + hour * 3600 * 1000 + minute * 60 * 1000 - 8 * 3600 * 1000)
+}
+
 export function getCurrentUTC8DateTime() {
   // Get current UTC+8 time for dynamic test data
   const now = new Date()

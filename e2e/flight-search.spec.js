@@ -9,7 +9,7 @@
 // full-day by design (the time-filter skip), so E2E cannot distinguish
 // "inside" from "outside" the window.
 import { test, expect } from '@playwright/test'
-import { setupMockApiRoute, getMockFlightData, blockGoogleAnalytics } from './test-helpers.js'
+import { setupMockApiRoute, getMockFlightData, blockGoogleAnalytics, fixedAtUtc8 } from './test-helpers.js'
 
 function todayUTC8() {
   return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '/')
@@ -29,6 +29,12 @@ test.describe('Quick-dial flight search', () => {
   test.beforeEach(async ({ page }) => {
     blockGoogleAnalytics(page)
     await setupMockApiRoute(page)
+    // Issue #160 — the search "now" cutoff is wall-clock aware, so freeze the
+    // page clock to 11:00 UTC+8: the shared fixture times (12:00–12:50 anchor,
+    // test-helpers.js) then always read as still ahead, whatever hour CI runs.
+    // Freezing on today's date keeps the node-side fixture ODate consistent
+    // with the page clock (same trick as nextday-search.spec.js).
+    await page.clock.setFixedTime(fixedAtUtc8(11, 0))
     await page.goto('')
     await page.waitForSelector('#output table tbody tr', { timeout: 15000 })
   })
