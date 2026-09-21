@@ -176,7 +176,11 @@ test.describe('Quick-dial flight search', () => {
     await expect(page.locator('#search-bar')).toBeHidden()
     await expect(page.locator('#search-toggle')).not.toHaveClass(/active/)
     await expect(page.locator('#search-input')).toHaveValue('')
-    await expect(page.locator('#flightButtons')).toBeVisible()
+    // closeSearch cleared the takeover surfaces. (#flightButtons is empty in
+    // a pin-less board — the row only renders under an airline pin — so its
+    // zero-size box is "hidden" to Playwright regardless of the close.)
+    await expect(page.locator('#search-results')).toBeHidden()
+    await expect(page.locator('#search-status')).toBeHidden()
     // The session state was removed: the next reload must not reopen the bar.
     const session = await page.evaluate(() => sessionStorage.getItem('tpe_flight_search'))
     expect(session).toBeNull()
