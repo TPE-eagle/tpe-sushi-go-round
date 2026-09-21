@@ -1188,8 +1188,24 @@ function fetchData(options = {}) {
     const allowFreshCacheSkip = options?.allowFreshCacheSkip === true;
     setSwrStatus(null);
     // Issue #166 — pull-to-refresh is a refresh: let an empty search result
-    // close the bar once the stores settle.
-    if (forceRefresh && searchOpen) searchAutoCloseArmed = true;
+    // close the bar once the stores settle. The stores may still hold the
+    // previous cycle's rows and the settled check only tests for null, so
+    // null them (plus searchDepUnavailable, which depPending reads) and let
+    // every leg count as pending until its own fresh fetch lands — otherwise
+    // the first of the parallel fetches settles the check against mixed
+    // new/old data (PR #167 review finding). searchOpen keeps the takeover
+    // covering the board, so the transient blank never shows.
+    // nextDayByState.date / nextDayUnavailable stay untouched: they decide
+    // whether a tomorrow fetch is expected at all (fetchNextDayStores
+    // re-stamps the date when it kicks).
+    if (forceRefresh && searchOpen) {
+        searchAutoCloseArmed = true;
+        fullDayByState.A = null;
+        fullDayByState.D = null;
+        searchDepUnavailable = false;
+        nextDayByState.A = null;
+        nextDayByState.D = null;
+    }
 
     // Issue #33 — kick off the return-leg arrivals fetch in parallel,
     // non-blocking. The departures table renders immediately with the 5th

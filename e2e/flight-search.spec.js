@@ -9,7 +9,7 @@
 // full-day by design (the time-filter skip), so E2E cannot distinguish
 // "inside" from "outside" the window.
 import { test, expect } from '@playwright/test'
-import { setupMockApiRoute, getMockFlightData, blockGoogleAnalytics, fixedAtUtc8 } from './test-helpers.js'
+import { setupMockApiRoute, getMockFlightData, blockGoogleAnalytics, fixedAtUtc8, requestAState } from './test-helpers.js'
 
 function todayUTC8() {
   return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '/')
@@ -242,5 +242,52 @@ test.describe('Quick-dial flight search', () => {
     await expect(page.locator('#output table tbody tr').first()).toBeVisible()
     const session = await page.evaluate(() => sessionStorage.getItem('tpe_flight_search'))
     expect(session).toBeNull()
+  })
+
+  // PR #167 review race: arm-on-forceRefresh must not let the settled check
+  // fire against the previous cycle's store contents. Hold the arrivals
+  // response back; if the fast departures landing settled the check on the
+  // stale arrivals store, the bar would already be closed at the 700ms
+  // checkpoint (static fixtures can't catch this otherwise — '999' matches
+  // nothing in old and new data alike).
+  test('pull-to-refresh waits for the fresh stores before the close decision', async ({ page }) => {
+    const touchSupported = await page.evaluate(() => typeof TouchEvent !== 'undefined' && typeof Touch !== 'undefined')
+    test.skip(!touchSupported, 'TouchEvent/Touch constructors unavailable in this engine')
+
+    const fixture = getMockFlightData()
+    const apiUrl = 'https://www.taoyuan-airport.com/api/api/flight/a_flight'
+    await page.unroute(apiUrl)
+    await page.route(apiUrl, async (route) => {
+      const isArrivals = requestAState(route.request()) === 'A'
+      if (isArrivals) await new Promise((r) => setTimeout(r, 1500))
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(fixture.map((f) => ({ ...f, AState: isArrivals ? 'A' : 'D' }))),
+      })
+    })
+
+    await openSearch(page)
+    await page.fill('#search-input', '999')
+    await expect(page.locator('.search-empty')).toBeVisible()
+
+    await page.evaluate(() => {
+      const fire = (type, y) => {
+        const touch = new Touch({ identifier: 1, target: document.body, clientX: 100, clientY: y })
+        document.body.dispatchEvent(new TouchEvent(type, { touches: [touch], bubbles: true, cancelable: true }))
+      }
+      fire('touchstart', 120)
+      fire('touchmove', 220)
+      fire('touchmove', 360)
+      fire('touchend', 360)
+    })
+
+    // Departures fulfils fast; arrivals is held 1500ms. Not settled yet —
+    // the bar must still be open here.
+    await page.waitForTimeout(700)
+    await expect(page.locator('#search-bar')).toBeVisible()
+    // Everything lands; the genuinely-empty forced refresh closes.
+    await expect(page.locator('#search-bar')).toBeHidden({ timeout: 15000 })
+    await expect(page.locator('#output table tbody tr').first()).toBeVisible()
   })
 })
