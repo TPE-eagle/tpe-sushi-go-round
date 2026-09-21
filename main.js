@@ -142,6 +142,13 @@ let searchDepFetchToken = 0;
 // request errored) so the status line says "unavailable" instead of an
 // endless "loading". Reset on the next fetch attempt.
 let searchDepUnavailable = false;
+// Issue #166 — one-shot auto-close. Armed by a refresh (reload-restored
+// search, or pull-to-refresh while the bar is open); the first settled
+// renderSearchResults() consumes it and closes the bar if nothing matched.
+// Typing, opening, or closing always disarms: digits-only prefix matching
+// means a half-typed query legitimately passes through 0-match states, and
+// those must never close the bar.
+let searchAutoCloseArmed = false;
 // Issue #141 — the board holds rendered flight data (cache paint or a
 // resolved fetch). A failed forced refresh checks this to keep the
 // previous paint on screen instead of blanking it with an error.
@@ -1180,6 +1187,9 @@ function fetchData(options = {}) {
     const forceRefresh = options?.forceRefresh === true;
     const allowFreshCacheSkip = options?.allowFreshCacheSkip === true;
     setSwrStatus(null);
+    // Issue #166 — pull-to-refresh is a refresh: let an empty search result
+    // close the bar once the stores settle.
+    if (forceRefresh && searchOpen) searchAutoCloseArmed = true;
 
     // Issue #33 — kick off the return-leg arrivals fetch in parallel,
     // non-blocking. The departures table renders immediately with the 5th
@@ -2423,6 +2433,7 @@ function toggleSearch() {
 
 function openSearch() {
     searchOpen = true;
+    searchAutoCloseArmed = false; // #166 — a deliberate open is not a refresh
     document.getElementById('search-bar').hidden = false;
     document.getElementById('search-toggle').classList.add('active');
     updateSearchText();
@@ -2442,9 +2453,13 @@ function openSearch() {
 
 function closeSearch() {
     searchOpen = false;
+    searchAutoCloseArmed = false; // #166 — closed ⇒ disarmed
     document.getElementById('search-bar').hidden = true;
     document.getElementById('search-toggle').classList.remove('active');
     document.getElementById('search-input').value = '';
+    // #166 — don't leave a stale × behind for the next open (the input was
+    // just cleared; the button's visibility is normally input-driven).
+    document.getElementById('search-clear').hidden = true;
     // Unhide the board — deliberately NO renderFilteredView() here: during a
     // mode-toggle fetch flight, flightData still holds the old mode's rows
     // and a re-render would pair them with the new mode's headers. The board
@@ -2463,6 +2478,7 @@ function closeSearch() {
 }
 
 function onSearchInput() {
+    searchAutoCloseArmed = false; // #166 — typing is never a refresh
     const input = document.getElementById('search-input');
     document.getElementById('search-clear').hidden = input.value === '';
     setSearchSession();
@@ -2502,6 +2518,10 @@ function restoreSearchSession() {
     const input = document.getElementById('search-input');
     input.value = String(saved.q ?? '');
     document.getElementById('search-clear').hidden = input.value === '';
+    // Issue #166 — a reload-restored search may auto-close if it matches
+    // nothing; consumed by the first settled render, so a query that still
+    // has results is unaffected.
+    searchAutoCloseArmed = input.value !== '';
 }
 
 // Localized placeholder / labels — language changes refetch and re-render
@@ -2595,6 +2615,24 @@ function renderSearchResults() {
     // status for a genuinely empty day.
     const storesPending = fullDayByState.A === null && fullDayByState.D === null;
 
+    // Issue #166 — an armed refresh may auto-close an empty search.
+    // "Settled" = nothing still in flight can change the answer: today's two
+    // directions have resolved (or the lazy departures store declared itself
+    // unavailable), and the tomorrow store either isn't coming (gate closed,
+    // failed, stale date) or has both legs in. D-mode arrivals failures carry
+    // no unavailable flag, so that one path never settles — the bar stays
+    // open, same as today's behavior. One-shot: consumed on the first settled
+    // render either way, so a later refetch can't close a bar the user has
+    // since re-armed by typing.
+    const arrPending = fullDayByState.A === null;
+    const depPending = fullDayByState.D === null
+        && !(currentFlightMode === 'A' && searchDepUnavailable);
+    const tomorrowPending = nextDayByState.date === tomorrowStr && !nextDayUnavailable
+        && (nextDayByState.A === null || nextDayByState.D === null);
+    const searchSettled = !arrPending && !depPending && !tomorrowPending;
+    const searchAutoClose = searchSettled && searchAutoCloseArmed;
+    if (searchSettled) searchAutoCloseArmed = false;
+
     // Nothing matched — distinguish "the pin is hiding it" from "genuinely
     // not flying today" by re-running the match without the pin.
     if (matches.length === 0 && !storesPending) {
@@ -2612,6 +2650,14 @@ function renderSearchResults() {
             }
         }
         if (!html) {
+            // Issue #166 — genuinely nothing today or tomorrow, and this
+            // render came from a refresh: collapse the bar via the normal
+            // close path (unhides the board, clears the session state).
+            // Must return before the container/status writes below.
+            if (searchAutoClose) {
+                closeSearch();
+                return;
+            }
             // Issue #142 — the "today or tomorrow" wording is only honest
             // once the tomorrow store is actually loaded; pending/failed
             // keeps the today-only wording (a day we haven't seen can't be

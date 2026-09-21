@@ -161,4 +161,82 @@ test.describe('Quick-dial flight search', () => {
     await expect(page.locator('#search-results table caption').first()).toContainText('到達')
     await expect(page.locator('#search-input')).toHaveAttribute('placeholder', /178/)
   })
+
+  // Issue #166 — an empty result under a refresh closes the bar itself.
+  test('a no-match query auto-closes the bar after a reload', async ({ page }) => {
+    await openSearch(page)
+    await page.fill('#search-input', '999') // not a prefix of any fixture flight
+    await expect(page.locator('.search-empty')).toBeVisible()
+
+    await page.reload()
+    // The restored search repaints (or auto-closes) when the fetch lands;
+    // #output only becomes visible again through closeSearch(), so waiting
+    // on visible board rows is also waiting for the close itself.
+    await page.waitForSelector('#output table tbody tr', { state: 'visible', timeout: 15000 })
+    await expect(page.locator('#search-bar')).toBeHidden()
+    await expect(page.locator('#search-toggle')).not.toHaveClass(/active/)
+    await expect(page.locator('#search-input')).toHaveValue('')
+    await expect(page.locator('#flightButtons')).toBeVisible()
+    // The session state was removed: the next reload must not reopen the bar.
+    const session = await page.evaluate(() => sessionStorage.getItem('tpe_flight_search'))
+    expect(session).toBeNull()
+  })
+
+  test('a pin-hint empty state survives the reload without auto-closing', async ({ page }) => {
+    await page.click('a[data-airline="BR"]')
+    await page.waitForSelector('#output table tbody tr')
+    await openSearch(page)
+    await page.fill('#search-input', '123') // CI123 — exists, hidden by the BR pin
+    await expect(page.locator('#search-show-all')).toBeVisible()
+
+    await page.reload()
+    // The pin cookie and the query both restore; a pin hint means the flight
+    // EXISTS — the bar must stay open (owner decision #166).
+    await page.waitForSelector('#search-show-all', { timeout: 15000 })
+    await expect(page.locator('#search-bar')).toBeVisible()
+    await expect(page.locator('#search-input')).toHaveValue('123')
+  })
+
+  test('typing through a transient 0-match state never closes the bar', async ({ page }) => {
+    await openSearch(page)
+    await page.fill('#search-input', '45') // BR456
+    await page.waitForSelector('#search-results table', { timeout: 8000 })
+
+    await page.fill('#search-input', '457') // no match — but this is typing, not a refresh
+    await expect(page.locator('.search-empty')).toBeVisible()
+    await expect(page.locator('#search-bar')).toBeVisible()
+    await expect(page.locator('#search-results')).toBeVisible()
+    // The query survives in the session: the bar was closed by nobody.
+    const session = await page.evaluate(() => sessionStorage.getItem('tpe_flight_search'))
+    expect(JSON.parse(session)).toEqual({ open: true, q: '457' })
+  })
+
+  test('pull-to-refresh with a no-match query closes the bar once data lands', async ({ page }) => {
+    const touchSupported = await page.evaluate(() => typeof TouchEvent !== 'undefined' && typeof Touch !== 'undefined')
+    test.skip(!touchSupported, 'TouchEvent/Touch constructors unavailable in this engine')
+
+    await openSearch(page)
+    await page.fill('#search-input', '999')
+    await expect(page.locator('.search-empty')).toBeVisible()
+
+    // Same gesture simulation as swr-cache.spec.js: touchstart at scrollY 0,
+    // drag past the 200px threshold, release → triggerRefresh() →
+    // fetchData({ forceRefresh: true }).
+    await page.evaluate(() => {
+      const fire = (type, y) => {
+        const touch = new Touch({ identifier: 1, target: document.body, clientX: 100, clientY: y })
+        document.body.dispatchEvent(new TouchEvent(type, { touches: [touch], bubbles: true, cancelable: true }))
+      }
+      fire('touchstart', 120)
+      fire('touchmove', 220)
+      fire('touchmove', 360)
+      fire('touchend', 360)
+    })
+
+    // The forced fetch repaints the board; the armed empty result closes.
+    await expect(page.locator('#search-bar')).toBeHidden({ timeout: 15000 })
+    await expect(page.locator('#output table tbody tr').first()).toBeVisible()
+    const session = await page.evaluate(() => sessionStorage.getItem('tpe_flight_search'))
+    expect(session).toBeNull()
+  })
 })
