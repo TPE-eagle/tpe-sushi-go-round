@@ -228,6 +228,45 @@ export function normalizeFlightQuery(query) {
         .replace(/[^0-9]/g, '');
 }
 
+// Issue #160 — search cutoff. The board filters by a forward time window
+// (filterFlightsByTime in main.js), but the search path consumed the full-day
+// store with a date-only check, so a 22:00 query still surfaced the 07:00
+// arrival from that same morning. Search intent is "my next flight", but the
+// lower bound is the board window's START for the row's mode — NOT `now`
+// (owner decision 2026-09-17T14:50Z): a flight that landed or departed minutes
+// ago must stay findable for pickup lookups. windowStartForMode mirrors
+// getTimeWindow/getTimeWindowConfig in main.js: round now down to the nearest
+// 10 minutes, arrivals (A) start 40 minutes BEFORE the rounded time,
+// departures (D) AT it. There is deliberately NO upper bound — today's
+// not-yet-flown rows must stay visible all day, and tomorrow's matches never
+// reach this filter.
+//
+// Effective time = revised RDate/RTime when BOTH parts exist, else the
+// scheduled ODate/OTime (the repo's all-or-nothing R-pair convention, parsed
+// as UTC+8 exactly like filterFlightsByTime / boardTomorrowRows). Cancelled
+// rows go through the same check — a cancellation from before the window
+// start is useless when looking for the next flight (owner decision, issue
+// #160). A row whose time is missing or unparseable abstains (kept): the
+// cutoff only removes flights it can positively place before the window start.
+function windowStartForMode(mode, now) {
+    const rounded = new Date(now.getTime());
+    rounded.setMinutes(Math.floor(rounded.getMinutes() / 10) * 10, 0, 0);
+    return new Date(rounded.getTime() + (mode === 'A' ? -40 : 0) * 60 * 1000);
+}
+
+export function filterFutureFlights(flights, now = new Date()) {
+    const isBeforeWindowStart = (flight) => {
+        const revised = flight.RDate && flight.RTime;
+        const dateStr = revised ? flight.RDate : flight.ODate;
+        const timeStr = revised ? flight.RTime : flight.OTime;
+        if (!dateStr || !timeStr) return false;
+        const effective = new Date(`${String(dateStr).replace(/\//g, '-')}T${timeStr}+08:00`);
+        if (Number.isNaN(effective.getTime())) return false;
+        return effective < windowStartForMode(flight.AState, now);
+    };
+    return flights.filter(flight => !isBeforeWindowStart(flight));
+}
+
 // Match the full-day search store against a raw query string.
 //
 // Rules (issue #130):

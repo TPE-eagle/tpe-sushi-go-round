@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeFlightQuery, matchFlights } from '../utils/flightUtils.js'
+import { normalizeFlightQuery, matchFlights, filterFutureFlights } from '../utils/flightUtils.js'
 
 const TODAY = '2026/09/05'
 const YESTERDAY = '2026/09/04'
@@ -91,5 +91,72 @@ describe('matchFlights', () => {
         expect(matchFlights(store, '', TODAY)).toEqual([])
         expect(matchFlights(store, '   ', TODAY)).toEqual([])
         expect(matchFlights(store, '今日', TODAY)).toEqual([])
+    })
+})
+
+// Issue #160 — search cutoff. Fixture times live on TODAY
+// (2026/09/05); `now` is frozen at 22:00 UTC+8. The lower bound is the
+// board window's START per mode (owner update 14:50Z): departures cut at
+// 22:00 (roundDown10(now)), arrivals at 21:20 (roundDown10(now) − 40 min
+// grace), no upper bound.
+describe('filterFutureFlights (search cutoff at windowStart)', () => {
+    const now = new Date('2026-09-05T22:00:00+08:00')
+    const mk = (over = {}) => ({ ACode: 'BR', FlightNo: '900', AState: 'D', ODate: TODAY, OTime: '08:30:00', Gate: 'C5', Memo: '', ...over })
+
+    it('cuts today flights whose scheduled time already passed, keeps the ones ahead', () => {
+        const kept = filterFutureFlights([mk(), mk({ FlightNo: '901', OTime: '23:30:00' })], now)
+        expect(kept.map(f => f.FlightNo)).toEqual(['901'])
+    })
+
+    it('keeps a departure exactly at the windowStart (roundDown10(now))', () => {
+        expect(filterFutureFlights([mk({ OTime: '22:00:00' })], now)).toHaveLength(1)
+        // 21:55 is inside the rounding gap but still before windowStart — cut.
+        expect(filterFutureFlights([mk({ FlightNo: '906', OTime: '21:55:00' })], now)).toEqual([])
+    })
+
+    it('grace zone: an arrival landed minutes ago stays findable (windowStart = roundDown10(now) − 40 min)', () => {
+        // now 22:00 -> arrivals windowStart 21:20. A 21:50 arrival (10 min
+        // ago) is the pickup case the lower bound exists for.
+        const kept = filterFutureFlights([
+            mk({ FlightNo: '903', AState: 'A', OTime: '21:50:00' }),
+            mk({ FlightNo: '904', AState: 'A', OTime: '21:10:00' }),
+            mk({ FlightNo: '905', AState: 'A', OTime: '21:20:00' }),
+        ], now)
+        expect(kept.map(f => f.FlightNo)).toEqual(['903', '905'])
+    })
+
+    it('prefers the revised RDate/RTime over the scheduled time', () => {
+        // Scheduled 08:30 (past) revised to 23:10 (ahead) -> kept.
+        expect(filterFutureFlights([mk({ RDate: TODAY, RTime: '23:10:00' })], now)).toHaveLength(1)
+        // Scheduled 23:30 (ahead) revised to 09:00 (past) -> cut.
+        expect(filterFutureFlights([mk({ FlightNo: '902', OTime: '23:30:00', RDate: TODAY, RTime: '09:00:00' })], now)).toEqual([])
+    })
+
+    it('an incomplete R pair falls back to the scheduled time', () => {
+        // RDate without RTime is ignored — the 08:30 schedule is still past.
+        expect(filterFutureFlights([mk({ RDate: TODAY })], now)).toEqual([])
+    })
+
+    it('applies to cancelled rows too — past cancellations are cut, future ones stay', () => {
+        const kept = filterFutureFlights([
+            mk({ FlightNo: '881', Memo: '取消' }),
+            mk({ FlightNo: '882', OTime: '23:00:00', Memo: '取消' }),
+        ], now)
+        expect(kept.map(f => f.FlightNo)).toEqual(['882'])
+    })
+
+    it('a row with a missing or unparseable time abstains (kept)', () => {
+        expect(filterFutureFlights([mk({ OTime: '' })], now)).toHaveLength(1)
+        expect(filterFutureFlights([mk({ OTime: 'not-a-time' })], now)).toHaveLength(1)
+    })
+
+    it('is purely time-based — a stale row from another day is cut too', () => {
+        expect(filterFutureFlights([mk({ ODate: YESTERDAY, OTime: '08:00:00' })], now)).toEqual([])
+    })
+
+    it('defaults `now` to the real clock (search path calls it without args)', () => {
+        const farFuture = new Date(Date.now() + 365 * 86400 * 1000)
+        const dateStr = new Date(farFuture.getTime() + 8 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, '/')
+        expect(filterFutureFlights([mk({ ODate: dateStr, OTime: '23:59:00' })])).toHaveLength(1)
     })
 })
