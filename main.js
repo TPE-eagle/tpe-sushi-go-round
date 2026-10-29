@@ -699,10 +699,32 @@ function updateLanguageText() {
     renderSwrStatus(); // Issue #141 — re-translate the SWR indicator if visible
 }
 
+// Issue #170 — title animation variants. The initial page load keeps the
+// stylesheet default (dropShadowAnimation); replays via resetAnimation()
+// rotate a small library so repeated mode toggles don't always land the
+// same way. Random pick, but never the same variant twice in a row — the
+// index starts at 0 because that is what the user just saw on page load.
+const TITLE_ANIMATION_VARIANTS = [
+    'dropShadowAnimation', // "sweep" — the original letter-spacing + shadow
+    'titleFlipIn',
+    'titleBlurFocus',
+    'titleRise',
+];
+let lastTitleVariantIndex = 0;
+
+function pickTitleAnimationVariant() {
+    let index;
+    do {
+        index = Math.floor(Math.random() * TITLE_ANIMATION_VARIANTS.length);
+    } while (index === lastTitleVariantIndex);
+    lastTitleVariantIndex = index;
+    return TITLE_ANIMATION_VARIANTS[index];
+}
+
 function resetAnimation(element) {
     element.style.animation = 'none';
     element.offsetHeight; // force reflow
-    element.style.animation = 'dropShadowAnimation 2s ease-out forwards';
+    element.style.animation = `${pickTitleAnimationVariant()} 2s ease-out forwards`;
 }
 
 function detectLanguage() {
@@ -1323,9 +1345,13 @@ function fetchData(options = {}) {
         document.getElementById('airlineButtons').innerHTML = '';
         document.getElementById('planeTypeButtons').innerHTML = '';
         document.getElementById("flightButtons").innerHTML = '';
+        // Issue #170 — wrap the trailing 🧳 so only the emoji sways while
+        // loading; every language's loading string ends in 🧳, so one replace
+        // covers all three. The loop stops naturally when this block is
+        // replaced on fetch settle (no new state machine).
         document.getElementById("output").innerHTML = `
             <div class="blinking-text text-center">
-                ${translations[currentLanguage]["loading"]}
+                ${translations[currentLanguage]["loading"].replace('🧳', '<span class="luggage-sway" aria-hidden="true">🧳</span>')}
             </div>
         `;
     }
@@ -3328,7 +3354,14 @@ function toggleTheme() {
 
 function toggleFlightMode() {
     currentFlightMode = currentFlightMode === 'A' ? 'D' : 'A';
-    document.getElementById('flight-mode-toggle').innerText = currentFlightMode === 'A' ? '🛬' : '🛫';
+    const modeToggle = document.getElementById('flight-mode-toggle');
+    modeToggle.innerText = currentFlightMode === 'A' ? '🛬' : '🛫';
+    // Issue #170 — one-shot flip cue on the glyph swap. remove → reflow →
+    // re-add restarts the CSS animation if the user toggles again quickly;
+    // being a pure CSS one-shot it cannot delay the fetchData() below.
+    modeToggle.classList.remove('mode-flip');
+    void modeToggle.offsetWidth; // force reflow
+    modeToggle.classList.add('mode-flip');
 
     const titleKey = currentFlightMode === 'A' ? 'arrivalTitle' : 'departureTitle';
     updateElement('title', translations[currentLanguage][titleKey]);

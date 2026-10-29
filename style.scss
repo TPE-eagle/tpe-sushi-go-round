@@ -122,6 +122,62 @@ body {
   }
 }
 
+/* Issue #170 — title animation variants. resetAnimation() (main.js) rotates
+ * these on every replay (never the same one twice in a row); the stylesheet
+ * default above stays dropShadowAnimation so the initial load is unchanged.
+ * All variants are one-shot ≤2s and animate only transform/opacity/filter,
+ * so replays never reflow layout. titleBlurFocus deliberately omits
+ * `filter` from its 100% keyframe: the animation then settles back to the
+ * element's own static filter value, which is theme-dependent (dark mode
+ * carries a glow drop-shadow) and therefore must not be pinned by
+ * fill-mode forwards. */
+@keyframes titleFlipIn {
+  0% {
+    transform: perspective(600px) rotateX(-90deg);
+    opacity: 0;
+  }
+  60% {
+    transform: perspective(600px) rotateX(14deg);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(600px) rotateX(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes titleBlurFocus {
+  0% {
+    filter: blur(8px);
+    transform: scale(1.06);
+    opacity: 0.35;
+  }
+  60% {
+    filter: blur(2px);
+    transform: scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes titleRise {
+  0% {
+    transform: translateY(0.6em);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(-0.08em);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 /* Offline banner: sits above the container so it does not shift layout on
  * toggle. Muted amber tone with solid left border to read as a non-blocking
  * status strip rather than a warning. */
@@ -656,6 +712,20 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* Issue #170 — the loading state's trailing 🧳 (wrapped in a span by
+ * main.js) sways gently while data loads; the loop ends naturally when the
+ * loading block is replaced on fetch settle. Only the emoji moves. */
+.luggage-sway {
+  display: inline-block;
+  transform-origin: 50% 80%;
+  animation: luggageSway 1.6s ease-in-out infinite;
+}
+
+@keyframes luggageSway {
+  0%, 100% { transform: rotate(-12deg); }
+  50%      { transform: rotate(12deg); }
+}
+
 /* Font Styles */
 .noto-sans-tc, .noto-sans-jp, .noto-sans {
   font-weight: 400;
@@ -856,6 +926,19 @@ body {
   transform: scale(0.92);
 }
 
+/* Issue #170 — one-shot flip cue when the 🛬/🛫 glyph swaps (class toggled
+ * by toggleFlightMode(), restarted via the none → reflow → re-add trick).
+ * A pure CSS animation cannot delay the board re-render. */
+.flight-toggle-btn.mode-flip {
+  animation: modeFlip 0.4s ease-in-out;
+}
+
+@keyframes modeFlip {
+  0%   { transform: rotateY(0deg) scale(1); }
+  50%  { transform: rotateY(90deg) scale(0.88); }
+  100% { transform: rotateY(0deg) scale(1); }
+}
+
 [data-bs-theme="dark"] .flight-toggle-btn {
   background-color: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.08);
@@ -894,6 +977,57 @@ body {
       letter-spacing: 0px;
     }
   }
+
+  /* Issue #170 — softer counterparts for the new variants, same pattern as
+   * the mobile dropShadowAnimation re-declaration above: shorter travel at
+   * the smaller font size. */
+  @keyframes titleFlipIn {
+    0% {
+      transform: perspective(400px) rotateX(-90deg);
+      opacity: 0;
+    }
+    60% {
+      transform: perspective(400px) rotateX(14deg);
+      opacity: 1;
+    }
+    100% {
+      transform: perspective(400px) rotateX(0deg);
+      opacity: 1;
+    }
+  }
+
+  @keyframes titleBlurFocus {
+    0% {
+      filter: blur(5px);
+      transform: scale(1.05);
+      opacity: 0.35;
+    }
+    60% {
+      filter: blur(2px);
+      transform: scale(1.02);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes titleRise {
+    0% {
+      transform: translateY(0.45em);
+      opacity: 0;
+    }
+    70% {
+      transform: translateY(-0.06em);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
   #title {
     padding: 4px;
     margin: 6px 0;
@@ -1113,6 +1247,19 @@ body {
    * the pulse leaves it fully visible and already distinct from the idle
    * state, for free. */
   #refresh-icon.refreshing {
+    animation: none !important;
+  }
+
+  /* Issue #170 — same policy for the new micro-motions. The title variants
+   * are already covered by the #title rule above (the inline animation set
+   * by resetAnimation() is non-important and loses to !important). The
+   * toggle flip and the loading sway go static; the loading text keeps its
+   * static bold cue from the .blinking-text rule above. */
+  .flight-toggle-btn.mode-flip {
+    animation: none !important;
+  }
+
+  .luggage-sway {
     animation: none !important;
   }
 }
