@@ -283,28 +283,28 @@ const translations = {
                 "body": [
                     "預設是到達（行李轉盤）。飛回來都累了，打開直接看就好。",
                     "要看出發，按右上角 🛫。去程還有精神，多按一下沒差。",
-                    "只有這一個設定是故意不記的。"
+                    "出發／到達這個選擇不會記住，每次打開都從到達開始。"
                 ]
             },
             "whichFlights": {
                 "heading": "顯示哪些班機",
                 "body": [
-                    "預設顯示前後約兩小時：出發往後兩小時，到達從 40 分鐘前算起。要看得更遠，上面的 +2h 鈕可切 +4／+6／+8 小時。",
+                    "預設顯示接下來約兩小時的班機（到達會多算 40 分鐘前剛落地的）。想看更晚的，按上方的 +2h，可以切換成 +4／+6／+8 小時。",
                     "確切的日期和時段寫在表格下面那行。",
-                    "每次載入都重抓資料。出境過了移民官，再開一次看登機門有沒有換。",
+                    "每次打開都會重新抓資料。出境過關後，再打開一次，確認登機門有沒有換。",
                     "按 🔍 輸入班號數字，可查當天任何一班，不受時段限制。"
                 ]
             },
             "install": {
                 "heading": "裝成 App",
                 "iosSteps": "iPhone／iPad（Safari）：分享 → 加入主畫面 → 新增",
-                "iosFallback": "找不到「分享」，點網址列旁的 ⋯。面板裡沒有「加入主畫面」，滑到底點「編輯動作」打開。",
+                "iosFallback": "找不到「分享」，就點網址列旁的 ⋯。選單裡沒有「加入主畫面」，滑到最底下點「編輯動作」，再把「加入主畫面」打開。",
                 "installButtonLabel": "安裝",
                 "offlineNote": "裝好後沒網路也能開，會顯示上次的資料和時間。"
             },
             "share": {
                 "heading": "分享給同事",
-                "body": "按「分享」會跳出手機本身的分享面板。",
+                "body": "按「分享」會開啟手機內建的分享選單。",
                 "shareButtonLabel": "分享",
                 "copyLinkLabel": "複製連結",
                 "copiedConfirmation": "已複製連結"
@@ -312,7 +312,7 @@ const translations = {
             "remembers": {
                 "heading": "會記住的設定",
                 "body": [
-                    "航空公司、機型、主題、語言、顯示時間範圍，選過就記住，每次打開重新計時。",
+                    "航空公司、機型、主題、語言、顯示時間範圍，選過就會記住一段時間，每次打開都會重新計算保存期限。",
                     "語言沒選過就跟系統走。"
                 ]
             },
@@ -398,62 +398,62 @@ const translations = {
             "whatItDoes": {
                 "heading": "What this is",
                 "body": [
-                    "A Taoyuan Airport flight board for EVA Air, China Airlines and STARLUX crew, UNI Air and Mandarin included. Departures show your gate, arrivals your carousel.",
-                    "Add it to your home screen and it behaves like an app. No App Store involved."
+                    "This is a Taoyuan Airport flight board for EVA Air, China Airlines and STARLUX crew. It also includes UNI Air and Mandarin Airlines. Departures show your gate. Arrivals show your baggage carousel.",
+                    "Add it to your home screen, and it works like an app. You do not need to get it from the App Store."
                 ]
             },
             "opensOnArrival": {
                 "heading": "Opens on arrivals",
                 "body": [
-                    "Arrivals, with your carousel, is what comes up first. You're tired coming home, so it's just there.",
-                    "For departures, tap 🛫 top right. You're fresh on the way out, one more tap won't hurt.",
-                    "The one setting it never remembers, on purpose."
+                    "The page opens on arrivals first. Arrivals show your baggage carousel. You are tired when you fly home, so you can just look at the page.",
+                    "To see departures, tap 🛫 at the top right. You have more energy when you leave, so one more tap is fine.",
+                    "Arrivals or departures is the only choice that the page does not remember. This is on purpose."
                 ]
             },
             "whichFlights": {
-                "heading": "Which flights show up",
+                "heading": "Which flights are shown",
                 "body": [
-                    "By default, about two hours around now: departures two hours ahead, arrivals from 40 minutes ago. The +2h button above extends it to +4/+6/+8 hours.",
-                    "The exact date and range are in the line under the table.",
-                    "Every load fetches fresh data. Once you're through immigration outbound, open it again and re-check your gate.",
-                    "Tap 🔍 and type a flight number's digits to look up any flight today, outside the selected window."
+                    "By default, the page shows about 2 hours of flights. Departures show the next 2 hours. Arrivals start from 40 minutes ago. To see more time, tap the +2h button above. You can choose +4, +6 or +8 hours.",
+                    "The exact date and time range are in the line under the table.",
+                    "Each time the page loads, it gets new data. After you pass outbound immigration, open the page again. Check your gate again, because it may have changed.",
+                    "Tap 🔍 and type the digits of the flight number. You can find any flight from today, even if it is outside the time range you selected."
                 ]
             },
             "install": {
                 "heading": "Install it",
                 "iosSteps": "iPhone / iPad (Safari): Share → Add to Home Screen → Add",
-                "iosFallback": "No Share button? Tap ⋯ next to the address bar. No \"Add to Home Screen\" in the sheet? Scroll to the bottom and turn it on under Edit Actions.",
+                "iosFallback": "Cannot see the Share button? Tap ⋯ next to the address bar. Cannot see \"Add to Home Screen\" in the share menu? Scroll to the bottom and tap Edit Actions. Then turn on \"Add to Home Screen\".",
                 "installButtonLabel": "Install",
-                "offlineNote": "Once installed it opens offline, showing the last data it fetched and when."
+                "offlineNote": "After you install it, it also opens without internet. It shows the last data it got, and the time it got that data."
             },
             "share": {
                 "heading": "Share it with colleagues",
-                "body": "Tap Share to open your phone's share sheet.",
+                "body": "Tap Share to open the share menu of your phone.",
                 "shareButtonLabel": "Share",
                 "copyLinkLabel": "Copy link",
                 "copiedConfirmation": "Link copied"
             },
             "remembers": {
-                "heading": "What it remembers",
+                "heading": "What the page remembers",
                 "body": [
-                    "Airline, aircraft type, theme, language and the display window. Set once, kept, and the clock restarts each time you open it.",
-                    "Language follows your system setting until you pick one."
+                    "The page remembers your airline, aircraft type, theme, language and display time range. You choose them once, and the page keeps them. The page keeps them for a limited time. This time starts again each time you open the page.",
+                    "Until you choose a language, the page uses the language setting of your device."
                 ]
             },
             "returnGateColumn": {
                 "heading": "The Return Gate column",
-                "bodyBefore": "The arrival gate of the same-day return leg, back at Taoyuan.",
+                "bodyBefore": "This column shows the arrival gate of the return flight on the same day, back at Taoyuan.",
                 "bodyAfter": [
-                    "It only shows when the rules match, so blank doesn't mean no return. It's left out for night stops and long haul, when the return is a different aircraft type (so not the same crew), or when flight numbers or timings don't line up.",
-                    "Same-day returns are worked out by rules I wrote, and each airline schedules differently.",
-                    "If you think the logic should work differently, tell me."
+                    "The column shows a gate only when the rules match. A blank cell does not mean there is no return flight. The column stays blank in these cases: (1) the crew stays overnight, or the flight is long-distance; (2) the return flight uses a different aircraft type, so it is not the same crew; (3) the flight numbers or the times do not match.",
+                    "I wrote the rules that find same-day return flights. Each airline plans its schedule in a different way.",
+                    "If you think the logic should work in a different way, please tell me."
                 ]
             },
             "feedback": {
-                "heading": "Something looks off?",
+                "heading": "Something looks wrong?",
                 "body": [
-                    "Quickest is to tell me in person. Open a GitHub issue if you want it on record.",
-                    "Don't post roster details or personal information there. It's public."
+                    "The fastest way is to tell me in person. If you want a written record, open a GitHub issue.",
+                    "Do not post roster details or personal information there. GitHub issues are public."
                 ]
             }
         }
