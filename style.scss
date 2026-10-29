@@ -934,9 +934,12 @@ body {
 }
 
 @keyframes modeFlip {
-  0%   { transform: rotateY(0deg) scale(1); }
-  50%  { transform: rotateY(90deg) scale(0.88); }
-  100% { transform: rotateY(0deg) scale(1); }
+  /* perspective() must sit in every keyframe: rotateY without it is an
+   * orthogonal projection and reads as a horizontal squash, and a keyframe
+   * missing it would fall back to matrix interpolation and snap. */
+  0%   { transform: perspective(200px) rotateY(0deg) scale(1); }
+  50%  { transform: perspective(200px) rotateY(90deg) scale(0.88); }
+  100% { transform: perspective(200px) rotateY(0deg) scale(1); }
 }
 
 [data-bs-theme="dark"] .flight-toggle-btn {

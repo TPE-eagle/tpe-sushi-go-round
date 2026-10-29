@@ -3362,6 +3362,13 @@ function toggleFlightMode() {
     modeToggle.classList.remove('mode-flip');
     void modeToggle.offsetWidth; // force reflow
     modeToggle.classList.add('mode-flip');
+    // PR #171 review: strip the class when the one-shot ends so it can't
+    // override a future animation on this button (the two-class selector
+    // beats single-class rules). Quick re-toggle is safe: the remove →
+    // reflow → re-add above restarts the animation, and a stale once-listener
+    // from the cancelled run only removes the class again at the new end.
+    modeToggle.addEventListener('animationend',
+        () => modeToggle.classList.remove('mode-flip'), { once: true });
 
     const titleKey = currentFlightMode === 'A' ? 'arrivalTitle' : 'departureTitle';
     updateElement('title', translations[currentLanguage][titleKey]);
