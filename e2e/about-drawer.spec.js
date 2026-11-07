@@ -178,10 +178,9 @@ test.describe('About drawer', () => {
     await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
 
     await expect(page.locator('#drawer-install-other')).toBeVisible()
+    await expect(page.locator('#drawer-install-other')).toContainText('browser menu')
     await expect(page.locator('#drawer-install-ios')).toBeHidden()
     await expect(page.locator('#drawer-install-button-wrap')).toBeHidden()
-    await expect(page.locator('#drawer-install-section')).toContainText('browser menu')
-    await expect(page.locator('#drawer-install-section')).not.toContainText('iPhone / iPad')
   })
 
   test('install section shows a real button (no iOS text) once beforeinstallprompt fires', async ({ page }) => {
