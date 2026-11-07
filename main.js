@@ -297,8 +297,9 @@ const translations = {
             },
             "install": {
                 "heading": "裝成 App",
-                "iosSteps": "iPhone／iPad（Safari）：分享 → 加入主畫面 → 新增",
+                "iosSteps": "iPhone／iPad（Safari）：分享 → 加入主畫面 → 加入",
                 "iosFallback": "找不到「分享」，就點網址列旁的 ⋯。選單裡沒有「加入主畫面」，滑到最底下點「編輯動作」，再把「加入主畫面」打開。",
+                "otherSteps": "用瀏覽器選單裡的「安裝」或「加到主畫面」。選單裡沒有這兩項的瀏覽器（例如電腦版 Firefox）不支援安裝，可以改用書籤。",
                 "installButtonLabel": "安裝",
                 "offlineNote": "裝好後沒網路也能開，會顯示上次的資料和時間。"
             },
@@ -423,6 +424,7 @@ const translations = {
                 "heading": "Install it",
                 "iosSteps": "iPhone / iPad (Safari): Share → Add to Home Screen → Add",
                 "iosFallback": "Cannot see the Share button? Tap ⋯ next to the address bar. Cannot see \"Add to Home Screen\" in the share menu? Scroll to the bottom and tap Edit Actions. Then turn on \"Add to Home Screen\".",
+                "otherSteps": "Use \"Install\" or \"Add to Home screen\" in the browser menu. If the menu has neither, this browser cannot install the app. You can bookmark this page instead.",
                 "installButtonLabel": "Install",
                 "offlineNote": "After you install it, it also opens without internet. It shows the last data it got, and the time it got that data."
             },
@@ -547,6 +549,7 @@ const translations = {
                 "heading": "インストール",
                 "iosSteps": "iPhone / iPad（Safari）：共有 → ホーム画面に追加 → 追加",
                 "iosFallback": "「共有」が見当たらなければ、アドレスバー横の ⋯ をタップ。シートに「ホーム画面に追加」がなければ、一番下の「アクションを編集」でオンにしてください。",
+                "otherSteps": "ブラウザのメニューにある「インストール」または「ホーム画面に追加」を使ってください。どちらもない場合は、このブラウザではインストールできません。ブックマークをご利用ください。",
                 "installButtonLabel": "インストール",
                 "offlineNote": "インストール後はオフラインでも開けます。最後に取得したデータと、その時刻を表示します。"
             },
@@ -903,6 +906,9 @@ function buildDrawerContent(lang) {
                 <p class="drawer-section-body">${d.install.iosSteps}</p>
                 <p class="drawer-section-body drawer-fallback-note">${d.install.iosFallback}</p>
             </div>
+            <div id="drawer-install-other">
+                <p class="drawer-section-body">${d.install.otherSteps}</p>
+            </div>
             <div id="drawer-install-button-wrap">
                 <button type="button" id="drawer-install-btn" class="btn btn-sm btn-secondary">${d.install.installButtonLabel}</button>
             </div>
@@ -947,12 +953,25 @@ function isStandalone() {
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
 
-// Three states, checked in order: already installed (hide the section
+// iOS detection for the install section. Covers iPhone/iPad UAs, iPadOS
+// 13+ (reports a Mac UA but is a multi-touch device), and the WebKit-only
+// `navigator.standalone` property (present on iOS Safari even when the app
+// is not running standalone). Everything else — desktop Firefox, desktop
+// Safari, Android Firefox — never fires beforeinstallprompt, so it gets
+// the generic one-liner instead of the iPhone/iPad steps.
+function isIosDevice() {
+    return 'standalone' in window.navigator
+        || /iPhone|iPad/i.test(window.navigator.userAgent)
+        || (window.navigator.userAgent.includes('Mac') && (window.navigator.maxTouchPoints || 0) > 1);
+}
+
+// Four states, checked in order: already installed (hide the section
 // entirely) > beforeinstallprompt captured (show the real Install button,
-// hide the iOS text) > neither (assume iOS Safari or a browser that will
-// never fire the event; show the text steps, no button). Re-run after every
-// drawer rebuild (language change) and every install-state transition
-// (prompt captured, prompt resolved, appinstalled).
+// hide both text blocks) > iOS device without the event (show the iOS text
+// steps) > other browser that will never fire the event (show a generic
+// one-liner, not the iPhone/iPad steps). Re-run after every drawer rebuild
+// (language change) and every install-state transition (prompt captured,
+// prompt resolved, appinstalled).
 function updateInstallSection() {
     const section = document.getElementById('drawer-install-section');
     if (!section) return;
@@ -964,9 +983,12 @@ function updateInstallSection() {
     section.hidden = false;
 
     const iosBlock = document.getElementById('drawer-install-ios');
+    const otherBlock = document.getElementById('drawer-install-other');
     const buttonWrap = document.getElementById('drawer-install-button-wrap');
     const showButton = Boolean(deferredInstallPrompt);
-    if (iosBlock) iosBlock.hidden = showButton;
+    const showIosSteps = !showButton && isIosDevice();
+    if (iosBlock) iosBlock.hidden = !showIosSteps;
+    if (otherBlock) otherBlock.hidden = showButton || showIosSteps;
     if (buttonWrap) buttonWrap.hidden = !showButton;
 }
 

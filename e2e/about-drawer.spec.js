@@ -153,6 +153,13 @@ test.describe('About drawer', () => {
   })
 
   test('install section shows the iOS text steps (no button) when beforeinstallprompt never fires', async ({ page }) => {
+    // Playwright's Chromium is a non-iOS browser, which now gets the
+    // generic guidance instead. Spoof iOS via the WebKit-only
+    // navigator.standalone property — defined but false, so it counts as
+    // iOS for detection without triggering the already-installed hiding.
+    await page.addInitScript(() => {
+      Object.defineProperty(window.navigator, 'standalone', { value: false, configurable: true })
+    })
     await page.goto('/')
     await page.click('#about-drawer-toggle')
     await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
@@ -160,6 +167,21 @@ test.describe('About drawer', () => {
     await expect(page.locator('#drawer-install-ios')).toBeVisible()
     await expect(page.locator('#drawer-install-button-wrap')).toBeHidden()
     await expect(page.locator('#drawer-install-section')).toContainText('Share → Add to Home Screen')
+  })
+
+  test('non-iOS browsers without the install event get the generic guidance, not the iPhone/iPad steps', async ({ page }) => {
+    // Plain Playwright Chromium: no navigator.standalone, desktop UA, no
+    // touch points — exactly the browsers that never fire
+    // beforeinstallprompt and used to be shown iPhone/iPad steps.
+    await page.goto('/')
+    await page.click('#about-drawer-toggle')
+    await expect(page.locator('#about-drawer')).toHaveClass(/\bshow\b/)
+
+    await expect(page.locator('#drawer-install-other')).toBeVisible()
+    await expect(page.locator('#drawer-install-ios')).toBeHidden()
+    await expect(page.locator('#drawer-install-button-wrap')).toBeHidden()
+    await expect(page.locator('#drawer-install-section')).toContainText('browser menu')
+    await expect(page.locator('#drawer-install-section')).not.toContainText('iPhone / iPad')
   })
 
   test('install section shows a real button (no iOS text) once beforeinstallprompt fires', async ({ page }) => {
@@ -190,6 +212,12 @@ test.describe('About drawer', () => {
   // the delegation ever being replaced with a direct .addEventListener on
   // an element that isn't there yet.
   test('clicking the install button calls prompt() and the section re-renders once userChoice resolves', async ({ page }) => {
+    // Spoof iOS (same trick as the never-fires test) so the text steps the
+    // section falls back to after userChoice resolves are the iOS ones,
+    // which is what the final assertion checks.
+    await page.addInitScript(() => {
+      Object.defineProperty(window.navigator, 'standalone', { value: false, configurable: true })
+    })
     await page.addInitScript(() => {
       window.__installPromptCalled = false
       window.addEventListener('DOMContentLoaded', () => {
